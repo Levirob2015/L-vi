@@ -17,7 +17,9 @@ im eigenen Login-Handler auf, das ist praeziser.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 from typing import Callable, Iterable, Optional, Sequence
 
 from .engine import Guard
@@ -47,6 +49,7 @@ class ShieldMiddleware:
         exempt_paths: Iterable[str] = (),
         identity_from_scope: Optional[Callable[[dict], Optional[str]]] = None,
         protect_all_paths: bool = True,
+        honeypot=None,
     ) -> None:
         self.app = app
         self.guard = guard
@@ -57,6 +60,8 @@ class ShieldMiddleware:
         self.identity_from_scope = identity_from_scope
         #: False = nur Login-Pfade pruefen, alles andere ungebremst durchlassen.
         self.protect_all_paths = protect_all_paths
+        #: None = der Honeypot des Guards, False = abgeschaltet.
+        self.honeypot = guard.honeypot if honeypot is None else (honeypot or None)
 
     async def __call__(self, scope, receive, send):
         if scope.get("type") != "http":
@@ -72,6 +77,22 @@ class ShieldMiddleware:
         client = scope.get("client") or (None, None)
         ip = self.guard.resolve_ip(client[0], headers.get("x-forwarded-for"))
         method = scope.get("method", "GET").upper()
+
+        # Honeypot vor allem anderen: der Angreifer soll die vorgetaeuschte
+        # Luecke sehen, nicht die Sperrmeldung - sonst weiss er Bescheid.
+        if self.honeypot is not None and self.honeypot.enabled:
+            trap = self.honeypot.match(path)
+            if trap is not None:
+                self.honeypot.trigger(
+                    ip, route=path, user_agent=headers.get("user-agent", ""),
+                    detail=trap.kind,
+                )
+                delay = self.honeypot.config.tarpit_seconds
+                if delay > 0:
+                    await asyncio.sleep(delay)
+                await _send_decoy(send, self.honeypot.decoy_response(trap))
+                return
+
         is_login = method in self.login_methods and path_matches(path, self.login_paths)
 
         identity = None
@@ -123,6 +144,22 @@ def _headers(scope) -> dict:
     return result
 
 
+async def _send_decoy(send, response) -> None:
+    """Antwortet mit der gefaelschten Datei - moeglichst unauffaellig."""
+    status, content_type, body = response
+    await send({
+        "type": "http.response.start",
+        "status": status,
+        "headers": [
+            (b"content-type", content_type.encode("latin-1")),
+            (b"content-length", str(len(body)).encode("ascii")),
+            # Kein Hinweis auf LoginShield: der Koeder soll echt wirken.
+            (b"cache-control", b"no-store"),
+        ],
+    })
+    await send({"type": "http.response.body", "body": body})
+
+
 async def _send_denied(send, decision: Decision) -> None:
     payload = json.dumps(
         {
@@ -155,7 +192,8 @@ class WSGIShield:
                  login_methods: Iterable[str] = ("POST",),
                  failure_statuses: Iterable[int] = (401, 403, 422),
                  exempt_paths: Iterable[str] = (),
-                 protect_all_paths: bool = True) -> None:
+                 protect_all_paths: bool = True,
+                 honeypot=None) -> None:
         self.app = app
         self.guard = guard
         self.login_paths = tuple(login_paths)
@@ -163,6 +201,7 @@ class WSGIShield:
         self.failure_statuses = frozenset(failure_statuses)
         self.exempt_paths = tuple(exempt_paths)
         self.protect_all_paths = protect_all_paths
+        self.honeypot = guard.honeypot if honeypot is None else (honeypot or None)
 
     def __call__(self, environ, start_response):
         path = environ.get("PATH_INFO", "")
@@ -173,6 +212,21 @@ class WSGIShield:
             environ.get("REMOTE_ADDR"), environ.get("HTTP_X_FORWARDED_FOR")
         )
         method = environ.get("REQUEST_METHOD", "GET").upper()
+
+        if self.honeypot is not None and self.honeypot.enabled:
+            trap = self.honeypot.match(path)
+            if trap is not None:
+                self.honeypot.trigger(
+                    ip, route=path, user_agent=environ.get("HTTP_USER_AGENT", ""),
+                    detail=trap.kind,
+                )
+                self.honeypot.tarpit()
+                status, content_type, body = self.honeypot.decoy_response(trap)
+                start_response(
+                    f"{status} OK",
+                    [("Content-Type", content_type), ("Content-Length", str(len(body)))],
+                )
+                return [body]
         is_login = method in self.login_methods and path_matches(path, self.login_paths)
 
         if self.protect_all_paths or is_login:

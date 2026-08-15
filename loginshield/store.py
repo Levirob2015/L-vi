@@ -412,6 +412,7 @@ class Store:
             "successes": by_event.get(Event.LOGIN_SUCCESS, 0),
             "requests": by_event.get(Event.REQUEST, 0),
             "denied": by_event.get(Event.DENIED, 0),
+            "honeypot": by_event.get(Event.HONEYPOT, 0),
             "attacking_ips": int(unique_ips["n"]),
             "active_blocks": int(active["n"]),
             "new_blocks": int(new_blocks["n"]),

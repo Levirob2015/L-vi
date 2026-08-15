@@ -8,6 +8,13 @@ Dann http://127.0.0.1:8080/ oeffnen. Zugangsdaten: anna / geheim123
 Ein paar falsche Passwoerter eingeben - nach 5 Fehlversuchen ist die IP
 gesperrt. Parallel laeuft das Dashboard auf http://127.0.0.1:8787/
 
+Der Honeypot ist ebenfalls aktiv. Zum Ausprobieren (danach ist die IP
+gesperrt, ``loginshield unblock 127.0.0.1`` hebt das wieder auf):
+
+* http://127.0.0.1:8080/.env oder /wp-admin  -> gefaelschte Schwachstelle
+* die dort gefundenen Zugangsdaten am Login benutzen -> sofortige Sperre
+* das unsichtbare Formularfeld ausfuellen -> sofortige Sperre
+
 Bewusst ohne Framework (nur Standardbibliothek), damit das Beispiel ohne
 Installation zusaetzlicher Pakete laeuft. Die Einbindung in Flask/FastAPI
 ist in der README beschrieben.
@@ -25,7 +32,7 @@ from urllib.parse import parse_qs
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from loginshield import Config, Guard  # noqa: E402
+from loginshield import Config, Guard, Reason  # noqa: E402
 from loginshield.dashboard import Dashboard  # noqa: E402
 
 # Demo-Benutzer. In echt kommen die aus der Datenbank, das Passwort
@@ -39,7 +46,9 @@ config.rules.ip_failure_threshold = 5
 config.rules.ip_failure_window = 300
 config.rules.block_base_seconds = 60  # kurze Sperre, damit die Demo nicht nervt
 config.dashboard.port = 8787
+config.honeypot.block_seconds = 120   # in echt: 24 Stunden
 guard = Guard(config)
+honeypot = guard.honeypot
 
 PAGE = """<!doctype html><html lang="de"><head><meta charset="utf-8">
 <title>Demo-Login</title><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -59,7 +68,14 @@ color:#fff;font:inherit;font-weight:600;cursor:pointer}}
 {message}
 <input name="username" placeholder="Benutzername" autocomplete="off" autofocus>
 <input name="password" type="password" placeholder="Passwort">
+{honeypot_field}
 <button>Anmelden</button></form></body></html>"""
+
+
+def page(message: str = "") -> str:
+    # Das unsichtbare Feld gehoert in jedes echte Formular: Menschen sehen es
+    # nicht, Bots fuellen es aus.
+    return PAGE.format(message=message, honeypot_field=honeypot.hidden_field_html())
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -83,10 +99,34 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_GET(self):
+        # Falle 1: gefaelschte Schwachstellen. Der Aufrufer bekommt eine
+        # glaubwuerdige Antwort und ist ab sofort gesperrt.
+        trap = honeypot.match(self.path)
+        if trap is not None:
+            honeypot.trigger(self._client_ip(), route=self.path,
+                             user_agent=self.headers.get("User-Agent", ""),
+                             detail=trap.kind)
+            status, content_type, body = honeypot.decoy_response(trap)
+            self._respond(status, body.decode("utf-8"), content_type)
+            return
+
         if self.path != "/":
             self._respond(404, "nicht gefunden", "text/plain; charset=utf-8")
             return
-        self._respond(200, PAGE.format(message=""))
+
+        # Eine gesperrte IP soll das Formular gar nicht erst sehen.
+        decision = guard.check(self._client_ip(), route=self.path)
+        if not decision.allowed:
+            self._respond(
+                decision.status_code,
+                page(f'<div class="msg err">Gesperrt fuer noch '
+                     f"{decision.retry_after} Sekunden "
+                     f"({html.escape(decision.reason)}).</div>"),
+                headers={"Retry-After": str(decision.retry_after)},
+            )
+            return
+
+        self._respond(200, page())
 
     def do_POST(self):
         if self.path != "/login":
@@ -104,7 +144,7 @@ class Handler(BaseHTTPRequestHandler):
             )
             self._respond(
                 decision.status_code,
-                PAGE.format(message=message),
+                page(message),
                 headers={"Retry-After": str(decision.retry_after)},
             )
             return
@@ -113,6 +153,26 @@ class Handler(BaseHTTPRequestHandler):
         form = parse_qs(self.rfile.read(length).decode("utf-8", "replace"))
         username = (form.get("username") or [""])[0].strip()
         password = (form.get("password") or [""])[0]
+
+        # Falle 2: das unsichtbare Feld wurde ausgefuellt -> Bot.
+        if honeypot.check_hidden_field(form):
+            honeypot.trigger(ip, route="/login", reason=Reason.HONEYPOT_FIELD,
+                             user_agent=self.headers.get("User-Agent", ""),
+                             detail="unsichtbares Feld ausgefuellt")
+            # Dem Bot dieselbe Meldung zeigen wie bei falschem Passwort.
+            self._respond(401, page(
+                '<div class="msg err">Benutzername oder Passwort falsch.</div>'))
+            return
+
+        # Falle 3: Zugangsdaten aus einer Koederdatei -> derjenige hat den
+        # gefaelschten /.env gelesen. Kein Zufall, sofortige Sperre.
+        if honeypot.is_honeytoken(username):
+            honeypot.trigger(ip, route="/login", reason=Reason.HONEYPOT_TOKEN,
+                             user_agent=self.headers.get("User-Agent", ""),
+                             detail=f"Koeder-Konto {username} benutzt")
+            self._respond(401, page(
+                '<div class="msg err">Benutzername oder Passwort falsch.</div>'))
+            return
 
         expected = USERS.get(username)
         # compare_digest: keine messbaren Zeitunterschiede beim Vergleich
@@ -125,8 +185,8 @@ class Handler(BaseHTTPRequestHandler):
             # 2a) Erfolg melden - setzt die Fehlerzaehler zurueck
             guard.record_success(ip, identity=username, route="/login",
                                  user_agent=self.headers.get("User-Agent", ""))
-            self._respond(200, PAGE.format(
-                message=f'<div class="msg ok">Willkommen, {html.escape(username)}!</div>'
+            self._respond(200, page(
+                f'<div class="msg ok">Willkommen, {html.escape(username)}!</div>'
             ))
             return
 
@@ -142,7 +202,7 @@ class Handler(BaseHTTPRequestHandler):
         else:
             # Nie verraten, ob der Benutzername existiert (Konto-Enumeration).
             message = '<div class="msg err">Benutzername oder Passwort falsch.</div>'
-        self._respond(401, PAGE.format(message=message))
+        self._respond(401, page(message))
 
 
 def main():

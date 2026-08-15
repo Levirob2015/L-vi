@@ -26,6 +26,7 @@ from typing import Dict, List, Optional
 
 from .config import Config
 from .firewall import Firewall
+from .honeypot import Honeypot
 from .models import Block, Decision, Event, Reason
 from .netutils import client_ip, ip_in_networks, normalize_ip, parse_networks
 from .ratelimit import SlidingWindow
@@ -58,6 +59,10 @@ class Guard:
             identity_hmac_key=self.config.identity_hmac_key,
         )
         self.firewall = firewall if firewall is not None else Firewall(self.config.firewall)
+        #: Die Falle. Siehe :mod:`loginshield.honeypot`.
+        self.honeypot = Honeypot(
+            self.config.honeypot, self, secret=self.config.identity_hmac_key
+        )
 
         rules = self.config.rules
         self._limiter = SlidingWindow(rules.request_limit, rules.request_window)
@@ -304,6 +309,52 @@ class Guard:
             user_agent=user_agent,
             source=source,
             ts=self.clock(),
+        )
+
+    def record_honeypot(
+        self,
+        ip: Optional[str],
+        *,
+        route: str = "",
+        reason: str = Reason.HONEYPOT_PATH,
+        user_agent: str = "",
+        source: str = "app",
+        detail: str = "",
+        seconds: Optional[float] = None,
+    ) -> Optional[Block]:
+        """Meldet einen Honeypot-Treffer und sperrt sofort.
+
+        Kein Schwellwert: Wer in die Falle tappt, hat gezielt nach einer
+        Luecke gesucht. Ein Vertipper sieht anders aus.
+
+        Die Allowlist gilt weiterhin - auch der eigene Sicherheitsscanner
+        soll den Betrieb nicht lahmlegen.
+        """
+        ip = normalize_ip(ip)
+        if ip is None:
+            return None
+
+        now = self.clock()
+        self.store.record_attempt(
+            ip,
+            Event.HONEYPOT,
+            route=route,
+            user_agent=user_agent,
+            source=source,
+            detail=f"{reason} {detail}".strip(),
+            ts=now,
+        )
+
+        if self.is_allowlisted(ip):
+            log.info("Honeypot-Treffer von %s (%s) - Allowlist, keine Sperre", ip, route)
+            return None
+
+        log.warning("Honeypot ausgeloest von %s: %s (%s)", ip, route or "-", reason)
+        return self.block(
+            ip,
+            seconds=seconds if seconds is not None else self.config.honeypot.block_seconds,
+            reason=reason,
+            detail=detail or route,
         )
 
     def record_request(self, ip: Optional[str], *, route: str = "",

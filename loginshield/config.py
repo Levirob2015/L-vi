@@ -129,6 +129,45 @@ class FirewallConfig:
 
 
 @dataclass
+class HoneypotConfig:
+    """Die Falle: vorgetaeuschte Schwachstellen.
+
+    Wer diese Pfade aufruft, sucht gezielt nach Luecken - dafuer gibt es
+    keinen harmlosen Grund. Deshalb reicht ein einziger Treffer fuer eine
+    Sperre, ohne Schwellwert.
+    """
+
+    enabled: bool = True
+    #: Sperrdauer nach einem Treffer. Deutlich laenger als bei Fehlversuchen,
+    #: weil hier kein Vertipper moeglich ist.
+    block_seconds: int = 86400
+    #: Leer = eingebaute Liste (siehe honeypot.DEFAULT_TRAPS).
+    paths: List[str] = field(default_factory=list)
+    #: Zusaetzliche eigene Koeder, z.B. ["/api/v1/debug*"].
+    extra_paths: List[str] = field(default_factory=list)
+    #: Pfade, die trotz Trefferliste harmlos bleiben sollen.
+    exclude_paths: List[str] = field(default_factory=list)
+    #: Antwort kuenstlich verzoegern, um Scanner auszubremsen (0 = aus).
+    tarpit_seconds: float = 0.0
+    #: Name des unsichtbaren Formularfelds. Menschen sehen es nicht,
+    #: Bots fuellen es aus.
+    hidden_field: str = "website"
+    #: Untergeschobene Zugangsdaten. Wer sie benutzt, hat sie aus einer
+    #: Koederdatei - ein Beweis, kein Zufall.
+    decoy_user: str = "svc_backup"
+    #: Leer = stabil aus dem Schluessel abgeleitet.
+    decoy_password: str = ""
+
+    def validate(self) -> None:
+        if self.block_seconds <= 0:
+            raise ConfigError("honeypot.block_seconds muss groesser als 0 sein")
+        if self.tarpit_seconds < 0 or self.tarpit_seconds > 30:
+            raise ConfigError("honeypot.tarpit_seconds muss zwischen 0 und 30 liegen")
+        if not self.decoy_user:
+            raise ConfigError("honeypot.decoy_user darf nicht leer sein")
+
+
+@dataclass
 class LogSourceConfig:
     """Eine zu ueberwachende Logdatei."""
 
@@ -168,6 +207,7 @@ class Config:
     rules: RuleConfig = field(default_factory=RuleConfig)
     dashboard: DashboardConfig = field(default_factory=DashboardConfig)
     firewall: FirewallConfig = field(default_factory=FirewallConfig)
+    honeypot: HoneypotConfig = field(default_factory=HoneypotConfig)
     logwatch: List[LogSourceConfig] = field(default_factory=list)
 
     def validate(self) -> "Config":
@@ -178,6 +218,7 @@ class Config:
         self.rules.validate()
         self.dashboard.validate()
         self.firewall.validate()
+        self.honeypot.validate()
         for source in self.logwatch:
             source.validate()
         return self
@@ -202,6 +243,7 @@ class Config:
             ("rules", RuleConfig),
             ("dashboard", DashboardConfig),
             ("firewall", FirewallConfig),
+            ("honeypot", HoneypotConfig),
         ):
             if name in data:
                 kwargs[name] = _build(sub_cls, data.pop(name), name)

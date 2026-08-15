@@ -75,6 +75,20 @@ firewall:
   block_command: ["nft", "add", "element", "inet", "filter", "banned", "{ {ip} }"]
   unblock_command: ["nft", "delete", "element", "inet", "filter", "banned", "{ {ip} }"]
 
+# Die Falle: vorgetaeuschte Schwachstellen.
+# Wer /.env, /wp-admin oder /phpmyadmin aufruft, sucht gezielt nach Luecken.
+# Ein einziger Treffer genuegt fuer eine Sperre - Vertipper sehen anders aus.
+honeypot:
+  enabled: true
+  block_seconds: 86400      # 24 Stunden
+  paths: []                 # leer = eingebaute Liste (loginshield honeypot --list)
+  extra_paths: []           # eigene Koeder, z.B. ["/api/v1/debug*"]
+  exclude_paths: []         # falls ein Koeder mit einer echten Route kollidiert
+  tarpit_seconds: 0         # Antwort verzoegern, um Scanner auszubremsen
+  hidden_field: website     # unsichtbares Formularfeld im Login (Bot-Falle)
+  decoy_user: svc_backup    # untergeschobene Zugangsdaten
+  decoy_password: ""        # leer = stabil aus dem Schluessel abgeleitet
+
 # Optional: Logdateien mitlesen (loginshield watch)
 logwatch: []
 #  - path: /var/log/auth.log
@@ -191,6 +205,19 @@ def build_parser() -> argparse.ArgumentParser:
     prune.add_argument("--days", type=float, default=None,
                        help="Aufbewahrung in Tagen (Standard: aus der Konfiguration)")
     prune.set_defaults(handler=cmd_prune)
+
+    honeypot = subparsers.add_parser(
+        "honeypot", help="Koeder-Server starten oder die Falle inspizieren"
+    )
+    honeypot.add_argument("--host", default="0.0.0.0", help="Bind-Adresse")
+    honeypot.add_argument("--port", type=int, default=8081, help="Port des Koeders")
+    honeypot.add_argument("--list", action="store_true",
+                          help="Nur die Koederpfade anzeigen")
+    honeypot.add_argument("--credentials", action="store_true",
+                          help="Die untergeschobenen Zugangsdaten anzeigen")
+    honeypot.add_argument("--only-traps", action="store_true",
+                          help="Nur bekannte Koederpfade sperren, nicht jeden Zugriff")
+    honeypot.set_defaults(handler=cmd_honeypot)
 
     demo = subparsers.add_parser(
         "demo", help="Beispiel-Angriffsdaten erzeugen (zum Ausprobieren des Dashboards)"
@@ -535,6 +562,61 @@ def cmd_prune(args) -> int:
         guard.close()
 
 
+def cmd_honeypot(args) -> int:
+    from .honeypot import HoneypotServer
+
+    guard = _guard(args)
+    try:
+        honeypot = guard.honeypot
+
+        if args.list:
+            print(f"Koederpfade ({len(honeypot.traps)}), ein Treffer genuegt fuer "
+                  f"{_fmt_duration(honeypot.config.block_seconds)} Sperre:\n")
+            rows = [[trap.pattern, trap.kind] for trap in honeypot.traps]
+            print(_table(rows, ["Pfad", "vorgetaeuschte Luecke"]))
+            return 0
+
+        if args.credentials:
+            user, password = honeypot.credentials()
+            print("Untergeschobene Zugangsdaten (Honeytoken):")
+            print(f"  Benutzer:  {user}")
+            print(f"  Passwort:  {password}")
+            print("\nDiese Daten stehen in den gefaelschten Dateien und sind nirgends")
+            print("gueltig. Taucht der Benutzername am echten Login auf, hat derjenige")
+            print("die Koederdatei gelesen -> sofortige Sperre.")
+            print("\nIm eigenen Login pruefen mit:")
+            print("  if guard.honeypot.is_honeytoken(username):")
+            print("      guard.record_honeypot(ip, reason='honeypot_token')")
+            return 0
+
+        if not honeypot.enabled:
+            print("Der Honeypot ist in der Konfiguration abgeschaltet "
+                  "(honeypot.enabled: false).", file=sys.stderr)
+            return 1
+
+        server = HoneypotServer(
+            guard, honeypot, host=args.host, port=args.port,
+            block_every_request=not args.only_traps,
+        )
+        print(f"Koeder-Server laeuft auf http://{args.host}:{server.port}/")
+        print(f"Sperrdauer bei Treffer: {_fmt_duration(honeypot.config.block_seconds)}")
+        if args.only_traps:
+            print("Es werden nur bekannte Koederpfade gesperrt.")
+        else:
+            print("ACHTUNG: Jeder Zugriff auf diesen Port fuehrt zur Sperre.")
+            print("Nur auf einem Port betreiben, den keine echte Anwendung nutzt.")
+        print("Beenden mit Strg+C.")
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            print("\nKoeder-Server wird beendet ...")
+        finally:
+            server.stop()
+        return 0
+    finally:
+        guard.close()
+
+
 def cmd_demo(args) -> int:
     """Erzeugt realistisch aussehende Beispieldaten - nur zum Ausprobieren."""
     guard = _guard(args)
@@ -570,10 +652,27 @@ def cmd_demo(args) -> int:
                     ts=ts,
                 )
 
+        # Ein paar Scanner, die in den Honeypot getappt sind
+        scanner_paths = ["/.env", "/wp-admin/setup-config.php", "/.git/config",
+                         "/phpmyadmin/index.php", "/backup.sql"]
+        for index, path in enumerate(scanner_paths):
+            store.record_attempt(
+                "185.234.219.%d" % (30 + index),
+                Event.HONEYPOT,
+                route=path,
+                user_agent="Mozilla/5.0 (compatible; Nmap Scripting Engine)",
+                source="demo",
+                detail=f"{Reason.HONEYPOT_PATH} Demo-Daten",
+                ts=now - rng.random() * 6 * 3600,
+            )
+        guard.block("185.234.219.30", reason=Reason.HONEYPOT_PATH,
+                    seconds=guard.config.honeypot.block_seconds, detail="/.env")
+
         for ip in attackers[:3]:
             guard.block(ip, reason=Reason.BRUTE_FORCE_IP, detail="Demo-Daten")
 
-        print(f"{args.events} Beispielereignisse und 3 Sperren angelegt.")
+        print(f"{args.events} Beispielereignisse, 5 Honeypot-Treffer und "
+              f"4 Sperren angelegt.")
         print("Jetzt ansehen mit:  loginshield status   oder   loginshield serve")
         return 0
     finally:

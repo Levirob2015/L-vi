@@ -29,6 +29,8 @@ class ParsedEvent:
     identity: str = ""
     route: str = ""
     detail: str = ""
+    #: "login" = normaler Anmeldeversuch, "honeypot" = Zugriff auf einen Koeder
+    kind: str = "login"
 
 
 # -- Muster --------------------------------------------------------------
@@ -62,8 +64,15 @@ NGINX_LINE = re.compile(
 )
 
 
-def parse_line(line: str, source: LogSourceConfig) -> Optional[ParsedEvent]:
-    """Wertet eine Logzeile aus. ``None`` = keine relevante Zeile."""
+def parse_line(line: str, source: LogSourceConfig,
+               honeypot=None) -> Optional[ParsedEvent]:
+    """Wertet eine Logzeile aus. ``None`` = keine relevante Zeile.
+
+    Mit ``honeypot`` werden Webserver-Zeilen zusaetzlich gegen die
+    Koederpfade geprueft - unabhaengig vom Status. Ein Scanner, der
+    ``/.env`` abruft, bekommt vom Webserver ein 404 und wuerde sonst
+    durchrutschen.
+    """
     line = line.rstrip("\n")
     if not line:
         return None
@@ -71,7 +80,7 @@ def parse_line(line: str, source: LogSourceConfig) -> Optional[ParsedEvent]:
     if source.format == "sshd":
         return _parse_sshd(line)
     if source.format == "nginx":
-        return _parse_nginx(line, source)
+        return _parse_nginx(line, source, honeypot)
     return _parse_custom(line, source)
 
 
@@ -92,7 +101,8 @@ def _parse_sshd(line: str) -> Optional[ParsedEvent]:
     return None
 
 
-def _parse_nginx(line: str, source: LogSourceConfig) -> Optional[ParsedEvent]:
+def _parse_nginx(line: str, source: LogSourceConfig,
+                 honeypot=None) -> Optional[ParsedEvent]:
     match = NGINX_LINE.match(line)
     if not match:
         return None
@@ -100,9 +110,16 @@ def _parse_nginx(line: str, source: LogSourceConfig) -> Optional[ParsedEvent]:
     if not ip:
         return None
     route = match.group("route")
+    status = int(match.group("status"))
+
+    # Koederpfad geht vor: hier zaehlt der Aufruf, nicht der Status.
+    if honeypot is not None and honeypot.enabled:
+        trap = honeypot.match(route)
+        if trap is not None:
+            return ParsedEvent(ip, False, "", route, detail=trap.kind, kind="honeypot")
+
     if source.path_filter and not route.startswith(source.path_filter):
         return None
-    status = int(match.group("status"))
     identity = match.group("identity")
     if identity == "-":
         identity = ""
@@ -200,9 +217,11 @@ class LogWatcher:
     """Verbindet mehrere Logquellen mit dem :class:`Guard`."""
 
     def __init__(self, guard: Guard, sources: Sequence[LogSourceConfig], *,
-                 from_start: bool = False) -> None:
+                 from_start: bool = False, honeypot=None) -> None:
         self.guard = guard
         self.sources = list(sources)
+        #: None = der Honeypot des Guards, False = abgeschaltet.
+        self.honeypot = guard.honeypot if honeypot is None else (honeypot or None)
         self._tailers: Dict[str, Tailer] = {
             source.path: Tailer(source.path, from_start=from_start)
             for source in self.sources
@@ -215,11 +234,18 @@ class LogWatcher:
         for source in self.sources:
             tailer = self._tailers[source.path]
             for line in tailer.read_new():
-                event = parse_line(line, source)
+                event = parse_line(line, source, self.honeypot)
                 if event is None:
                     continue
                 handled += 1
-                if event.success:
+                if event.kind == "honeypot":
+                    self.guard.record_honeypot(
+                        event.ip,
+                        route=event.route,
+                        source=source.format,
+                        detail=event.detail,
+                    )
+                elif event.success:
                     self.guard.record_success(
                         event.ip,
                         identity=event.identity or None,

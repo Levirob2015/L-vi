@@ -5,6 +5,9 @@ import pytest
 
 from loginshield.cli import main
 
+#: 'loginshield demo' legt zusaetzlich zu --events so viele Honeypot-Treffer an.
+DEMO_HONEYPOT_EVENTS = 5
+
 
 @pytest.fixture
 def db(tmp_path):
@@ -84,22 +87,24 @@ def test_demo_und_status(db, capsys):
     assert run(["status", "--json"], db) == 0
     data = json.loads(capsys.readouterr().out)
     assert data["failures"] > 0
-    assert data["active_blocks"] == 3
+    assert data["honeypot"] == DEMO_HONEYPOT_EVENTS
+    assert data["active_blocks"] == 4  # 3x Brute Force + 1x Honeypot
 
 
 def test_export_json_und_csv(db, tmp_path, capsys):
     run(["demo", "--events", "20"], db)
     capsys.readouterr()
+    total = 20 + DEMO_HONEYPOT_EVENTS
 
     out = tmp_path / "export.json"
     assert run(["export", "--out", str(out)], db) == 0
-    assert len(json.loads(out.read_text())) == 20
+    assert len(json.loads(out.read_text())) == total
 
     out_csv = tmp_path / "export.csv"
     assert run(["export", "--format", "csv", "--out", str(out_csv)], db) == 0
     lines = out_csv.read_text().strip().splitlines()
     assert lines[0].startswith("ts,ip,event")
-    assert len(lines) == 21
+    assert len(lines) == total + 1  # plus Kopfzeile
 
 
 def test_prune(db, capsys):
@@ -107,6 +112,28 @@ def test_prune(db, capsys):
     capsys.readouterr()
     assert run(["prune", "--days", "0.0001"], db) == 0
     assert "Geloeschte Ereignisse" in capsys.readouterr().out
+
+
+def test_honeypot_liste(db, capsys):
+    assert run(["honeypot", "--list"], db) == 0
+    output = capsys.readouterr().out
+    assert "/.env" in output
+    assert "/wp-admin*" in output
+
+
+def test_honeypot_zugangsdaten(db, capsys):
+    assert run(["honeypot", "--credentials"], db) == 0
+    output = capsys.readouterr().out
+    assert "svc_backup" in output
+    assert "is_honeytoken" in output  # Hinweis zur Einbindung
+
+
+def test_honeypot_abgeschaltet(tmp_path, capsys):
+    path = tmp_path / "aus.json"
+    path.write_text('{"honeypot": {"enabled": false}}')
+    assert main(["--config", str(path), "--db", str(tmp_path / "x.db"),
+                 "honeypot"]) == 1
+    assert "abgeschaltet" in capsys.readouterr().err
 
 
 def test_watch_ohne_quellen(db, capsys):

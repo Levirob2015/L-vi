@@ -292,6 +292,7 @@ main { padding:20px; max-width:1200px; margin:0 auto; }
 .card .value { font-size:28px; font-weight:600; margin-top:4px; font-variant-numeric:tabular-nums; }
 .card.danger .value { color:var(--danger); }
 .card.ok .value { color:var(--ok); }
+.card.warn .value { color:var(--warn); }
 section { background:var(--panel); border:1px solid var(--line); border-radius:10px;
   margin-top:16px; overflow:hidden; }
 section > h2 { font-size:14px; margin:0; padding:12px 16px; border-bottom:1px solid var(--line);
@@ -310,6 +311,7 @@ tr:last-child td { border-bottom:none; }
 .tag.fail { color:var(--danger); border-color:var(--danger); }
 .tag.ok { color:var(--ok); border-color:var(--ok); }
 .tag.deny { color:var(--warn); border-color:var(--warn); }
+.tag.trap { color:#fff; background:var(--warn); border-color:var(--warn); }
 button { font:inherit; font-size:13px; padding:4px 11px; border-radius:6px; cursor:pointer;
   border:1px solid var(--line); background:transparent; color:var(--text); }
 button:hover { border-color:var(--accent); color:var(--accent); }
@@ -347,6 +349,7 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
     <div class="card danger"><div class="label">Fehlversuche</div><div class="value" id="c-fail">-</div></div>
     <div class="card"><div class="label">Angreifende IPs</div><div class="value" id="c-ips">-</div></div>
     <div class="card danger"><div class="label">Aktive Sperren</div><div class="value" id="c-blocks">-</div></div>
+    <div class="card warn"><div class="label">Honeypot-Treffer</div><div class="value" id="c-honeypot">-</div></div>
     <div class="card"><div class="label">Abgewiesen</div><div class="value" id="c-denied">-</div></div>
     <div class="card ok"><div class="label">Erfolgreiche Logins</div><div class="value" id="c-ok">-</div></div>
   </div>
@@ -381,6 +384,7 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
           <option value="">Alle Ereignisse</option>
           <option value="login_failure">Nur Fehlversuche</option>
           <option value="login_success">Nur Erfolge</option>
+          <option value="honeypot">Nur Honeypot-Treffer</option>
           <option value="denied">Nur abgewiesene</option>
         </select>
       </div>
@@ -501,6 +505,7 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
     document.getElementById("c-fail").textContent = stats.failures;
     document.getElementById("c-ips").textContent = stats.attacking_ips;
     document.getElementById("c-blocks").textContent = stats.active_blocks;
+    document.getElementById("c-honeypot").textContent = stats.honeypot;
     document.getElementById("c-denied").textContent = stats.denied;
     document.getElementById("c-ok").textContent = stats.successes;
     document.getElementById("meta").textContent =
@@ -566,6 +571,7 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
   var TAGS = {
     login_failure: ["Fehlversuch", "tag fail"],
     login_success: ["Erfolg", "tag ok"],
+    honeypot: ["Honeypot", "tag trap"],
     denied: ["Abgewiesen", "tag deny"],
     request: ["Request", "tag"]
   };

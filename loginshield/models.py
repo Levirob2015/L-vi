@@ -13,6 +13,7 @@ class Event:
     LOGIN_SUCCESS = "login_success"
     REQUEST = "request"
     DENIED = "denied"
+    HONEYPOT = "honeypot"
 
 
 class Reason:
@@ -30,6 +31,11 @@ class Reason:
     CREDENTIAL_SPRAY = "credential_spray"
     RATE_LIMIT_ABUSE = "rate_limit_abuse"
     MANUAL = "manual"
+
+    # Honeypot: kein Schwellwert noetig, ein einziger Treffer genuegt
+    HONEYPOT_PATH = "honeypot_path"        # gefaelschte Schwachstelle aufgerufen
+    HONEYPOT_TOKEN = "honeypot_token"      # untergeschobene Zugangsdaten benutzt
+    HONEYPOT_FIELD = "honeypot_field"      # unsichtbares Formularfeld ausgefuellt
 
 
 #: Entscheidungen, bei denen der Aufrufer den Request abweisen soll.

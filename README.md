@@ -45,6 +45,7 @@ dem richtigen Passwort.
 | **Password Spraying** | Eine IP probiert viele verschiedene Konten | 5 Konten / 10 Min |
 | **Gezielter Kontoangriff** | Viele Fehlversuche gegen *ein* Konto, verteilt über viele IPs | 10 Versuche / 15 Min |
 | **Request-Flut** | Zu viele Anfragen pro IP (unabhängig vom Login) | 60 / Min |
+| **Honeypot** | Zugriff auf eine vorgetäuschte Schwachstelle | **1 Treffer** |
 
 Spraying braucht eine eigene Regel: Wer pro Konto nur zwei Passwörter probiert,
 löst die klassische Fehlversuchs-Schwelle nie aus – über zwanzig Konten hinweg
@@ -54,6 +55,98 @@ ist es trotzdem ein Angriff.
 maximal 24 Stunden. Frühere Sperren zählen 7 Tage lang mit. Ein hartnäckiger
 Angreifer sperrt sich damit selbst immer länger aus, ein Nutzer mit
 Zahlendreher wartet nur kurz.
+
+---
+
+## Der Honeypot: die Falle
+
+Ein Angreifer sucht, bevor er Passwörter durchprobiert, erst nach leichter
+Beute: `/.env`, `/wp-admin`, `/phpmyadmin`, `/.git/config`. Diese Pfade
+existieren nicht – aber sie **antworten**, als gäbe es sie. Damit ist der
+Angreifer entlarvt, bevor er den echten Login überhaupt gesehen hat.
+
+Drei Fallen greifen ineinander:
+
+### 1. Gefälschte Schwachstellen
+
+28 Köderpfade sind eingebaut (`loginshield honeypot --list`). Ein Aufruf
+genügt für 24 Stunden Sperre – es gibt keinen harmlosen Grund, `/.env`
+abzurufen. Der Angreifer bekommt eine glaubwürdige Antwort:
+
+```
+$ curl https://deine-seite.de/.env
+APP_ENV=production
+DB_HOST=10.0.0.14
+DB_USERNAME=svc_backup
+DB_PASSWORD=Srv5e751856a91e!
+```
+
+Kein 403, keine Fehlermeldung – er merkt nichts. Ab jetzt kommt er nirgends
+mehr durch.
+
+### 2. Untergeschobene Zugangsdaten (Honeytoken)
+
+Die Zugangsdaten in den gefälschten Dateien sind nirgends gültig. Taucht
+dieser Benutzername später am echten Login auf, ist das kein Zufall –
+derjenige hat die Köderdatei gelesen. Sofortige Sperre:
+
+```python
+if guard.honeypot.is_honeytoken(username):
+    guard.honeypot.trigger(ip, route="/login", reason=Reason.HONEYPOT_TOKEN)
+    return response(401, "Benutzername oder Passwort falsch.")
+```
+
+Wichtig: dem Angreifer dieselbe Meldung zeigen wie bei einem falschen
+Passwort. Er soll nicht merken, dass er in eine Falle gelaufen ist.
+
+`loginshield honeypot --credentials` zeigt die Daten deiner Installation –
+sie werden stabil aus deinem Schlüssel abgeleitet, sind also bei jedem
+Server andere.
+
+### 3. Unsichtbares Formularfeld
+
+Ein Eingabefeld, das Menschen nicht sehen. Bots füllen jedes Feld aus, das
+sie finden:
+
+```python
+form_html = guard.honeypot.hidden_field_html()   # ins Login-Formular
+
+if guard.honeypot.check_hidden_field(form):      # ausgefüllt = Bot
+    guard.honeypot.trigger(ip, reason=Reason.HONEYPOT_FIELD)
+```
+
+### Einbinden
+
+In der Middleware ist der Honeypot **automatisch aktiv** – die Köderpfade
+werden abgefangen, bevor die Anwendung sie sieht. Fallen 2 und 3 brauchen
+die zwei Aufrufe oben im Login-Handler, weil nur dort das Formular bekannt ist.
+
+Als eigenständiger Dienst auf einem ungenutzten Port – dann ist *jeder*
+Zugriff ein Scan:
+
+```bash
+loginshield honeypot --port 8081
+```
+
+Der Server tarnt sich als gewöhnlicher Apache und liefert je nach Pfad ein
+gefälschtes phpMyAdmin, einen SQL-Dump oder ein Verzeichnislisting.
+
+### Bevor du ihn scharf schaltest
+
+Prüfe, ob ein Köder mit einer echten Route kollidiert – sonst sperrst du
+deine eigenen Nutzer aus:
+
+```python
+guard.honeypot.conflicts_with(["/admin", "/debug", "/login"])
+# -> ['/admin'] : diesen Pfad in honeypot.exclude_paths eintragen
+```
+
+Die Allowlist gilt weiterhin: Dein eigener Sicherheitsscanner löst den
+Treffer aus, wird protokolliert, aber nicht gesperrt.
+
+Der Honeypot ist rein defensiv. Er reagiert nur auf Zugriffe, die von selbst
+kommen, sammelt keine Daten über den Angreifer und unternimmt nichts gegen
+ihn – er sperrt ihn aus, mehr nicht.
 
 ---
 
@@ -137,6 +230,10 @@ logwatch:
     failure_statuses: [401, 403]
 ```
 
+Der Honeypot greift auch hier: Ruft ein Scanner `/.env` ab, antwortet nginx
+mit 404 – für den Log-Wächter ist es trotzdem ein Treffer, unabhängig vom
+Status. So werden Scans erkannt, ohne dass die Anwendung etwas davon merkt.
+
 Eigene Anwendungslogs mit `format: custom` und einem Regex, der die Gruppen
 `(?P<ip>...)` und optional `(?P<identity>...)` enthält.
 Logrotation wird automatisch erkannt.
@@ -159,6 +256,9 @@ firewall:
 loginshield init                       Konfiguration + Token anlegen
 loginshield serve [--watch]            Dashboard starten
 loginshield watch --path DATEI         Logdateien mitlesen
+loginshield honeypot                   Koeder-Server starten
+loginshield honeypot --list            Koederpfade anzeigen
+loginshield honeypot --credentials     untergeschobene Zugangsdaten zeigen
 loginshield status [--hours 24]        Lage-Überblick im Terminal
 loginshield check IP                   Status einer IP abfragen
 loginshield block IP [--minutes 60]    IP manuell sperren
@@ -199,6 +299,13 @@ rules:
   block_base_seconds: 900
   block_escalation_factor: 2.0
   identity_action: throttle   # throttle | lock | off
+
+honeypot:
+  enabled: true
+  block_seconds: 86400        # 24 Stunden nach einem Treffer
+  extra_paths: []             # eigene Köder, z.B. ["/api/v1/debug*"]
+  exclude_paths: []           # falls ein Köder mit einer echten Route kollidiert
+  hidden_field: website       # Name des unsichtbaren Formularfelds
 ```
 
 Geheimnisse lassen sich per Umgebungsvariable aus der Datei heraushalten:
@@ -284,10 +391,12 @@ zuerst mit `loginshield demo` oder der Beispiel-App.
 
 ```bash
 pip install pytest
-python -m pytest -q      # 120 Tests
+python -m pytest -q      # 181 Tests
 ```
 
-Abgedeckt sind unter anderem: Erkennungsregeln und Eskalation, Allowlist,
+Abgedeckt sind unter anderem: Erkennungsregeln und Eskalation, Honeypot in
+allen drei Varianten (inklusive der Prüfung, dass die Köder sich nicht
+verraten), Allowlist,
 Rate-Limiting, IP-Auflösung hinter Proxys inklusive gefälschter Header,
 Log-Parsing (sshd/nginx/custom) samt Logrotation, ASGI- und WSGI-Middleware,
 Dashboard-API mit Authentifizierung und die Kommandozeile. Zeitabhängige
@@ -304,6 +413,7 @@ loginshield/
   ratelimit.py   Gleitendes Zeitfenster
   netutils.py    IP-/CIDR-Logik, Proxy-Auflösung
   middleware.py  ASGI- und WSGI-Einbindung
+  honeypot.py    die Falle: Köderpfade, Honeytoken, Köder-Server
   logwatch.py    Logdateien mitlesen
   dashboard.py   Web-Oberfläche
   firewall.py    optionale nft/iptables-Anbindung
