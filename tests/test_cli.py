@@ -114,6 +114,32 @@ def test_prune(db, capsys):
     assert "Geloeschte Ereignisse" in capsys.readouterr().out
 
 
+def test_firewall_status(db, capsys):
+    assert run(["firewall", "--status"], db) == 0
+    output = capsys.readouterr().out
+    assert "Backend" in output
+    # Ohne Aktivierung in der Konfiguration muss der Hinweis kommen.
+    assert "nicht aktiv" in output
+
+
+def test_firewall_setup_trockenlauf(db, capsys, monkeypatch):
+    import shutil as shutil_module
+
+    monkeypatch.setattr(shutil_module, "which", lambda binary: "/usr/sbin/" + binary)
+    assert run(["firewall", "--setup", "--dry-run"], db) == 0
+    output = capsys.readouterr().out
+    assert "add table inet loginshield" in output
+    assert "nichts geaendert" in output
+
+
+def test_firewall_clear_fragt_nach(db, capsys, monkeypatch):
+    import shutil as shutil_module
+
+    monkeypatch.setattr(shutil_module, "which", lambda binary: None)
+    assert run(["firewall", "--clear"], db) == 0
+    assert "erneut mit --yes" in capsys.readouterr().out
+
+
 def test_honeypot_liste(db, capsys):
     assert run(["honeypot", "--list"], db) == 0
     output = capsys.readouterr().out

@@ -45,9 +45,15 @@ def test_dashboard_ohne_token_nur_lokal():
     Config.from_dict({"dashboard": {"host": "0.0.0.0", "token": "geheim"}})
 
 
-def test_firewall_braucht_kommando():
+def test_firewall_erkennt_backend_automatisch():
+    # Ohne Angabe wird das Backend erkannt - kein Pflichtfeld mehr.
+    config = Config.from_dict({"firewall": {"enabled": True}})
+    assert config.firewall.backend == "auto"
+
+
+def test_firewall_command_backend_braucht_kommando():
     with pytest.raises(ConfigError):
-        Config.from_dict({"firewall": {"enabled": True}})
+        Config.from_dict({"firewall": {"enabled": True, "backend": "command"}})
 
 
 def test_logwatch_validierung():

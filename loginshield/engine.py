@@ -75,6 +75,15 @@ class Guard:
         self._allow_cache: List = []
         self._allow_cache_at = 0.0
 
+        if self.firewall.enabled and self.config.firewall.sync_on_start:
+            # Nach einem Neustart sind die Firewall-Regeln weg, die Sperren
+            # in der Datenbank aber noch gueltig. Fehler hier duerfen den
+            # Start nicht verhindern - die Sperre in der App gilt ohnehin.
+            try:
+                self.sync_firewall()
+            except Exception:  # pragma: no cover - systemabhaengig
+                log.exception("Firewall-Abgleich beim Start fehlgeschlagen")
+
     # ------------------------------------------------------------------
     # Adressen
     # ------------------------------------------------------------------
@@ -451,6 +460,13 @@ class Guard:
     # ------------------------------------------------------------------
     # Betrieb
     # ------------------------------------------------------------------
+    def sync_firewall(self) -> Dict[str, int]:
+        """Schreibt die aktiven Sperren in die Firewall und raeumt dort auf."""
+        now = self.clock()
+        self.store.expire_blocks(now)
+        active = self.store.list_blocks(active_only=True, limit=10_000, now=now)
+        return self.firewall.sync(active, now)
+
     def maintenance(self) -> Dict[str, int]:
         """Abgelaufene Sperren aufheben und alte Daten loeschen."""
         now = self.clock()

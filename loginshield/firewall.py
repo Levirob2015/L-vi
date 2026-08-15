@@ -1,79 +1,577 @@
-"""Optionale Anbindung an die System-Firewall.
+"""Anbindung an die System-Firewall.
 
-LoginShield sperrt zunaechst nur in der eigenen Anwendung. Wer moechte, kann
-zusaetzlich ein Kommando ausfuehren lassen, das die IP auf Netzwerkebene
-blockt. Das Kommando wird ohne Shell gestartet (kein ``shell=True``), damit
-eine IP-Angabe niemals als Shell-Code interpretiert werden kann - dieser Weg
-ist die klassische Schwachstelle solcher Integrationen.
+LoginShield sperrt zunaechst nur in der eigenen Anwendung: ein gesperrter
+Angreifer bekommt HTTP 403, seine Pakete erreichen den Server aber weiterhin.
+Mit einer Firewall-Anbindung wird die IP zusaetzlich auf Netzwerkebene
+geblockt - sie kommt dann an keinen Dienst mehr heran, auch nicht an SSH.
 
-Beispiel (nftables)::
+Unterstuetzt werden:
 
-    firewall:
-      enabled: true
-      block_command:   ["nft", "add", "element", "inet", "filter", "banned", "{ {ip} }"]
-      unblock_command: ["nft", "delete", "element", "inet", "filter", "banned", "{ {ip} }"]
+* ``nftables``  - bevorzugt, weil Sperren dort eine eigene Ablaufzeit haben
+* ``iptables``  - eigene Kette, Ablauf steuert LoginShield
+* ``ufw``       - die Ubuntu-Oberflaeche fuer iptables
+* ``command``   - beliebige eigene Kommandos
+
+Sicherheitsgrundsaetze dieses Moduls:
+
+* Kommandos laufen **ohne Shell** (kein ``shell=True``) mit fester
+  Argumentliste. Eine IP kann damit niemals als Shell-Code enden - das ist
+  die klassische Luecke selbstgebauter fail2ban-Klone.
+* Es werden nur IPs weitergereicht, die vorher als gueltige Adresse geparst
+  wurden.
+* LoginShield legt eine **eigene** Tabelle bzw. Kette an und fasst nichts
+  anderes an. ``clear()`` entfernt nur die eigenen Eintraege.
+* ``127.0.0.0/8`` und ``::1`` werden nie gesperrt - das wuerde den Server
+  von seinen eigenen Diensten abschneiden.
+* Schlaegt ein Firewall-Kommando fehl, wird das protokolliert, aber nie eine
+  Ausnahme nach oben gereicht: die Sperre in der Anwendung gilt weiter.
 """
 
 from __future__ import annotations
 
+import ipaddress
 import logging
+import re
+import shutil
 import subprocess
-from typing import List, Optional, Sequence
+from dataclasses import dataclass, field
+from typing import Callable, List, Optional, Sequence
 
 from .config import FirewallConfig
-from .netutils import normalize_ip
+from .netutils import parse_ip
 
 log = logging.getLogger("loginshield.firewall")
 
+#: Diese Adressen werden nie an die Firewall weitergereicht.
+NEVER_BLOCK = (
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+)
 
-class Firewall:
-    def __init__(self, config: Optional[FirewallConfig] = None) -> None:
-        self.config = config or FirewallConfig()
+
+@dataclass
+class CommandResult:
+    argv: List[str]
+    returncode: int = 0
+    stdout: str = ""
+    stderr: str = ""
+    skipped: bool = False
 
     @property
-    def enabled(self) -> bool:
-        return bool(self.config.enabled and self.config.block_command)
+    def ok(self) -> bool:
+        return self.returncode == 0
+
+
+def run_command(argv: Sequence[str], timeout: float = 10.0) -> CommandResult:
+    """Fuehrt ein Kommando ohne Shell aus."""
+    argv = list(argv)
+    try:
+        completed = subprocess.run(  # noqa: S603 - feste Argumentliste, keine Shell
+            argv, capture_output=True, timeout=timeout, check=False
+        )
+    except FileNotFoundError:
+        return CommandResult(argv, 127, "", f"{argv[0]}: nicht gefunden")
+    except subprocess.TimeoutExpired:
+        return CommandResult(argv, 124, "", f"{argv[0]}: Zeitueberschreitung")
+    except OSError as exc:
+        return CommandResult(argv, 1, "", str(exc))
+    return CommandResult(
+        argv,
+        completed.returncode,
+        completed.stdout.decode("utf-8", "replace"),
+        completed.stderr.decode("utf-8", "replace"),
+    )
+
+
+# ----------------------------------------------------------------------
+# Backends
+# ----------------------------------------------------------------------
+class Backend:
+    """Gemeinsame Basis. Ein Backend uebersetzt block/unblock in Kommandos."""
+
+    name = "none"
+    binary = ""
+    #: True, wenn das Backend Sperren selbst ablaufen laesst.
+    supports_timeout = False
+
+    def __init__(self, config: FirewallConfig,
+                 run: Callable[..., CommandResult] = run_command) -> None:
+        self.config = config
+        self._run = run
+
+    # -- Hilfen --------------------------------------------------------
+    def _argv(self, *parts: str) -> List[str]:
+        argv = [str(part) for part in parts]
+        if self.config.sudo:
+            # -n: niemals interaktiv nach einem Passwort fragen, sonst
+            # haengt ein Dienst ohne Terminal endlos.
+            return ["sudo", "-n"] + argv
+        return argv
+
+    def execute(self, *parts: str) -> CommandResult:
+        argv = self._argv(*parts)
+        if self.config.dry_run:
+            log.info("[Trockenlauf] %s", " ".join(argv))
+            return CommandResult(argv, 0, "", "", skipped=True)
+        result = self._run(argv, self.config.timeout)
+        if not result.ok:
+            log.error(
+                "Firewall-Kommando fehlgeschlagen (%s): %s",
+                " ".join(argv), (result.stderr or result.stdout).strip()[:300],
+            )
+        return result
+
+    # -- Schnittstelle -------------------------------------------------
+    def available(self) -> bool:
+        return bool(self.binary) and shutil.which(self.binary) is not None
+
+    def is_ready(self) -> bool:
+        """Ist die noetige Struktur (Tabelle/Kette) bereits angelegt?"""
+        return True
+
+    def setup_commands(self) -> List[List[str]]:
+        return []
+
+    def setup(self) -> bool:
+        for parts in self.setup_commands():
+            if not self.execute(*parts).ok:
+                return False
+        return True
 
     def block(self, ip: str, seconds: int) -> bool:
-        return self._run(self.config.block_command, ip, seconds)
+        raise NotImplementedError
+
+    def unblock(self, ip: str) -> bool:
+        raise NotImplementedError
+
+    def list_blocked(self) -> List[str]:
+        return []
+
+    def clear(self) -> bool:
+        ok = True
+        for ip in self.list_blocked():
+            ok = self.unblock(ip) and ok
+        return ok
+
+
+class NullBackend(Backend):
+    """Kein Backend - die Sperre gilt nur in der Anwendung."""
+
+    name = "none"
+
+    def available(self) -> bool:
+        return True
+
+    def block(self, ip: str, seconds: int) -> bool:
+        return False
+
+    def unblock(self, ip: str) -> bool:
+        return False
+
+
+class NftablesBackend(Backend):
+    """nftables mit eigener Tabelle und ablaufenden Elementen.
+
+    Die Sets bekommen ``flags timeout``: nftables entfernt eine IP dann von
+    selbst, wenn die Zeit um ist. Selbst wenn LoginShield abstuerzt, bleibt
+    niemand dauerhaft ausgesperrt.
+    """
+
+    name = "nftables"
+    binary = "nft"
+    supports_timeout = True
+
+    @property
+    def table(self) -> str:
+        return self.config.table
+
+    def _set_for(self, ip: str) -> Optional[str]:
+        address = parse_ip(ip)
+        if address is None:
+            return None
+        return "blocked4" if address.version == 4 else "blocked6"
+
+    def setup_commands(self) -> List[List[str]]:
+        table = self.table
+        return [
+            ["nft", "add", "table", "inet", table],
+            ["nft", "add", "set", "inet", table, "blocked4",
+             "{ type ipv4_addr; flags timeout; }"],
+            ["nft", "add", "set", "inet", table, "blocked6",
+             "{ type ipv6_addr; flags timeout; }"],
+            # Eigene Kette mit Prioritaet -10: greift vor den ueblichen
+            # filter-Regeln (Prioritaet 0), aendert diese aber nicht.
+            ["nft", "add", "chain", "inet", table, "input",
+             "{ type filter hook input priority -10; policy accept; }"],
+            ["nft", "add", "rule", "inet", table, "input",
+             "ip", "saddr", "@blocked4", "drop"],
+            ["nft", "add", "rule", "inet", table, "input",
+             "ip6", "saddr", "@blocked6", "drop"],
+        ]
+
+    def is_ready(self) -> bool:
+        result = self._run(self._argv("nft", "list", "set", "inet", self.table,
+                                      "blocked4"), self.config.timeout)
+        return result.ok
+
+    def block(self, ip: str, seconds: int) -> bool:
+        set_name = self._set_for(ip)
+        if set_name is None:
+            return False
+        element = f"{{ {ip} timeout {max(1, int(seconds))}s }}"
+        return self.execute("nft", "add", "element", "inet", self.table,
+                            set_name, element).ok
+
+    def unblock(self, ip: str) -> bool:
+        set_name = self._set_for(ip)
+        if set_name is None:
+            return False
+        result = self.execute("nft", "delete", "element", "inet", self.table,
+                              set_name, f"{{ {ip} }}")
+        if not result.ok and "No such file or directory" in result.stderr:
+            return True  # war ohnehin nicht drin
+        return result.ok
+
+    def list_blocked(self) -> List[str]:
+        found: List[str] = []
+        for set_name in ("blocked4", "blocked6"):
+            result = self._run(
+                self._argv("nft", "list", "set", "inet", self.table, set_name),
+                self.config.timeout,
+            )
+            if not result.ok:
+                continue
+            match = re.search(r"elements\s*=\s*\{(.*?)\}", result.stdout, re.S)
+            if not match:
+                continue
+            for entry in match.group(1).split(","):
+                entry = entry.strip()
+                if not entry:
+                    continue
+                address = parse_ip(entry.split()[0])
+                if address is not None:
+                    found.append(str(address))
+        return found
+
+    def clear(self) -> bool:
+        # Die ganze eigene Tabelle loeschen - fremde Regeln bleiben unberuehrt.
+        return self.execute("nft", "delete", "table", "inet", self.table).ok
+
+
+class IptablesBackend(Backend):
+    """iptables/ip6tables mit einer eigenen Kette.
+
+    Kein eigener Ablauf: LoginShield entfernt die Regel, wenn die Sperre
+    endet (``loginshield prune`` bzw. die Wartung im laufenden Betrieb).
+    """
+
+    name = "iptables"
+    binary = "iptables"
+
+    @property
+    def chain(self) -> str:
+        return self.config.table.upper()
+
+    def _binary_for(self, ip: str) -> Optional[str]:
+        address = parse_ip(ip)
+        if address is None:
+            return None
+        return "iptables" if address.version == 4 else "ip6tables"
+
+    def setup_commands(self) -> List[List[str]]:
+        commands: List[List[str]] = []
+        for binary in ("iptables", "ip6tables"):
+            commands.append([binary, "-N", self.chain])
+            # -C prueft, ob der Sprung schon existiert; erst dann einfuegen.
+            commands.append([binary, "-I", "INPUT", "1", "-j", self.chain])
+        return commands
+
+    def setup(self) -> bool:
+        ok = True
+        for binary in ("iptables", "ip6tables"):
+            # Kette anlegen; existiert sie schon, ist das kein Fehler.
+            create = self.execute(binary, "-N", self.chain)
+            if not create.ok and "exists" not in (create.stderr or "").lower():
+                ok = False
+            check = self._run(
+                self._argv(binary, "-C", "INPUT", "-j", self.chain),
+                self.config.timeout,
+            )
+            if not check.ok and not self.config.dry_run:
+                if not self.execute(binary, "-I", "INPUT", "1", "-j", self.chain).ok:
+                    ok = False
+        return ok
+
+    def is_ready(self) -> bool:
+        result = self._run(self._argv("iptables", "-S", self.chain),
+                           self.config.timeout)
+        return result.ok
+
+    def block(self, ip: str, seconds: int) -> bool:
+        binary = self._binary_for(ip)
+        if binary is None:
+            return False
+        # Doppelte Regeln vermeiden - sonst waechst die Kette endlos.
+        exists = self._run(
+            self._argv(binary, "-C", self.chain, "-s", ip, "-j", "DROP"),
+            self.config.timeout,
+        )
+        if exists.ok:
+            return True
+        return self.execute(binary, "-I", self.chain, "1", "-s", ip, "-j", "DROP").ok
+
+    def unblock(self, ip: str) -> bool:
+        binary = self._binary_for(ip)
+        if binary is None:
+            return False
+        result = self.execute(binary, "-D", self.chain, "-s", ip, "-j", "DROP")
+        if not result.ok and "does a matching rule exist" in result.stderr.lower():
+            return True
+        return result.ok
+
+    def list_blocked(self) -> List[str]:
+        found: List[str] = []
+        for binary in ("iptables", "ip6tables"):
+            result = self._run(self._argv(binary, "-S", self.chain),
+                               self.config.timeout)
+            if not result.ok:
+                continue
+            for line in result.stdout.splitlines():
+                match = re.search(r"-s\s+(\S+)\s", line)
+                if match and "-j DROP" in line:
+                    address = parse_ip(match.group(1).split("/")[0])
+                    if address is not None:
+                        found.append(str(address))
+        return found
+
+    def clear(self) -> bool:
+        ok = True
+        for binary in ("iptables", "ip6tables"):
+            if not self.execute(binary, "-F", self.chain).ok:
+                ok = False
+        return ok
+
+
+class UfwBackend(Backend):
+    """ufw - die vereinfachte Oberflaeche fuer iptables."""
+
+    name = "ufw"
+    binary = "ufw"
+
+    def block(self, ip: str, seconds: int) -> bool:
+        # insert 1: vor die eigenen Freigaben, sonst greift eine allow-Regel
+        # weiter oben und die Sperre laeuft ins Leere.
+        return self.execute("ufw", "insert", "1", "deny", "from", ip,
+                            "to", "any").ok
+
+    def unblock(self, ip: str) -> bool:
+        return self.execute("ufw", "--force", "delete", "deny", "from", ip,
+                            "to", "any").ok
+
+    def list_blocked(self) -> List[str]:
+        result = self._run(self._argv("ufw", "status"), self.config.timeout)
+        if not result.ok:
+            return []
+        found = []
+        for line in result.stdout.splitlines():
+            if "DENY" not in line.upper():
+                continue
+            for token in line.split():
+                address = parse_ip(token)
+                if address is not None:
+                    found.append(str(address))
+                    break
+        return found
+
+
+class CommandBackend(Backend):
+    """Eigene Kommandos aus der Konfiguration.
+
+    ``{ip}`` und ``{seconds}`` werden ersetzt::
+
+        firewall:
+          backend: command
+          block_command:   ["nft", "add", "element", ...]
+          unblock_command: ["nft", "delete", "element", ...]
+    """
+
+    name = "command"
+
+    def available(self) -> bool:
+        return bool(self.config.block_command)
+
+    def _expand(self, template: Sequence[str], ip: str, seconds: int) -> List[str]:
+        return [
+            part.replace("{ip}", ip).replace("{seconds}", str(int(seconds)))
+            for part in template
+        ]
+
+    def block(self, ip: str, seconds: int) -> bool:
+        if not self.config.block_command:
+            return False
+        return self.execute(*self._expand(self.config.block_command, ip, seconds)).ok
 
     def unblock(self, ip: str) -> bool:
         if not self.config.unblock_command:
             return False
-        return self._run(self.config.unblock_command, ip, 0)
+        return self.execute(*self._expand(self.config.unblock_command, ip, 0)).ok
+
+
+BACKENDS = {
+    "nftables": NftablesBackend,
+    "iptables": IptablesBackend,
+    "ufw": UfwBackend,
+    "command": CommandBackend,
+    "none": NullBackend,
+}
+
+#: Reihenfolge der automatischen Erkennung.
+AUTO_ORDER = ("nftables", "iptables", "ufw")
+
+
+@dataclass
+class FirewallStatus:
+    backend: str
+    available: bool
+    ready: bool
+    enabled: bool
+    dry_run: bool
+    blocked: List[str] = field(default_factory=list)
+    note: str = ""
+
+
+class Firewall:
+    """Fassade: waehlt das Backend und schuetzt vor Fehlbedienung."""
+
+    def __init__(self, config: Optional[FirewallConfig] = None,
+                 run: Callable[..., CommandResult] = run_command) -> None:
+        self.config = config or FirewallConfig()
+        self._run = run
+        self.backend = self._select_backend()
+
+    def _select_backend(self) -> Backend:
+        requested = (self.config.backend or "auto").lower()
+
+        if requested == "auto":
+            # Eigene Kommandos haben Vorrang - wer sie setzt, will sie nutzen.
+            if self.config.block_command:
+                return CommandBackend(self.config, self._run)
+            for name in AUTO_ORDER:
+                backend = BACKENDS[name](self.config, self._run)
+                if backend.available():
+                    return backend
+            return NullBackend(self.config, self._run)
+
+        backend_cls = BACKENDS.get(requested)
+        if backend_cls is None:
+            log.error("Unbekanntes Firewall-Backend %r - Firewall bleibt aus",
+                      requested)
+            return NullBackend(self.config, self._run)
+        return backend_cls(self.config, self._run)
 
     # ------------------------------------------------------------------
-    def _run(self, template: Sequence[str], ip: str, seconds: int) -> bool:
-        if not self.config.enabled or not template:
-            return False
+    @property
+    def enabled(self) -> bool:
+        return bool(self.config.enabled) and not isinstance(self.backend, NullBackend)
 
-        # Nur validierte IPs weiterreichen - nie rohen Nutzereingang.
-        safe_ip = normalize_ip(ip)
-        if safe_ip is None:
+    @property
+    def name(self) -> str:
+        return self.backend.name
+
+    def _safe_ip(self, ip: str) -> Optional[str]:
+        address = parse_ip(ip)
+        if address is None:
             log.warning("Firewall-Kommando uebersprungen, ungueltige IP: %r", ip)
-            return False
+            return None
+        for network in NEVER_BLOCK:
+            if address.version == network.version and address in network:
+                log.warning(
+                    "Firewall-Sperre fuer %s abgelehnt: eigene Adresse des Servers",
+                    address,
+                )
+                return None
+        return str(address)
 
-        argv: List[str] = [
-            part.replace("{ip}", safe_ip).replace("{seconds}", str(int(seconds)))
-            for part in template
-        ]
-        try:
-            result = subprocess.run(  # noqa: S603 - feste Argumentliste, keine Shell
-                argv,
-                capture_output=True,
-                timeout=self.config.timeout,
-                check=False,
-            )
-        except (OSError, subprocess.SubprocessError) as exc:
-            log.error("Firewall-Kommando fehlgeschlagen (%s): %s", argv[0], exc)
+    def block(self, ip: str, seconds: int) -> bool:
+        if not self.enabled:
             return False
+        safe = self._safe_ip(ip)
+        if safe is None:
+            return False
+        return self.backend.block(safe, int(seconds))
 
-        if result.returncode != 0:
-            log.error(
-                "Firewall-Kommando %s endete mit %s: %s",
-                argv[0],
-                result.returncode,
-                result.stderr.decode("utf-8", "replace").strip()[:300],
-            )
+    def unblock(self, ip: str) -> bool:
+        if not self.enabled:
             return False
-        return True
+        safe = self._safe_ip(ip)
+        if safe is None:
+            return False
+        return self.backend.unblock(safe)
+
+    def setup(self) -> bool:
+        return self.backend.setup()
+
+    def list_blocked(self) -> List[str]:
+        if isinstance(self.backend, NullBackend):
+            return []
+        return self.backend.list_blocked()
+
+    def clear(self) -> bool:
+        return self.backend.clear()
+
+    def status(self) -> FirewallStatus:
+        available = self.backend.available()
+        ready = available and self.backend.is_ready()
+        note = ""
+        if not available:
+            note = f"{self.backend.binary or 'Backend'} ist auf diesem System nicht verfuegbar"
+        elif not ready:
+            note = "Struktur fehlt - 'loginshield firewall --setup' ausfuehren"
+        return FirewallStatus(
+            backend=self.backend.name,
+            available=available,
+            ready=ready,
+            enabled=self.enabled,
+            dry_run=bool(self.config.dry_run),
+            blocked=self.list_blocked() if ready else [],
+            note=note,
+        )
+
+    def sync(self, active: Sequence, now: float) -> dict:
+        """Gleicht die Firewall mit den aktiven Sperren ab.
+
+        Noetig nach einem Neustart: nftables- und iptables-Regeln sind dann
+        weg, die Sperren in der Datenbank aber noch gueltig. Umgekehrt werden
+        Eintraege entfernt, die LoginShield nicht mehr kennt - sonst bleibt
+        jemand fuer immer ausgesperrt.
+        """
+        result = {"added": 0, "removed": 0, "failed": 0}
+        if not self.enabled:
+            return result
+
+        wanted = {}
+        for block in active:
+            safe = self._safe_ip(block.ip)
+            if safe is not None:
+                wanted[safe] = max(1, int(block.expires_ts - now))
+
+        present = set(self.list_blocked())
+
+        for ip, seconds in wanted.items():
+            if ip in present:
+                continue
+            if self.backend.block(ip, seconds):
+                result["added"] += 1
+            else:
+                result["failed"] += 1
+
+        for ip in present - set(wanted):
+            if self.backend.unblock(ip):
+                result["removed"] += 1
+            else:
+                result["failed"] += 1
+
+        if result["added"] or result["removed"]:
+            log.info("Firewall abgeglichen: %s hinzugefuegt, %s entfernt",
+                     result["added"], result["removed"])
+        return result

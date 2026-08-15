@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from typing import Any, Dict, List, Optional
 
@@ -114,18 +115,44 @@ class DashboardConfig:
 class FirewallConfig:
     """Optionale Anbindung an die System-Firewall.
 
-    Standardmaessig aus. Die Kommandos werden ohne Shell ausgefuehrt;
-    ``{ip}`` und ``{seconds}`` werden ersetzt.
+    Standardmaessig aus: ohne Firewall gilt die Sperre nur in der Anwendung,
+    mit Firewall auf Netzwerkebene fuer alle Dienste.
     """
 
     enabled: bool = False
+    #: auto | nftables | iptables | ufw | command | none
+    backend: str = "auto"
+    #: Nur die Kommandos anzeigen, nichts ausfuehren. Zum gefahrlosen Testen.
+    dry_run: bool = False
+    #: Kommandos mit 'sudo -n' ausfuehren (nie interaktiv nachfragen).
+    sudo: bool = False
+    #: Beim Start die aktiven Sperren in die Firewall schreiben. Nach einem
+    #: Neustart sind die Regeln weg, die Sperren aber noch gueltig.
+    sync_on_start: bool = True
+    #: Name der eigenen nft-Tabelle bzw. der iptables-Kette.
+    table: str = "loginshield"
+    #: Nur fuer backend=command. ``{ip}`` und ``{seconds}`` werden ersetzt.
     block_command: List[str] = field(default_factory=list)
     unblock_command: List[str] = field(default_factory=list)
     timeout: int = 10
 
     def validate(self) -> None:
-        if self.enabled and not self.block_command:
-            raise ConfigError("firewall.enabled gesetzt, aber kein block_command")
+        known = ("auto", "nftables", "iptables", "ufw", "command", "none")
+        if self.backend not in known:
+            raise ConfigError(
+                "firewall.backend muss eines von " + ", ".join(known) + " sein"
+            )
+        if self.enabled and self.backend == "command" and not self.block_command:
+            raise ConfigError(
+                "firewall.backend=command gesetzt, aber kein block_command"
+            )
+        if self.timeout <= 0:
+            raise ConfigError("firewall.timeout muss groesser als 0 sein")
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,28}", self.table):
+            # Der Name landet in Firewall-Kommandos - nur harmlose Zeichen.
+            raise ConfigError(
+                "firewall.table darf nur Buchstaben, Ziffern und _ enthalten"
+            )
 
 
 @dataclass

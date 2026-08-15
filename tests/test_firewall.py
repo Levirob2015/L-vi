@@ -1,0 +1,402 @@
+import os
+import shutil
+
+import pytest
+
+from loginshield import Guard
+from loginshield.config import Config, ConfigError, FirewallConfig
+from loginshield.firewall import (
+    CommandResult,
+    Firewall,
+    IptablesBackend,
+    NftablesBackend,
+    NullBackend,
+    UfwBackend,
+)
+
+
+class FakeRunner:
+    """Nimmt Kommandos entgegen, statt sie auszufuehren."""
+
+    def __init__(self, responses=None):
+        self.calls = []
+        self.responses = responses or {}
+
+    def __call__(self, argv, timeout=10):
+        argv = list(argv)
+        self.calls.append(argv)
+        for needle, response in self.responses.items():
+            if needle in " ".join(argv):
+                return response
+        return CommandResult(argv, 0, "", "")
+
+    @property
+    def commands(self):
+        return [" ".join(call) for call in self.calls]
+
+    def contains(self, fragment):
+        return any(fragment in command for command in self.commands)
+
+
+#: iptables '-C' prueft, ob eine Regel existiert - Exitcode 1 heisst "nein".
+RULE_MISSING = {"-C ": CommandResult([], 1, "", "does a matching rule exist?")}
+
+
+def make(backend="nftables", responses=None, **kwargs):
+    config = FirewallConfig(enabled=True, backend=backend, **kwargs)
+    runner = FakeRunner(responses)
+    return Firewall(config, runner), runner
+
+
+# -- Auswahl des Backends ------------------------------------------------
+def test_auto_erkennung_bevorzugt_nftables(monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda binary: "/usr/sbin/" + binary)
+    firewall, _ = make(backend="auto")
+    assert firewall.name == "nftables"
+
+
+def test_auto_faellt_auf_iptables_zurueck(monkeypatch):
+    monkeypatch.setattr(shutil, "which",
+                        lambda binary: None if binary == "nft" else "/sbin/" + binary)
+    firewall, _ = make(backend="auto")
+    assert firewall.name == "iptables"
+
+
+def test_auto_ohne_werkzeuge_ist_wirkungslos(monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda binary: None)
+    firewall, _ = make(backend="auto")
+    assert firewall.name == "none"
+    assert not firewall.enabled
+    assert firewall.block("203.0.113.5", 60) is False
+
+
+def test_eigene_kommandos_haben_vorrang(monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda binary: "/usr/sbin/" + binary)
+    config = FirewallConfig(enabled=True, backend="auto",
+                            block_command=["mein-skript", "{ip}"])
+    firewall = Firewall(config, FakeRunner())
+    assert firewall.name == "command"
+
+
+def test_unbekanntes_backend_schaltet_ab():
+    config = FirewallConfig(enabled=True, backend="gibt-es-nicht")
+    firewall = Firewall(config, FakeRunner())
+    assert isinstance(firewall.backend, NullBackend)
+
+
+def test_abgeschaltet_fuehrt_nichts_aus():
+    config = FirewallConfig(enabled=False, backend="nftables")
+    runner = FakeRunner()
+    firewall = Firewall(config, runner)
+    assert firewall.block("203.0.113.5", 60) is False
+    assert runner.calls == []
+
+
+# -- Sicherheitsnetze ----------------------------------------------------
+def test_localhost_wird_nie_gesperrt():
+    # Sonst schneidet sich der Server von seinen eigenen Diensten ab.
+    firewall, runner = make()
+    assert firewall.block("127.0.0.1", 60) is False
+    assert firewall.block("::1", 60) is False
+    assert runner.calls == []
+
+
+def test_ungueltige_ip_wird_abgelehnt():
+    firewall, runner = make()
+    assert firewall.block("kein-ip; rm -rf /", 60) is False
+    assert runner.calls == []
+
+
+def test_keine_shell_und_keine_zusammengesetzten_strings():
+    # Jedes Argument bleibt ein eigenes Listenelement - eine IP kann
+    # deshalb nie als Kommando interpretiert werden.
+    firewall, runner = make()
+    firewall.block("203.0.113.5", 900)
+    for call in runner.calls:
+        assert isinstance(call, list)
+        assert all(isinstance(part, str) for part in call)
+    assert not runner.contains("&&")
+    assert not runner.contains("|")
+
+
+def test_trockenlauf_aendert_nichts():
+    firewall, runner = make(dry_run=True)
+    assert firewall.block("203.0.113.5", 900) is True
+    assert runner.calls == []  # nur protokolliert
+
+
+def test_sudo_praefix():
+    firewall, runner = make(sudo=True)
+    firewall.block("203.0.113.5", 900)
+    assert runner.calls[0][:2] == ["sudo", "-n"]  # -n = nie interaktiv fragen
+
+
+# -- nftables ------------------------------------------------------------
+def test_nftables_block_mit_ablaufzeit():
+    firewall, runner = make("nftables")
+    firewall.block("203.0.113.5", 900)
+    assert runner.contains("nft add element inet loginshield blocked4")
+    assert runner.contains("timeout 900s")  # nftables raeumt selbst auf
+
+
+def test_nftables_waehlt_das_richtige_set():
+    firewall, runner = make("nftables")
+    firewall.block("2001:db8::5", 900)
+    assert runner.contains("blocked6")
+    assert not runner.contains("blocked4")
+
+
+def test_nftables_unblock():
+    firewall, runner = make("nftables")
+    firewall.unblock("203.0.113.5")
+    assert runner.contains("nft delete element inet loginshield blocked4")
+
+
+def test_nftables_unblock_toleriert_fehlenden_eintrag():
+    config = FirewallConfig(enabled=True, backend="nftables")
+    runner = FakeRunner({"delete element": CommandResult(
+        [], 1, "", "Error: No such file or directory")})
+    firewall = Firewall(config, runner)
+    assert firewall.unblock("203.0.113.5") is True
+
+
+def test_nftables_setup_legt_eigene_tabelle_an():
+    firewall, _ = make("nftables")
+    commands = [" ".join(parts) for parts in firewall.backend.setup_commands()]
+    assert any("add table inet loginshield" in c for c in commands)
+    assert any("flags timeout" in c for c in commands)
+    assert any("priority -10" in c for c in commands)
+    # Nur die eigene Tabelle, keine fremden Regeln.
+    assert not any("filter" in c and "loginshield" not in c for c in commands)
+
+
+def test_nftables_liste_parsen():
+    output = """table inet loginshield {
+\tset blocked4 {
+\t\ttype ipv4_addr
+\t\tflags timeout
+\t\telements = { 203.0.113.5 timeout 15m expires 14m30s,
+\t\t\t 198.51.100.9 timeout 1h expires 59m }
+\t}
+}"""
+    config = FirewallConfig(enabled=True, backend="nftables")
+    runner = FakeRunner({"list set inet loginshield blocked4":
+                         CommandResult([], 0, output, "")})
+    firewall = Firewall(config, runner)
+    assert sorted(firewall.list_blocked()) == ["198.51.100.9", "203.0.113.5"]
+
+
+def test_nftables_clear_loescht_nur_eigene_tabelle():
+    firewall, runner = make("nftables")
+    firewall.clear()
+    assert runner.commands == ["nft delete table inet loginshield"]
+
+
+def test_eigener_tabellenname():
+    firewall, runner = make("nftables", table="meinschutz")
+    firewall.block("203.0.113.5", 60)
+    assert runner.contains("inet meinschutz")
+
+
+# -- iptables ------------------------------------------------------------
+def test_iptables_nutzt_eigene_kette():
+    firewall, runner = make("iptables", RULE_MISSING)
+    firewall.block("203.0.113.5", 900)
+    assert runner.contains("iptables -I LOGINSHIELD 1 -s 203.0.113.5 -j DROP")
+
+
+def test_iptables_vermeidet_doppelte_regeln():
+    config = FirewallConfig(enabled=True, backend="iptables")
+    runner = FakeRunner({"-C LOGINSHIELD": CommandResult([], 0, "", "")})
+    firewall = Firewall(config, runner)
+    assert firewall.block("203.0.113.5", 900) is True
+    assert not runner.contains("-I LOGINSHIELD")  # war schon da
+
+
+def test_iptables_nimmt_ip6tables_fuer_v6():
+    firewall, runner = make("iptables", RULE_MISSING)
+    firewall.block("2001:db8::5", 900)
+    assert runner.contains("ip6tables")
+
+
+def test_iptables_liste_parsen():
+    output = ("-N LOGINSHIELD\n"
+              "-A LOGINSHIELD -s 203.0.113.5/32 -j DROP\n"
+              "-A LOGINSHIELD -s 198.51.100.9/32 -j DROP\n")
+    config = FirewallConfig(enabled=True, backend="iptables")
+    runner = FakeRunner({"iptables -S LOGINSHIELD": CommandResult([], 0, output, "")})
+    firewall = Firewall(config, runner)
+    assert "203.0.113.5" in firewall.list_blocked()
+
+
+# -- ufw -----------------------------------------------------------------
+def test_ufw_sperrt_ganz_oben():
+    firewall, runner = make("ufw")
+    firewall.block("203.0.113.5", 900)
+    # insert 1: sonst greift eine allow-Regel weiter oben zuerst.
+    assert runner.contains("ufw insert 1 deny from 203.0.113.5")
+
+
+# -- eigene Kommandos ----------------------------------------------------
+def test_command_backend_ersetzt_platzhalter():
+    config = FirewallConfig(
+        enabled=True, backend="command",
+        block_command=["mein-skript", "block", "{ip}", "{seconds}"],
+        unblock_command=["mein-skript", "unblock", "{ip}"],
+    )
+    runner = FakeRunner()
+    firewall = Firewall(config, runner)
+    firewall.block("203.0.113.5", 900)
+    assert runner.calls[0] == ["mein-skript", "block", "203.0.113.5", "900"]
+    firewall.unblock("203.0.113.5")
+    assert runner.calls[1] == ["mein-skript", "unblock", "203.0.113.5"]
+
+
+# -- Abgleich ------------------------------------------------------------
+def test_sync_schreibt_fehlende_sperren(guard, clock):
+    guard.config.firewall.enabled = True
+    guard.config.firewall.backend = "nftables"
+    runner = FakeRunner()
+    guard.firewall = Firewall(guard.config.firewall, runner)
+
+    guard.block("203.0.113.5", seconds=600)
+    runner.calls.clear()
+
+    result = guard.sync_firewall()
+    assert result["added"] == 1
+    assert runner.contains("203.0.113.5")
+
+
+def test_sync_entfernt_verwaiste_eintraege():
+    # Wichtig: sonst bleibt jemand fuer immer ausgesperrt, dessen Sperre
+    # in LoginShield laengst abgelaufen ist.
+    output = "elements = { 198.51.100.9 timeout 15m expires 14m }"
+    config = FirewallConfig(enabled=True, backend="nftables")
+    runner = FakeRunner({"list set inet loginshield blocked4":
+                         CommandResult([], 0, output, "")})
+    firewall = Firewall(config, runner)
+
+    result = firewall.sync([], now=1000)
+    assert result["removed"] == 1
+    assert runner.contains("delete element inet loginshield blocked4")
+
+
+def test_sync_laesst_vorhandene_in_ruhe():
+    output = "elements = { 203.0.113.5 timeout 15m expires 14m }"
+    config = FirewallConfig(enabled=True, backend="nftables")
+    runner = FakeRunner({"list set": CommandResult([], 0, output, "")})
+    firewall = Firewall(config, runner)
+
+    class FakeBlock:
+        ip = "203.0.113.5"
+        expires_ts = 1600
+
+    result = firewall.sync([FakeBlock()], now=1000)
+    assert result == {"added": 0, "removed": 0, "failed": 0}
+
+
+def test_sync_beim_start(config, tmp_path):
+    config.firewall.enabled = True
+    config.firewall.backend = "nftables"
+    config.firewall.sync_on_start = True
+    runner = FakeRunner()
+
+    guard = Guard(config, firewall=Firewall(config.firewall, runner))
+    try:
+        assert runner.contains("list set inet loginshield")
+    finally:
+        guard.close()
+
+
+# -- Guard-Anbindung -----------------------------------------------------
+def test_sperre_landet_in_der_firewall(config, store, clock):
+    config.firewall.enabled = True
+    config.firewall.backend = "nftables"
+    runner = FakeRunner()
+    guard = Guard(config, store, clock=clock,
+                  firewall=Firewall(config.firewall, runner))
+
+    for _ in range(config.rules.ip_failure_threshold):
+        guard.record_failure("198.51.100.66", identity="admin")
+
+    assert runner.contains("add element inet loginshield blocked4")
+    assert runner.contains("198.51.100.66")
+
+    runner.calls.clear()
+    guard.unblock("198.51.100.66")
+    assert runner.contains("delete element")
+
+
+def test_abgelaufene_sperre_wird_in_der_firewall_geloest(config, store, clock):
+    config.firewall.enabled = True
+    config.firewall.backend = "iptables"
+    runner = FakeRunner()
+    guard = Guard(config, store, clock=clock,
+                  firewall=Firewall(config.firewall, runner))
+
+    guard.block("203.0.113.7", seconds=60)
+    clock.advance(61)
+    runner.calls.clear()
+
+    guard.maintenance()
+    assert runner.contains("-D LOGINSHIELD -s 203.0.113.7")
+
+
+def test_firewall_fehler_bricht_die_sperre_nicht(config, store, clock):
+    config.firewall.enabled = True
+    config.firewall.backend = "nftables"
+    runner = FakeRunner({"add element": CommandResult([], 1, "", "Permission denied")})
+    guard = Guard(config, store, clock=clock,
+                  firewall=Firewall(config.firewall, runner))
+
+    block = guard.block("203.0.113.7", seconds=600)
+    # Die Sperre in der Anwendung gilt trotzdem.
+    assert block is not None
+    assert not guard.check("203.0.113.7").allowed
+
+
+# -- Konfiguration -------------------------------------------------------
+def test_unbekanntes_backend_wird_abgelehnt():
+    with pytest.raises(ConfigError):
+        Config.from_dict({"firewall": {"backend": "quatsch"}})
+
+
+def test_command_backend_braucht_kommando():
+    with pytest.raises(ConfigError):
+        Config.from_dict({"firewall": {"enabled": True, "backend": "command"}})
+
+
+def test_tabellenname_wird_geprueft():
+    # Der Name landet in Firewall-Kommandos - kein Freitext.
+    for name in ("mit leerzeichen", "semikolon;rm", "", "1zahl-zuerst"):
+        with pytest.raises(ConfigError):
+            Config.from_dict({"firewall": {"table": name}})
+    Config.from_dict({"firewall": {"table": "mein_schutz2"}})
+
+
+def test_status():
+    firewall, _ = make("nftables")
+    status = firewall.status()
+    assert status.backend == "nftables"
+    assert status.enabled is True
+
+
+# -- Echte Integration (nur wenn ausdruecklich gewuenscht) ---------------
+REAL = os.environ.get("LOGINSHIELD_FIREWALL_IT") == "1"
+
+
+@pytest.mark.skipif(not REAL, reason="setzt LOGINSHIELD_FIREWALL_IT=1 und Root voraus")
+def test_echtes_nftables_end_to_end():
+    config = FirewallConfig(enabled=True, backend="nftables", table="lstest")
+    firewall = Firewall(config)
+    assert firewall.backend.available()
+
+    assert firewall.setup()
+    try:
+        assert firewall.backend.is_ready()
+        assert firewall.block("203.0.113.5", 300)
+        assert "203.0.113.5" in firewall.list_blocked()
+        assert firewall.unblock("203.0.113.5")
+        assert "203.0.113.5" not in firewall.list_blocked()
+    finally:
+        firewall.clear()

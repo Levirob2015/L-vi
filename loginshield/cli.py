@@ -69,11 +69,23 @@ dashboard:
   refresh_seconds: 10
   allow_mutations: true
 
-# Optional: IP zusaetzlich auf Netzwerkebene sperren.
+# Sperren zusaetzlich auf Netzwerkebene durchsetzen.
+# Ohne Firewall gilt die Sperre nur in der Anwendung (HTTP 403), mit
+# Firewall kommt die IP an keinen Dienst mehr heran - auch nicht an SSH.
+#
+# Einrichten:  sudo loginshield firewall --setup
+# Pruefen:     loginshield firewall --status
 firewall:
   enabled: false
-  block_command: ["nft", "add", "element", "inet", "filter", "banned", "{ {ip} }"]
-  unblock_command: ["nft", "delete", "element", "inet", "filter", "banned", "{ {ip} }"]
+  backend: auto           # auto | nftables | iptables | ufw | command | none
+  dry_run: false          # true = Kommandos nur anzeigen, nichts aendern
+  sudo: false             # Kommandos mit 'sudo -n' ausfuehren
+  sync_on_start: true     # aktive Sperren beim Start in die Firewall schreiben
+  table: loginshield      # eigene nft-Tabelle bzw. iptables-Kette
+  timeout: 10
+  # Nur fuer backend: command
+  block_command: []
+  unblock_command: []
 
 # Die Falle: vorgetaeuschte Schwachstellen.
 # Wer /.env, /wp-admin oder /phpmyadmin aufruft, sucht gezielt nach Luecken.
@@ -205,6 +217,26 @@ def build_parser() -> argparse.ArgumentParser:
     prune.add_argument("--days", type=float, default=None,
                        help="Aufbewahrung in Tagen (Standard: aus der Konfiguration)")
     prune.set_defaults(handler=cmd_prune)
+
+    firewall = subparsers.add_parser(
+        "firewall", help="Sperren zusaetzlich auf Netzwerkebene durchsetzen"
+    )
+    firewall_action = firewall.add_mutually_exclusive_group()
+    firewall_action.add_argument("--status", action="store_true",
+                                 help="Backend und Zustand anzeigen (Standard)")
+    firewall_action.add_argument("--setup", action="store_true",
+                                 help="Eigene Tabelle/Kette anlegen")
+    firewall_action.add_argument("--sync", action="store_true",
+                                 help="Aktive Sperren in die Firewall schreiben")
+    firewall_action.add_argument("--list", action="store_true",
+                                 help="Von der Firewall gesperrte IPs anzeigen")
+    firewall_action.add_argument("--clear", action="store_true",
+                                 help="Alle eigenen Firewall-Eintraege entfernen")
+    firewall.add_argument("--dry-run", action="store_true",
+                          help="Nur anzeigen, was ausgefuehrt wuerde")
+    firewall.add_argument("--yes", action="store_true",
+                          help="Rueckfrage bei --clear ueberspringen")
+    firewall.set_defaults(handler=cmd_firewall)
 
     honeypot = subparsers.add_parser(
         "honeypot", help="Koeder-Server starten oder die Falle inspizieren"
@@ -560,6 +592,95 @@ def cmd_prune(args) -> int:
         return 0
     finally:
         guard.close()
+
+
+def cmd_firewall(args) -> int:
+    from .firewall import Firewall
+
+    config = _config(args)
+    if args.dry_run:
+        config.firewall.dry_run = True
+    # Fuer die Unterbefehle zaehlt das Backend, nicht der enabled-Schalter:
+    # man soll einrichten und pruefen koennen, bevor man scharf schaltet.
+    was_enabled = config.firewall.enabled
+    config.firewall.enabled = True
+
+    firewall = Firewall(config.firewall)
+    status = firewall.status()
+
+    if args.setup:
+        if not status.available:
+            print(f"Backend '{status.backend}' ist hier nicht verfuegbar: "
+                  f"{status.note}", file=sys.stderr)
+            return 1
+        print(f"Richte {status.backend} ein ...")
+        for parts in firewall.backend.setup_commands():
+            print("  " + " ".join(parts))
+        if config.firewall.dry_run:
+            print("\nTrockenlauf - es wurde nichts geaendert.")
+            return 0
+        if not firewall.setup():
+            print("\nEinrichtung fehlgeschlagen. Fehlen Root-Rechte? "
+                  "(sudo loginshield firewall --setup)", file=sys.stderr)
+            return 1
+        print("\nFertig. Jetzt in der Konfiguration setzen:")
+        print("  firewall:")
+        print("    enabled: true")
+        print(f"    backend: {status.backend}")
+        return 0
+
+    if args.sync:
+        # Sonst gleicht schon der Konstruktor ab und der Bericht meldet 0.
+        config.firewall.sync_on_start = False
+        guard = Guard(config)
+        try:
+            result = guard.sync_firewall()
+            print(f"Hinzugefuegt: {result['added']}\n"
+                  f"Entfernt:     {result['removed']}\n"
+                  f"Fehler:       {result['failed']}")
+            return 1 if result["failed"] else 0
+        finally:
+            guard.close()
+
+    if args.list:
+        blocked = firewall.list_blocked()
+        if not blocked:
+            print("Die Firewall enthaelt keine LoginShield-Eintraege.")
+            return 0
+        print(f"Von LoginShield gesperrt ({len(blocked)}):")
+        for ip in blocked:
+            print(f"  {ip}")
+        return 0
+
+    if args.clear:
+        blocked = firewall.list_blocked()
+        if not args.yes:
+            print(f"Das entfernt {len(blocked)} Eintrag/Eintraege aus der Firewall.")
+            print("Die Sperren in LoginShield bleiben bestehen.")
+            print("Zum Ausfuehren erneut mit --yes aufrufen.")
+            return 0
+        if firewall.clear():
+            print("Firewall-Eintraege entfernt.")
+            return 0
+        print("Aufraeumen fehlgeschlagen.", file=sys.stderr)
+        return 1
+
+    # Standard: Status
+    print("Firewall")
+    print("=" * 46)
+    print(f"  Backend           {status.backend}")
+    print(f"  Verfuegbar        {'ja' if status.available else 'nein'}")
+    print(f"  Eingerichtet      {'ja' if status.ready else 'nein'}")
+    print(f"  In Konfiguration  {'aktiv' if was_enabled else 'aus'}")
+    if status.dry_run:
+        print("  Trockenlauf       ja (es wird nichts wirklich gesperrt)")
+    print(f"  Eintraege         {len(status.blocked)}")
+    if status.note:
+        print(f"\n  Hinweis: {status.note}")
+    if not was_enabled:
+        print("\n  Die Firewall ist in der Konfiguration nicht aktiv.")
+        print("  Sperren gelten derzeit nur innerhalb der Anwendung.")
+    return 0
 
 
 def cmd_honeypot(args) -> int:

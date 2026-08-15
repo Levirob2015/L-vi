@@ -238,15 +238,112 @@ Eigene Anwendungslogs mit `format: custom` und einem Regex, der die Gruppen
 `(?P<ip>...)` und optional `(?P<identity>...)` enthält.
 Logrotation wird automatisch erkannt.
 
-Damit die IP auch auf Netzwerkebene blockiert wird, optional die Firewall
-anbinden (aus Sicherheitsgründen standardmäßig aus, läuft ohne Shell):
+Damit die IP auch auf Netzwerkebene blockiert wird, siehe den nächsten
+Abschnitt.
+
+---
+
+## Firewall: Sperren auf Netzwerkebene
+
+Ohne Firewall gilt eine Sperre nur **innerhalb der Anwendung**: Der Angreifer
+bekommt HTTP 403, seine Pakete erreichen den Server aber weiterhin – und
+andere Dienste wie SSH sind davon gar nicht berührt. Mit Firewall kommt die
+IP an keinen Port mehr heran.
+
+```bash
+sudo loginshield firewall --setup     # eigene Tabelle/Kette anlegen
+loginshield firewall --status         # prüfen
+```
+
+Dann in der Konfiguration:
 
 ```yaml
 firewall:
   enabled: true
-  block_command:   ["nft", "add", "element", "inet", "filter", "banned", "{ {ip} }"]
-  unblock_command: ["nft", "delete", "element", "inet", "filter", "banned", "{ {ip} }"]
+  backend: auto        # nftables > iptables > ufw, in dieser Reihenfolge
+  sync_on_start: true
 ```
+
+Ab jetzt landet jede Sperre automatisch auch in der Firewall – egal ob sie
+durch Brute Force, den Honeypot oder von Hand entstanden ist.
+
+### Backends
+
+| Backend | Verfahren | Ablauf der Sperre |
+|---|---|---|
+| **nftables** | Eigene Tabelle mit `timeout`-Sets | **Die Firewall selbst** |
+| **iptables** | Eigene Kette `LOGINSHIELD` in INPUT | LoginShield entfernt die Regel |
+| **ufw** | `ufw insert 1 deny from IP` | LoginShield entfernt die Regel |
+| **command** | Deine eigenen Kommandos | Deine Sache |
+
+**nftables ist die beste Wahl**, weil die Sperre dort eine eigene Ablaufzeit
+hat: Selbst wenn LoginShield abstürzt, bleibt niemand dauerhaft ausgesperrt.
+
+### Was angelegt wird
+
+`--setup` fasst nur eine eigene Struktur an und lässt bestehende Regeln in
+Ruhe:
+
+```
+table inet loginshield {
+    set blocked4 { type ipv4_addr; flags timeout; }
+    set blocked6 { type ipv6_addr; flags timeout; }
+    chain input {
+        type filter hook input priority -10; policy accept;
+        ip  saddr @blocked4 drop
+        ip6 saddr @blocked6 drop
+    }
+}
+```
+
+`policy accept` ist wichtig: Diese Kette **verwirft nur, was auf der
+Sperrliste steht**. Sie kann dich nicht aussperren, wenn etwas schiefgeht.
+
+### Abgleich nach einem Neustart
+
+Nach einem Reboot sind nftables-/iptables-Regeln weg, die Sperren in der
+Datenbank aber noch gültig. `sync_on_start: true` schreibt sie beim Start
+zurück; von Hand geht es mit:
+
+```bash
+loginshield firewall --sync
+```
+
+Der Abgleich läuft in beide Richtungen: Einträge, die LoginShield nicht mehr
+kennt, werden aus der Firewall entfernt – sonst bliebe jemand für immer
+ausgesperrt, dessen Sperre längst abgelaufen ist.
+
+### Befehle
+
+```
+loginshield firewall --status       Backend und Zustand anzeigen
+loginshield firewall --setup        Tabelle/Kette anlegen
+loginshield firewall --sync         aktive Sperren übertragen
+loginshield firewall --list         gesperrte IPs in der Firewall
+loginshield firewall --clear --yes  nur die eigenen Einträge entfernen
+```
+
+Jeder Befehl versteht `--dry-run`: Dann werden die Kommandos nur angezeigt,
+das System bleibt unverändert.
+
+### Sicherheitsnetze
+
+* **Kommandos laufen ohne Shell**, mit fester Argumentliste. Eine IP kann
+  niemals als Shell-Code enden – das ist die klassische Lücke selbstgebauter
+  fail2ban-Klone.
+* **`127.0.0.1` und `::1` werden nie gesperrt.** Das würde den Server von
+  seinen eigenen Diensten abschneiden.
+* **Die Allowlist gilt zuerst.** Was dort steht, kommt gar nicht erst bis
+  zur Firewall.
+* **Fehler brechen nichts ab.** Fehlen Root-Rechte, wird das protokolliert –
+  die Sperre in der Anwendung gilt trotzdem weiter.
+* **`--clear` fragt nach** und entfernt nur die eigene Tabelle bzw. Kette.
+
+Braucht der Dienst Root-Rechte für die Firewall? Entweder als root laufen
+lassen, oder `sudo: true` setzen und in `/etc/sudoers.d/` gezielt nur `nft`
+für den Dienstbenutzer freigeben. `sudo -n` wird verwendet, es wird also nie
+interaktiv nach einem Passwort gefragt.
+
 
 ---
 
@@ -259,6 +356,9 @@ loginshield watch --path DATEI         Logdateien mitlesen
 loginshield honeypot                   Koeder-Server starten
 loginshield honeypot --list            Koederpfade anzeigen
 loginshield honeypot --credentials     untergeschobene Zugangsdaten zeigen
+loginshield firewall --status          Firewall-Anbindung pruefen
+loginshield firewall --setup           Firewall einrichten
+loginshield firewall --sync            Sperren in die Firewall schreiben
 loginshield status [--hours 24]        Lage-Überblick im Terminal
 loginshield check IP                   Status einer IP abfragen
 loginshield block IP [--minutes 60]    IP manuell sperren
@@ -306,6 +406,11 @@ honeypot:
   extra_paths: []             # eigene Köder, z.B. ["/api/v1/debug*"]
   exclude_paths: []           # falls ein Köder mit einer echten Route kollidiert
   hidden_field: website       # Name des unsichtbaren Formularfelds
+
+firewall:
+  enabled: false              # true = Sperren auch auf Netzwerkebene
+  backend: auto               # auto | nftables | iptables | ufw | command
+  sync_on_start: true         # nach einem Neustart Sperren wiederherstellen
 ```
 
 Geheimnisse lassen sich per Umgebungsvariable aus der Datei heraushalten:
@@ -378,7 +483,9 @@ Es ersetzt nicht:
 * **Updates** von Betriebssystem und Abhängigkeiten.
 * **Backups** – gegen Ransomware hilft nur eine Kopie, die offline liegt.
 * **DDoS-Abwehr** auf Netzwerkebene; ein verteilter Angriff aus zehntausenden
-  IPs braucht Schutz beim Provider.
+  IPs braucht Schutz beim Provider. Auch die Firewall-Anbindung hilft dagegen
+  nur begrenzt: Die Pakete kommen weiterhin an deiner Leitung an, sie werden
+  nur nicht mehr verarbeitet.
 
 Zwei praktische Hinweise: Trage deine eigene IP in die `allowlist` ein, bevor
 du scharf schaltest – sonst sperrst du dich im Zweifel selbst aus (`loginshield
@@ -391,14 +498,15 @@ zuerst mit `loginshield demo` oder der Beispiel-App.
 
 ```bash
 pip install pytest
-python -m pytest -q      # 181 Tests
+python -m pytest -q      # 221 Tests
 ```
 
 Abgedeckt sind unter anderem: Erkennungsregeln und Eskalation, Honeypot in
 allen drei Varianten (inklusive der Prüfung, dass die Köder sich nicht
 verraten), Allowlist,
 Rate-Limiting, IP-Auflösung hinter Proxys inklusive gefälschter Header,
-Log-Parsing (sshd/nginx/custom) samt Logrotation, ASGI- und WSGI-Middleware,
+Log-Parsing (sshd/nginx/custom) samt Logrotation, alle Firewall-Backends
+gegen einen aufgezeichneten Kommando-Ausführer, ASGI- und WSGI-Middleware,
 Dashboard-API mit Authentifizierung und die Kommandozeile. Zeitabhängige
 Tests laufen über eine steuerbare Uhr – keine echten Wartezeiten.
 
@@ -416,7 +524,7 @@ loginshield/
   honeypot.py    die Falle: Köderpfade, Honeytoken, Köder-Server
   logwatch.py    Logdateien mitlesen
   dashboard.py   Web-Oberfläche
-  firewall.py    optionale nft/iptables-Anbindung
+  firewall.py    Firewall-Backends (nftables, iptables, ufw, eigene)
   cli.py         Kommandozeile
 examples/        lauffähige Beispielanwendung
 tests/           Testsuite
