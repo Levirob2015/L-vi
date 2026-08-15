@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "loginshield"
+version = "0.1.0"
+description = "Brute-Force- und Angriffsschutz fuer Login-Endpunkte und Server: Erkennung, Rate-Limiting, IP-Sperren, Dashboard."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Levirob2015" }]
+keywords = ["security", "brute-force", "rate-limit", "fail2ban", "asgi", "intrusion-detection"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: System Administrators",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+]
+# Bewusst ohne Runtime-Dependencies: laeuft mit der Standardbibliothek.
+dependencies = []
+
+[project.optional-dependencies]
+yaml = ["PyYAML>=6.0"]
+dev = ["pytest>=7.0", "PyYAML>=6.0"]
+
+[project.scripts]
+loginshield = "loginshield.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["loginshield*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

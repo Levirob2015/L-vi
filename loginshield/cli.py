@@ -1,0 +1,584 @@
+"""Kommandozeile: ``loginshield <befehl>``."""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import logging
+import os
+import random
+import secrets
+import sys
+import threading
+import time
+from typing import List, Optional
+
+from .config import Config, ConfigError, find_config, load_config
+from .dashboard import Dashboard
+from .engine import Guard
+from .logwatch import LogWatcher
+from .models import Event, Reason
+from .store import Store
+from .version import __version__
+
+CONFIG_TEMPLATE = """# LoginShield - Konfiguration
+# Alle Zeitangaben in Sekunden. Doku: siehe README.md
+
+db_path: loginshield.db
+
+# Diese Adressen werden nie gesperrt. Trage hier dein Buero/VPN ein,
+# damit du dich nicht selbst aussperrst.
+allowlist:
+  - 127.0.0.1
+  - ::1
+
+# NUR diesen Proxys wird der Header X-Forwarded-For geglaubt.
+# Leer lassen, wenn die App direkt im Netz haengt - sonst kann jeder
+# seine IP faelschen und die Sperren umgehen.
+trusted_proxies: []
+  # - 10.0.0.0/8
+
+# hashed = Benutzernamen werden nur als HMAC gespeichert (empfohlen)
+identity_mode: hashed
+identity_hmac_key: "__HMAC__"
+
+retention_days: 30
+
+rules:
+  ip_failure_threshold: 5        # Fehlversuche einer IP ...
+  ip_failure_window: 300         # ... in diesem Zeitraum -> Sperre
+  identity_failure_threshold: 10 # Fehlversuche gegen EIN Konto
+  identity_failure_window: 900
+  identity_action: throttle      # throttle | lock | off
+  identity_throttle_seconds: 30
+  spray_identity_threshold: 5    # eine IP probiert so viele Konten -> Sperre
+  spray_window: 600
+  request_limit: 60              # Requests pro IP ...
+  request_window: 60             # ... pro Minute
+  rate_limit_strikes: 20         # so oft darf das Limit reissen, dann Sperre
+  block_base_seconds: 900        # erste Sperre: 15 Minuten
+  block_max_seconds: 86400       # Obergrenze: 24 Stunden
+  block_escalation_factor: 2.0   # jede weitere Sperre dauert doppelt so lang
+  strike_memory: 604800
+
+dashboard:
+  host: 127.0.0.1
+  port: 8787
+  token: "__TOKEN__"
+  refresh_seconds: 10
+  allow_mutations: true
+
+# Optional: IP zusaetzlich auf Netzwerkebene sperren.
+firewall:
+  enabled: false
+  block_command: ["nft", "add", "element", "inet", "filter", "banned", "{ {ip} }"]
+  unblock_command: ["nft", "delete", "element", "inet", "filter", "banned", "{ {ip} }"]
+
+# Optional: Logdateien mitlesen (loginshield watch)
+logwatch: []
+#  - path: /var/log/auth.log
+#    format: sshd
+#  - path: /var/log/nginx/access.log
+#    format: nginx
+#    path_filter: /login
+#    failure_statuses: [401, 403]
+"""
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    logging.basicConfig(
+        level=logging.DEBUG if getattr(args, "verbose", False) else logging.INFO,
+        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    if args.command is None:
+        parser.print_help()
+        return 0
+
+    try:
+        return args.handler(args)
+    except ConfigError as exc:
+        print(f"Konfigurationsfehler: {exc}", file=sys.stderr)
+        return 2
+    except ValueError as exc:
+        print(f"Fehler: {exc}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("\nAbgebrochen.")
+        return 130
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="loginshield",
+        description="Schutz gegen Brute-Force- und automatisierte Angriffe.",
+    )
+    parser.add_argument("--version", action="version", version=f"LoginShield {__version__}")
+    parser.add_argument("-c", "--config", help="Pfad zur Konfigurationsdatei")
+    parser.add_argument("--db", help="Pfad zur Datenbank (ueberschreibt die Konfiguration)")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Mehr Log-Ausgaben")
+    subparsers = parser.add_subparsers(dest="command")
+
+    init = subparsers.add_parser("init", help="Konfigurationsdatei anlegen")
+    init.add_argument("--path", default=None, help="Zieldatei (Standard: loginshield.yaml)")
+    init.add_argument("--force", action="store_true", help="Vorhandene Datei ueberschreiben")
+    init.set_defaults(handler=cmd_init)
+
+    serve = subparsers.add_parser("serve", help="Dashboard starten")
+    serve.add_argument("--host", help="Bind-Adresse")
+    serve.add_argument("--port", type=int, help="Port")
+    serve.add_argument("--watch", action="store_true",
+                       help="Zusaetzlich die konfigurierten Logdateien mitlesen")
+    serve.set_defaults(handler=cmd_serve)
+
+    watch = subparsers.add_parser("watch", help="Logdateien mitlesen und schuetzen")
+    watch.add_argument("--path", action="append", default=[],
+                       help="Zusaetzliche Logdatei (wiederholbar)")
+    watch.add_argument("--format", default="sshd", choices=("sshd", "nginx", "custom"),
+                       help="Format fuer --path")
+    watch.add_argument("--from-start", action="store_true",
+                       help="Datei von vorne lesen statt nur neue Zeilen")
+    watch.add_argument("--interval", type=float, default=2.0, help="Abfrageintervall")
+    watch.set_defaults(handler=cmd_watch)
+
+    status = subparsers.add_parser("status", help="Lage-Ueberblick")
+    status.add_argument("--hours", type=float, default=24.0)
+    status.add_argument("--json", action="store_true")
+    status.set_defaults(handler=cmd_status)
+
+    block = subparsers.add_parser("block", help="IP sperren")
+    block.add_argument("ip")
+    block.add_argument("--minutes", type=float, default=None,
+                       help="Dauer (Standard: eskalierende Dauer aus der Konfiguration)")
+    block.add_argument("--reason", default=Reason.MANUAL)
+    block.add_argument("--force", action="store_true",
+                       help="Auch sperren, wenn die IP auf der Allowlist steht")
+    block.set_defaults(handler=cmd_block)
+
+    unblock = subparsers.add_parser("unblock", help="Sperre aufheben")
+    unblock.add_argument("ip")
+    unblock.set_defaults(handler=cmd_unblock)
+
+    check = subparsers.add_parser("check", help="Status einer IP abfragen")
+    check.add_argument("ip")
+    check.set_defaults(handler=cmd_check)
+
+    allow = subparsers.add_parser("allow", help="Allowlist verwalten")
+    allow_sub = allow.add_subparsers(dest="allow_command", required=True)
+    allow_add = allow_sub.add_parser("add", help="IP/CIDR nie sperren")
+    allow_add.add_argument("cidr")
+    allow_add.add_argument("--note", default="")
+    allow_add.set_defaults(handler=cmd_allow_add)
+    allow_rm = allow_sub.add_parser("remove", help="Eintrag entfernen")
+    allow_rm.add_argument("cidr")
+    allow_rm.set_defaults(handler=cmd_allow_remove)
+    allow_ls = allow_sub.add_parser("list", help="Eintraege anzeigen")
+    allow_ls.set_defaults(handler=cmd_allow_list)
+    allow.set_defaults(handler=cmd_allow_list)
+
+    export = subparsers.add_parser("export", help="Ereignisse exportieren")
+    export.add_argument("--hours", type=float, default=24.0)
+    export.add_argument("--format", choices=("json", "csv"), default="json")
+    export.add_argument("--out", help="Zieldatei (Standard: Standardausgabe)")
+    export.set_defaults(handler=cmd_export)
+
+    prune = subparsers.add_parser("prune", help="Alte Daten loeschen")
+    prune.add_argument("--days", type=float, default=None,
+                       help="Aufbewahrung in Tagen (Standard: aus der Konfiguration)")
+    prune.set_defaults(handler=cmd_prune)
+
+    demo = subparsers.add_parser(
+        "demo", help="Beispiel-Angriffsdaten erzeugen (zum Ausprobieren des Dashboards)"
+    )
+    demo.add_argument("--events", type=int, default=400)
+    demo.set_defaults(handler=cmd_demo)
+
+    return parser
+
+
+# -- Hilfen --------------------------------------------------------------
+def _config(args) -> Config:
+    config = load_config(args.config)
+    if args.db:
+        config.db_path = args.db
+    return config
+
+
+def _guard(args) -> Guard:
+    return Guard(_config(args))
+
+
+def _fmt_duration(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}min"
+    if seconds < 86400:
+        return f"{seconds / 3600:.1f}h"
+    return f"{seconds / 86400:.1f}d"
+
+
+def _table(rows: List[List[str]], headers: List[str]) -> str:
+    widths = [len(header) for header in headers]
+    for row in rows:
+        for index, cell in enumerate(row):
+            widths[index] = max(widths[index], len(str(cell)))
+    line = "  ".join(header.ljust(widths[index]) for index, header in enumerate(headers))
+    out = [line, "  ".join("-" * width for width in widths)]
+    for row in rows:
+        out.append("  ".join(str(cell).ljust(widths[i]) for i, cell in enumerate(row)))
+    return "\n".join(out)
+
+
+# -- Befehle -------------------------------------------------------------
+def cmd_init(args) -> int:
+    try:
+        import yaml  # noqa: F401
+        default_name = "loginshield.yaml"
+        yaml_available = True
+    except ImportError:
+        default_name = "loginshield.json"
+        yaml_available = False
+
+    path = args.path or default_name
+    if os.path.exists(path) and not args.force:
+        print(f"{path} existiert bereits. Mit --force ueberschreiben.", file=sys.stderr)
+        return 1
+
+    token = secrets.token_urlsafe(32)
+    hmac_key = secrets.token_urlsafe(32)
+
+    if path.endswith((".yaml", ".yml")) and yaml_available:
+        content = CONFIG_TEMPLATE.replace("__TOKEN__", token).replace("__HMAC__", hmac_key)
+    else:
+        config = Config()
+        config.dashboard.token = token
+        config.identity_hmac_key = hmac_key
+        config.allowlist = ["127.0.0.1", "::1"]
+        content = json.dumps(config.as_dict(), indent=2, ensure_ascii=False) + "\n"
+        if path.endswith((".yaml", ".yml")):
+            print("Hinweis: PyYAML fehlt - schreibe JSON-Inhalt.", file=sys.stderr)
+
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(content)
+    try:
+        os.chmod(path, 0o600)  # enthaelt Token und HMAC-Schluessel
+    except OSError:
+        pass
+
+    print(f"Konfiguration geschrieben: {path}")
+    print("Dashboard-Token wurde erzeugt und steht in der Datei (Rechte 600).")
+    print("Naechster Schritt:  loginshield demo  &&  loginshield serve")
+    return 0
+
+
+def cmd_serve(args) -> int:
+    config = _config(args)
+    if args.host:
+        config.dashboard.host = args.host
+    if args.port:
+        config.dashboard.port = args.port
+    config.dashboard.validate()
+
+    guard = Guard(config)
+    watcher = None
+    if args.watch and config.logwatch:
+        watcher = LogWatcher(guard, config.logwatch)
+        threading.Thread(target=watcher.run, daemon=True).start()
+        print(f"Log-Watcher aktiv fuer {len(config.logwatch)} Quelle(n).")
+    elif args.watch:
+        print("Hinweis: keine logwatch-Quellen konfiguriert.", file=sys.stderr)
+
+    dashboard = Dashboard(guard, config.dashboard)
+    print(f"Dashboard laeuft auf {dashboard.url}")
+    if not config.dashboard.token and config.dashboard.host in ("127.0.0.1", "::1"):
+        print("Kein Token gesetzt - Zugriff nur von diesem Rechner moeglich.")
+    print("Beenden mit Strg+C.")
+    try:
+        dashboard.serve_forever()
+    except KeyboardInterrupt:
+        print("\nDashboard wird beendet ...")
+    finally:
+        if watcher is not None:
+            watcher.stop()
+        dashboard.stop()
+        guard.close()
+    return 0
+
+
+def cmd_watch(args) -> int:
+    from .config import LogSourceConfig
+
+    config = _config(args)
+    sources = list(config.logwatch)
+    for path in args.path:
+        sources.append(LogSourceConfig(path=path, format=args.format))
+    if not sources:
+        print(
+            "Keine Logquellen. Konfiguriere 'logwatch' oder nutze --path /var/log/auth.log",
+            file=sys.stderr,
+        )
+        return 1
+
+    guard = Guard(config)
+    watcher = LogWatcher(guard, sources, from_start=args.from_start)
+    for missing in watcher.missing_sources():
+        print(f"Warnung: Datei nicht gefunden: {missing}", file=sys.stderr)
+
+    print(f"Beobachte {len(sources)} Logdatei(en). Beenden mit Strg+C.")
+    for source in sources:
+        print(f"  - {source.path} ({source.format})")
+    try:
+        watcher.run(interval=args.interval)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        watcher.stop()
+        watcher.close()
+        guard.close()
+    return 0
+
+
+def cmd_status(args) -> int:
+    guard = _guard(args)
+    try:
+        data = guard.status(hours=args.hours)
+        if args.json:
+            print(json.dumps(data, indent=2, default=str))
+            return 0
+
+        print(f"Lage der letzten {args.hours:g} Stunden")
+        print("=" * 46)
+        print(f"  Fehlversuche       {data['failures']}")
+        print(f"  Erfolge            {data['successes']}")
+        print(f"  Abgewiesen         {data['denied']}")
+        print(f"  Angreifende IPs    {data['attacking_ips']}")
+        print(f"  Neue Sperren       {data['new_blocks']}")
+        print(f"  Aktive Sperren     {data['active_blocks']}")
+
+        offenders = data["top_offenders"]
+        if offenders:
+            print("\nAuffaelligste IPs")
+            rows = [
+                [
+                    item["ip"],
+                    item["failures"],
+                    item["identities"],
+                    time.strftime("%d.%m. %H:%M", time.localtime(item["last_seen"])),
+                ]
+                for item in offenders
+            ]
+            print(_table(rows, ["IP", "Fehlversuche", "Konten", "Zuletzt"]))
+
+        blocks = guard.store.list_blocks(limit=20)
+        if blocks:
+            now = guard.clock()
+            print("\nAktive Sperren")
+            rows = [
+                [b.ip, b.reason, _fmt_duration(b.remaining(now)), b.strikes]
+                for b in blocks
+            ]
+            print(_table(rows, ["IP", "Grund", "Rest", "Stufe"]))
+        return 0
+    finally:
+        guard.close()
+
+
+def cmd_block(args) -> int:
+    guard = _guard(args)
+    try:
+        seconds = args.minutes * 60 if args.minutes else None
+        block = guard.block(
+            args.ip, seconds=seconds, reason=args.reason, force=args.force
+        )
+        print(
+            f"{block.ip} gesperrt fuer {_fmt_duration(block.remaining(guard.clock()))} "
+            f"(Stufe {block.strikes}, Grund: {block.reason})"
+        )
+        return 0
+    finally:
+        guard.close()
+
+
+def cmd_unblock(args) -> int:
+    guard = _guard(args)
+    try:
+        if guard.unblock(args.ip):
+            print(f"{args.ip} entsperrt.")
+            return 0
+        print(f"{args.ip} war nicht gesperrt.")
+        return 1
+    finally:
+        guard.close()
+
+
+def cmd_check(args) -> int:
+    guard = _guard(args)
+    try:
+        decision = guard.check(args.ip, count_request=False)
+        now = guard.clock()
+        print(f"IP            {args.ip}")
+        print(f"Allowlist     {'ja' if guard.is_allowlisted(args.ip) else 'nein'}")
+        print(f"Entscheidung  {'erlaubt' if decision.allowed else 'abgewiesen'}"
+              f" ({decision.reason})")
+        if decision.retry_after:
+            print(f"Wartezeit     {_fmt_duration(decision.retry_after)}")
+        failures = guard.store.count_failures_by_ip(
+            args.ip, now - guard.config.rules.ip_failure_window
+        )
+        print(f"Fehlversuche  {failures} im aktuellen Zeitfenster")
+        return 0 if decision.allowed else 1
+    finally:
+        guard.close()
+
+
+def cmd_allow_add(args) -> int:
+    guard = _guard(args)
+    try:
+        guard.allow(args.cidr, args.note)
+        print(f"Allowlist ergaenzt: {args.cidr}")
+        if guard.unblock(args.cidr):
+            print("Bestehende Sperre wurde aufgehoben.")
+        return 0
+    finally:
+        guard.close()
+
+
+def cmd_allow_remove(args) -> int:
+    guard = _guard(args)
+    try:
+        if guard.disallow(args.cidr):
+            print(f"Entfernt: {args.cidr}")
+            return 0
+        print(f"Nicht auf der Allowlist: {args.cidr}")
+        return 1
+    finally:
+        guard.close()
+
+
+def cmd_allow_list(args) -> int:
+    guard = _guard(args)
+    try:
+        entries = guard.store.allow_list()
+        static = guard.config.allowlist
+        if static:
+            print("Aus der Konfiguration:")
+            for item in static:
+                print(f"  {item}")
+        if not entries:
+            print("Keine dynamischen Eintraege.")
+            return 0
+        print("Dynamisch (Datenbank):")
+        rows = [
+            [
+                entry["cidr"],
+                entry["note"] or "-",
+                time.strftime("%d.%m.%Y", time.localtime(entry["created_ts"])),
+            ]
+            for entry in entries
+        ]
+        print(_table(rows, ["Eintrag", "Notiz", "Seit"]))
+        return 0
+    finally:
+        guard.close()
+
+
+def cmd_export(args) -> int:
+    config = _config(args)
+    store = Store(config.db_path, identity_mode=config.identity_mode,
+                  identity_hmac_key=config.identity_hmac_key)
+    try:
+        since = time.time() - args.hours * 3600
+        attempts = list(store.iter_attempts(since))
+        handle = open(args.out, "w", encoding="utf-8", newline="") if args.out else sys.stdout
+        try:
+            if args.format == "json":
+                json.dump([a.as_dict() for a in attempts], handle, indent=2, default=str)
+                handle.write("\n")
+            else:
+                fields = ["ts", "ip", "event", "identity", "route", "source", "detail"]
+                writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
+                writer.writeheader()
+                for attempt in attempts:
+                    writer.writerow(attempt.as_dict())
+        finally:
+            if args.out:
+                handle.close()
+        if args.out:
+            print(f"{len(attempts)} Ereignisse geschrieben nach {args.out}")
+        return 0
+    finally:
+        store.close()
+
+
+def cmd_prune(args) -> int:
+    config = _config(args)
+    if args.days:
+        config.retention_days = args.days
+    guard = Guard(config)
+    try:
+        result = guard.maintenance()
+        print(
+            f"Abgelaufene Sperren aufgehoben: {result['expired_blocks']}\n"
+            f"Geloeschte Ereignisse:          {result['pruned_attempts']}\n"
+            f"Geloeschte Sperrhistorie:       {result['pruned_blocks']}"
+        )
+        guard.store.vacuum()
+        return 0
+    finally:
+        guard.close()
+
+
+def cmd_demo(args) -> int:
+    """Erzeugt realistisch aussehende Beispieldaten - nur zum Ausprobieren."""
+    guard = _guard(args)
+    try:
+        now = time.time()
+        rng = random.Random(20240815)
+        attackers = ["45.155.205.%d" % rng.randint(2, 250) for _ in range(6)]
+        users = ["admin", "root", "info", "test", "backup", "postgres", "anna", "ben"]
+        legit = ["203.0.113.%d" % rng.randint(2, 60) for _ in range(4)]
+
+        store = guard.store
+        for index in range(args.events):
+            ts = now - rng.random() * 23 * 3600
+            if rng.random() < 0.78:
+                store.record_attempt(
+                    rng.choice(attackers),
+                    Event.LOGIN_FAILURE,
+                    identity=rng.choice(users),
+                    route="/login",
+                    user_agent="python-requests/2.31",
+                    source="demo",
+                    detail="HTTP 401",
+                    ts=ts,
+                )
+            else:
+                store.record_attempt(
+                    rng.choice(legit),
+                    Event.LOGIN_SUCCESS,
+                    identity=rng.choice(["anna", "ben"]),
+                    route="/login",
+                    user_agent="Mozilla/5.0",
+                    source="demo",
+                    ts=ts,
+                )
+
+        for ip in attackers[:3]:
+            guard.block(ip, reason=Reason.BRUTE_FORCE_IP, detail="Demo-Daten")
+
+        print(f"{args.events} Beispielereignisse und 3 Sperren angelegt.")
+        print("Jetzt ansehen mit:  loginshield status   oder   loginshield serve")
+        return 0
+    finally:
+        guard.close()
+
+
+if __name__ == "__main__":  # pragma: no cover
+    sys.exit(main())

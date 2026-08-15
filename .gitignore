@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+.venv/
+venv/
+
+# Laufzeitdaten und Geheimnisse - gehoeren nie ins Repository
+*.db
+*.db-wal
+*.db-shm
+loginshield.yaml
+loginshield.yml
+loginshield.json
+
+.pytest_cache/
+.coverage
+htmlcov/
+.DS_Store
