@@ -232,3 +232,24 @@ def test_anomalies_ohne_grundlinie(db, capsys):
     fehler = capsys.readouterr().err
     assert "Noch keine Grundlinie" in fehler
     assert "Lieber keine Aussage als eine geratene" in fehler
+
+
+def test_integrity_mit_pfad_prueft_auch_ohne_schalter(db, capsys, tmp_path):
+    """Wer --path angibt, will die Pruefung jetzt.
+
+    Vorher liess sich lernen, aber nicht nachsehen: Der Bericht meldete
+    "nicht eingerichtet", obwohl gerade eine Grundlage angelegt worden war.
+    """
+    wurzel = tmp_path / "webroot"
+    (wurzel / "uploads").mkdir(parents=True)
+    (wurzel / "index.php").write_text("<?php echo 'hallo'; ?>")
+
+    assert run(["integrity", "--learn", "--path", str(wurzel)], db) == 0
+    capsys.readouterr()
+
+    (wurzel / "uploads" / "bild.php").write_text("<?php ?>")
+    run(["integrity", "--path", str(wurzel)], db)
+
+    ausgabe = capsys.readouterr()
+    assert "abgeschaltet" not in (ausgabe.out + ausgabe.err)
+    assert "bild.php" in ausgabe.out

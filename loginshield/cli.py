@@ -966,6 +966,12 @@ def cmd_integrity(args) -> int:
     try:
         monitor = guard.integrity
         pfade = args.path or list(monitor.config.paths)
+        # Wer einen Pfad auf der Kommandozeile angibt, will diese Pruefung
+        # jetzt - unabhaengig davon, ob sie im Dauerbetrieb eingeschaltet
+        # ist. Sonst laesst sich zwar lernen, aber nicht nachsehen, und
+        # die Meldung dazu ergibt keinen Sinn.
+        if args.path:
+            monitor.config.enabled = True
 
         if args.status:
             status = monitor.status()

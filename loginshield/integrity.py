@@ -170,7 +170,11 @@ class IntegrityMonitor:
         report = IntegrityReport()
         store = self.store
         if store is None or not self.config.enabled:
-            report.error = "Integritaetspruefung ist nicht eingerichtet"
+            report.error = (
+                "Integritaetspruefung ist abgeschaltet - in der "
+                "Konfiguration 'integrity.enabled: true' setzen und unter "
+                "'integrity.paths' eintragen, was ueberwacht werden soll"
+            )
             return report
 
         bekannt = store.integrity_all()
