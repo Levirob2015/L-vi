@@ -124,6 +124,19 @@ body {
   border-radius: 3px;
 }
 
+/* ---------- Störungshinweis ---------- */
+.alert {
+  background: var(--crit-dim);
+  color: var(--ink);
+  border-bottom: 2px solid var(--crit);
+  padding: 12px 20px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.alert strong { color: var(--crit); }
+.alert[hidden] { display: none; }
+
 /* ---------- Kopfleiste ---------- */
 .topbar {
   position: sticky;
@@ -582,6 +595,8 @@ pre .cmd { color: var(--accent); }
 }
 
 .step .v { font-size: 13.5px; color: var(--muted); }
+a { color: var(--accent); text-underline-offset: 2px; }
+
 .step code {
   font-family: var(--mono);
   font-size: 12.5px;
@@ -591,12 +606,24 @@ pre .cmd { color: var(--accent); }
   border-radius: 5px;
   padding: 1px 6px;
 }
-
-a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
-a:hover { text-decoration-thickness: 2px; }
 </style>
 </head>
 <body>
+<noscript>
+  <div class="alert">
+    <strong>JavaScript ist ausgeschaltet.</strong>
+    Diese Seite ist eine bedienbare Vorschau &mdash; ohne JavaScript bleibt
+    sie leer. Bitte im Browser öffnen (nicht in einer Vorschau-Ansicht) und
+    JavaScript zulassen.
+  </div>
+</noscript>
+
+<div class="alert" id="crash" hidden>
+  <strong>Die Vorschau konnte nicht starten.</strong>
+  Vermutlich ist der Browser zu alt. Bitte in einem aktuellen Firefox, Chrome,
+  Edge oder Safari&nbsp;14+ öffnen. Fehler: <span id="crash-msg"></span>
+</div>
+
 <header class="topbar">
   <div class="topbar-inner">
     <div class="brand">
@@ -825,10 +852,22 @@ BACKUP_SSH_USER=<span class="bait">svc_backup</span></pre>
 </div>
 
 <script>
+// Scheitert unten etwas, soll die Seite das sagen statt still tot zu sein.
+window.onerror = function (message) {
+  var box = document.getElementById("crash");
+  var text = document.getElementById("crash-msg");
+  if (box) { box.hidden = false; }
+  if (text) { text.textContent = String(message); }
+};
+
 (function () {
   "use strict";
 
-  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // Zentral abgefragt und einmal auf Verfuegbarkeit geprueft, damit ein
+  // fehlendes matchMedia nicht die ganze Seite lahmlegt.
+  var supportsQuery = typeof window.matchMedia === "function";
+  var darkQuery = supportsQuery ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  var reduce = supportsQuery && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   // ---------- Zustand ----------
   var state = { events: [], blocks: [], hourly: [], ok: 0, filter: "all" };
@@ -1003,11 +1042,15 @@ BACKUP_SSH_USER=<span class="bait">svc_backup</span></pre>
     return node;
   }
 
+  // Eigene Variante statt padStart: das gibt es erst ab ES2017 und fehlt
+  // auf aelteren Browsern.
+  function pad2(value) {
+    return (value < 10 ? "0" : "") + value;
+  }
+
   function fmtClock(ts) {
     var d = new Date(ts);
-    return String(d.getHours()).padStart(2, "0") + ":" +
-           String(d.getMinutes()).padStart(2, "0") + ":" +
-           String(d.getSeconds()).padStart(2, "0");
+    return pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds());
   }
 
   function fmtLeft(ms) {
@@ -1070,7 +1113,7 @@ BACKUP_SSH_USER=<span class="bait">svc_backup</span></pre>
       row.appendChild(reason);
 
       var left = el("td", fmtLeft(block.until - Date.now()), "num");
-      left.dataset.until = block.until;
+      left.setAttribute("data-until", block.until);
       row.appendChild(left);
 
       row.appendChild(el("td", block.level, "num dim"));
@@ -1207,8 +1250,10 @@ BACKUP_SSH_USER=<span class="bait">svc_backup</span></pre>
       return;
     }
 
-    document.querySelectorAll("#blocks td[data-until]").forEach(function (cell) {
-      cell.textContent = fmtLeft(Number(cell.dataset.until) - now);
+    // slice.call: NodeList.forEach fehlt auf aelteren Browsern.
+    var cells = document.querySelectorAll("#blocks td[data-until]");
+    Array.prototype.slice.call(cells).forEach(function (cell) {
+      cell.textContent = fmtLeft(Number(cell.getAttribute("data-until")) - now);
     });
   }, 1000);
 
@@ -1235,7 +1280,10 @@ BACKUP_SSH_USER=<span class="bait">svc_backup</span></pre>
   ];
 
   document.getElementById("filter").addEventListener("click", function () {
-    var index = FILTERS.findIndex(function (f) { return f[0] === state.filter; });
+    var index = 0;
+    for (var i = 0; i < FILTERS.length; i++) {
+      if (FILTERS[i][0] === state.filter) { index = i; }
+    }
     var next = FILTERS[(index + 1) % FILTERS.length];
     state.filter = next[0];
     this.textContent = next[1];
@@ -1245,14 +1293,24 @@ BACKUP_SSH_USER=<span class="bait">svc_backup</span></pre>
   var toggle = document.getElementById("theme");
   toggle.addEventListener("click", function () {
     var root = document.documentElement;
-    var dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    var dark = supportsQuery && darkQuery.matches;
     var current = root.getAttribute("data-theme") || (dark ? "dark" : "light");
     root.setAttribute("data-theme", current === "dark" ? "light" : "dark");
     drawChart();
   });
 
   window.addEventListener("resize", drawChart);
-  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawChart);
+
+  // Aeltere Browser (Safari vor 14) kennen an MediaQueryList nur
+  // addListener. Ungeprueft aufgerufen wirft das - und riss vorher das
+  // gesamte Skript mit sich, sodass keine Taste mehr reagierte.
+  if (supportsQuery) {
+    if (darkQuery.addEventListener) {
+      darkQuery.addEventListener("change", drawChart);
+    } else if (darkQuery.addListener) {
+      darkQuery.addListener(drawChart);
+    }
+  }
 
   seed();
   render();
