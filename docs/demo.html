@@ -1,0 +1,1262 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Klickbare Vorschau des LoginShield-Dashboards: Angriff ausloesen und zusehen, wie die Sperre zuschnappt.">
+<meta name="color-scheme" content="light dark">
+<title>LoginShield Leitstand</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#128737;</text></svg>">
+<style>
+/* Minimaler Reset - im Artifact liefert ihn die Umgebung mit. */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; }
+img, svg, canvas { display: block; max-width: 100%; }
+button, input, select { font: inherit; color: inherit; }
+</style>
+<style>
+/* ---------- Token: helles Thema (Grundzustand) ---------- */
+:root {
+  --paper:      #eef1f4;
+  --surface:    #ffffff;
+  --surface-2:  #f7f9fb;
+  --ink:        #10151c;
+  --muted:      #5a6672;
+  --faint:      #8b97a3;
+  --line:       #d7dee5;
+  --line-soft:  #e6ebf0;
+
+  --accent:     #1b4de4;
+  --accent-ink: #ffffff;
+  --accent-dim: rgba(27, 77, 228, .10);
+
+  --crit:       #c42b1c;
+  --crit-dim:   rgba(196, 43, 28, .10);
+  --warn:       #b26a00;
+  --warn-dim:   rgba(178, 106, 0, .12);
+  --ok:         #0a7d4f;
+  --ok-dim:     rgba(10, 125, 79, .10);
+
+  --grid:       rgba(16, 21, 28, .07);
+  --shadow:     0 1px 2px rgba(16, 21, 28, .05), 0 8px 24px rgba(16, 21, 28, .06);
+
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", "Cascadia Mono",
+          Menlo, Consolas, "Liberation Mono", monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* ---------- Token: dunkles Thema ---------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper:      #0c1017;
+    --surface:    #131a23;
+    --surface-2:  #182029;
+    --ink:        #e6ecf2;
+    --muted:      #93a1af;
+    --faint:      #6b7986;
+    --line:       #253040;
+    --line-soft:  #1d2632;
+
+    --accent:     #5b8bff;
+    --accent-ink: #071020;
+    --accent-dim: rgba(91, 139, 255, .14);
+
+    --crit:       #ff6b5e;
+    --crit-dim:   rgba(255, 107, 94, .14);
+    --warn:       #e0a03c;
+    --warn-dim:   rgba(224, 160, 60, .14);
+    --ok:         #3fbf7f;
+    --ok-dim:     rgba(63, 191, 127, .13);
+
+    --grid:       rgba(230, 236, 242, .08);
+    --shadow:     0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .3);
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper:      #0c1017;
+  --surface:    #131a23;
+  --surface-2:  #182029;
+  --ink:        #e6ecf2;
+  --muted:      #93a1af;
+  --faint:      #6b7986;
+  --line:       #253040;
+  --line-soft:  #1d2632;
+
+  --accent:     #5b8bff;
+  --accent-ink: #071020;
+  --accent-dim: rgba(91, 139, 255, .14);
+
+  --crit:       #ff6b5e;
+  --crit-dim:   rgba(255, 107, 94, .14);
+  --warn:       #e0a03c;
+  --warn-dim:   rgba(224, 160, 60, .14);
+  --ok:         #3fbf7f;
+  --ok-dim:     rgba(63, 191, 127, .13);
+
+  --grid:       rgba(230, 236, 242, .08);
+  --shadow:     0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .3);
+}
+
+/* ---------- Grundlagen ---------- */
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 20px 72px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* ---------- Kopfleiste ---------- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-right: auto;
+}
+
+.brand strong {
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+}
+
+.brand span {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ok);
+  background: var(--ok-dim);
+  border: 1px solid transparent;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .dot { animation: pulse 2.4s ease-in-out infinite; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: .45; transform: scale(.82); }
+  }
+}
+
+/* ---------- Buttons ---------- */
+button {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  letter-spacing: .01em;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 7px 13px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-ink);
+  filter: brightness(1.08);
+}
+
+button.danger:hover:not(:disabled) {
+  border-color: var(--crit);
+  color: var(--crit);
+}
+
+button.tiny {
+  font-size: 11.5px;
+  padding: 4px 10px;
+}
+
+/* ---------- Abschnitte ---------- */
+.intro {
+  padding: 36px 0 8px;
+  max-width: 62ch;
+}
+
+h1 {
+  font-family: var(--mono);
+  font-size: clamp(24px, 3.4vw, 32px);
+  line-height: 1.2;
+  letter-spacing: -.025em;
+  margin: 0 0 12px;
+  text-wrap: balance;
+}
+
+.intro p { margin: 0 0 10px; color: var(--muted); }
+.intro strong { color: var(--ink); font-weight: 600; }
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin: 0 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.eyebrow::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line-soft);
+}
+
+section.block { margin-top: 40px; }
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--surface-2);
+}
+
+.panel-head h2 {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0;
+  font-weight: 600;
+}
+
+.panel-head .spacer { flex: 1; }
+.panel-body { padding: 16px 18px; }
+.panel-body.flush { padding: 0; }
+
+/* ---------- Steuerleiste ---------- */
+.controls {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.controls .hint {
+  font-size: 13px;
+  color: var(--muted);
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* ---------- Kennzahlen ---------- */
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  background: var(--line-soft);
+}
+
+.kpi {
+  background: var(--surface);
+  padding: 15px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.kpi .label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.kpi .value {
+  font-family: var(--mono);
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -.03em;
+  font-variant-numeric: tabular-nums;
+  transition: color .3s;
+}
+
+.kpi.is-crit .value { color: var(--crit); }
+.kpi.is-warn .value { color: var(--warn); }
+.kpi.is-ok   .value { color: var(--ok); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .kpi .value.bump { animation: bump .45s ease-out; }
+  @keyframes bump {
+    0%   { transform: scale(1); }
+    35%  { transform: scale(1.18); }
+    100% { transform: scale(1); }
+  }
+}
+
+/* ---------- Diagramm ---------- */
+.chart-wrap { position: relative; }
+canvas { display: block; width: 100%; height: 132px; }
+
+.chart-foot {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+  padding-top: 8px;
+}
+
+/* ---------- Tabellen ---------- */
+.scroll { overflow-x: auto; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-weight: 600;
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+}
+
+td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+tbody tr:last-child td { border-bottom: none; }
+
+.ip {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.dim { color: var(--muted); }
+
+.empty {
+  padding: 22px 18px;
+  color: var(--faint);
+  font-size: 13.5px;
+}
+
+/* Schweregrad-Streifen links an der Zeile */
+tr.sev td:first-child {
+  border-left: 3px solid transparent;
+  padding-left: 11px;
+}
+tr.sev-crit td:first-child { border-left-color: var(--crit); }
+tr.sev-warn td:first-child { border-left-color: var(--warn); }
+
+@media (prefers-reduced-motion: no-preference) {
+  tr.enter { animation: slide-in .35s ease-out; }
+  @keyframes slide-in {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: none; }
+  }
+}
+
+/* ---------- Chips ---------- */
+.chip {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.chip-fail { color: var(--crit); background: var(--crit-dim); }
+.chip-ok   { color: var(--ok);   background: var(--ok-dim); }
+.chip-trap { color: var(--warn); background: var(--warn-dim); }
+.chip-deny { color: var(--muted); background: var(--accent-dim); }
+
+/* ---------- Ereignisstrom ---------- */
+.stream {
+  max-height: 340px;
+  overflow-y: auto;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.ev {
+  display: grid;
+  grid-template-columns: 68px 108px 132px 1fr;
+  gap: 12px;
+  padding: 7px 18px;
+  border-bottom: 1px solid var(--line-soft);
+  align-items: center;
+}
+
+.ev:last-child { border-bottom: none; }
+.ev .t { color: var(--faint); font-variant-numeric: tabular-nums; }
+.ev .msg { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .ev.enter { animation: slide-in .3s ease-out; }
+}
+
+@media (max-width: 640px) {
+  .ev { grid-template-columns: 60px 96px; row-gap: 4px; }
+  .ev .msg { grid-column: 1 / -1; }
+}
+
+/* ---------- Köder-Datei ---------- */
+.decoy {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+@media (max-width: 780px) {
+  .decoy { grid-template-columns: 1fr; }
+}
+
+pre {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.65;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  color: var(--muted);
+}
+
+pre b { color: var(--ink); font-weight: 600; }
+pre .bait { color: var(--warn); font-weight: 600; }
+pre .cmd { color: var(--accent); }
+
+.traps { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+
+.traps li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.traps .n {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--warn);
+  background: var(--warn-dim);
+  border-radius: 5px;
+  padding: 2px 7px;
+  line-height: 1.5;
+}
+
+.traps h3 {
+  margin: 0 0 2px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.traps p { margin: 0; font-size: 13.5px; color: var(--muted); }
+
+/* ---------- Fußbereich ---------- */
+.note {
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--faint);
+  max-width: 68ch;
+}
+
+.steps { display: grid; gap: 10px; }
+
+.step {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.step .k {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  min-width: 74px;
+}
+
+.step .v { font-size: 13.5px; color: var(--muted); }
+.step code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:hover { text-decoration-thickness: 2px; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <strong>LoginShield</strong>
+      <span>Leitstand</span>
+    </div>
+    <span class="live"><span class="dot"></span>Schutz aktiv</span>
+    <button id="theme" type="button" aria-label="Thema wechseln">Thema</button>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="intro">
+    <h1>So sieht es aus, wenn jemand angreift.</h1>
+    <p>
+      Das ist die Oberfläche von LoginShield mit Beispieldaten &mdash; <strong>bedienbar</strong>,
+      nicht abfotografiert. Löse unten einen Angriff aus und beobachte, wie die
+      Erkennung reagiert: Fehlversuche laufen ein, der Zähler steigt, und beim
+      fünften schnappt die Sperre zu.
+    </p>
+    <p>
+      Die Sperren gelten hier nur in dieser Seite. Auf einem echten Server
+      landet dieselbe Entscheidung zusätzlich in der Firewall.
+    </p>
+  </div>
+
+  <section class="block">
+    <p class="eyebrow">Angriff auslösen</p>
+    <div class="panel">
+      <div class="panel-body">
+        <div class="controls">
+          <button class="primary" id="run-brute" type="button">Brute-Force-Angriff</button>
+          <button id="run-spray" type="button">Password Spraying</button>
+          <button id="run-trap" type="button">Honeypot-Scan</button>
+          <button class="danger" id="reset" type="button">Zurücksetzen</button>
+          <p class="hint" id="hint">
+            Drei typische Angriffsmuster. Jedes wird anders erkannt &mdash; und
+            der Honeypot braucht dafür nicht einmal einen Login-Versuch.
+          </p>
+        </div>
+      </div>
+
+      <div class="kpis">
+        <div class="kpi is-crit">
+          <span class="label">Fehlversuche</span>
+          <span class="value" id="k-fail">0</span>
+        </div>
+        <div class="kpi">
+          <span class="label">Angreifende IPs</span>
+          <span class="value" id="k-ips">0</span>
+        </div>
+        <div class="kpi is-crit">
+          <span class="label">Aktive Sperren</span>
+          <span class="value" id="k-blocks">0</span>
+        </div>
+        <div class="kpi is-warn">
+          <span class="label">Honeypot-Treffer</span>
+          <span class="value" id="k-trap">0</span>
+        </div>
+        <div class="kpi is-ok">
+          <span class="label">Echte Logins</span>
+          <span class="value" id="k-ok">0</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <p class="eyebrow">Fehlversuche im Zeitverlauf</p>
+    <div class="panel">
+      <div class="panel-body">
+        <div class="chart-wrap">
+          <canvas id="chart" aria-label="Balkendiagramm der Fehlversuche je Stunde"></canvas>
+        </div>
+        <div class="chart-foot">
+          <span>vor 24 Stunden</span>
+          <span id="chart-peak">&nbsp;</span>
+          <span>jetzt</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <p class="eyebrow">Aktive Sperren</p>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Gesperrte Adressen</h2>
+        <div class="spacer"></div>
+        <span class="num dim" id="block-count" style="font-size:12px"></span>
+      </div>
+      <div class="panel-body flush">
+        <div class="scroll" id="blocks-table">
+          <table>
+            <thead>
+              <tr>
+                <th>IP-Adresse</th>
+                <th>Grund</th>
+                <th>Verbleibend</th>
+                <th>Stufe</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="blocks"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="blocks-empty">Keine aktiven Sperren.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <p class="eyebrow">Ereignisse</p>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Live-Protokoll</h2>
+        <div class="spacer"></div>
+        <button class="tiny" id="filter" type="button" data-mode="all">Alle Ereignisse</button>
+      </div>
+      <div class="panel-body flush">
+        <div class="stream" id="stream"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <p class="eyebrow">Die Falle</p>
+    <div class="panel">
+      <div class="panel-body">
+        <div class="decoy">
+          <div>
+            <p style="margin:0 0 12px;color:var(--muted);font-size:13.5px">
+              Ein Angreifer sucht erst nach leichter Beute, bevor er Passwörter
+              probiert. Ruft er <code style="font-family:var(--mono)">/.env</code> ab,
+              bekommt er das hier &mdash; und ist ab diesem Moment gesperrt,
+              ohne es zu merken:
+            </p>
+<pre><span class="cmd">$ curl https://deine-seite.de/.env</span>
+
+APP_ENV=production
+DB_HOST=10.0.0.14
+DB_DATABASE=portal_prod
+DB_USERNAME=<span class="bait">svc_backup</span>
+DB_PASSWORD=<span class="bait">Srv5e751856a91e!</span>
+
+BACKUP_SSH_USER=<span class="bait">svc_backup</span></pre>
+          </div>
+
+          <div>
+            <ul class="traps">
+              <li>
+                <span class="n">1</span>
+                <div>
+                  <h3>Gefälschte Schwachstelle</h3>
+                  <p>
+                    28 Köderpfade, die es nicht gibt, aber die antworten:
+                    <span class="ip">/.env</span>, <span class="ip">/wp-admin</span>,
+                    <span class="ip">/phpmyadmin</span>. Ein Aufruf genügt für 24 Stunden
+                    Sperre. Es gibt keinen harmlosen Grund, diese Pfade abzurufen.
+                  </p>
+                </div>
+              </li>
+              <li>
+                <span class="n">2</span>
+                <div>
+                  <h3>Untergeschobene Zugangsdaten</h3>
+                  <p>
+                    <span class="ip">svc_backup</span> gilt nirgends. Taucht der Name
+                    später am echten Login auf, ist das kein Verdacht, sondern ein
+                    Beweis: derjenige hat die Köderdatei gelesen.
+                  </p>
+                </div>
+              </li>
+              <li>
+                <span class="n">3</span>
+                <div>
+                  <h3>Unsichtbares Formularfeld</h3>
+                  <p>
+                    Ein Eingabefeld, das Menschen nicht sehen. Bots füllen jedes
+                    Feld aus, das sie finden. Wer es ausfüllt, ist keiner.
+                  </p>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <p class="eyebrow">Selbst ausprobieren</p>
+    <div class="panel">
+      <div class="panel-body">
+        <div class="steps">
+          <div class="step">
+            <span class="k">Projekt</span>
+            <span class="v"><a href="https://github.com/Levirob2015/L-vi">github.com/Levirob2015/L-vi</a>
+              &mdash; Branch <code>claude/app-hack-protection-hi30nk</code></span>
+          </div>
+          <div class="step">
+            <span class="k">Demo-App</span>
+            <span class="v"><code>python examples/demo_login_app.py</code> &mdash; echter Login
+              auf Port 8080, dieses Dashboard auf 8787</span>
+          </div>
+          <div class="step">
+            <span class="k">Nur Daten</span>
+            <span class="v"><code>loginshield demo &amp;&amp; loginshield serve</code></span>
+          </div>
+          <div class="step">
+            <span class="k">Firewall</span>
+            <span class="v"><code>sudo loginshield firewall --setup</code> &mdash; danach gilt
+              jede Sperre auch auf Netzwerkebene</span>
+          </div>
+        </div>
+        <p class="note">
+          Alle IP-Adressen auf dieser Seite stammen aus den für Dokumentation
+          reservierten Bereichen (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24).
+          Sie gehören niemandem und führen nirgendwohin.
+        </p>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ---------- Zustand ----------
+  var state = { events: [], blocks: [], hourly: [], ok: 0, filter: "all" };
+  var running = false;
+  var timers = [];
+  var seq = 0;
+
+  var ATTACKER = "198.51.100.66";
+  var SPRAYER  = "203.0.113.41";
+  var SCANNER  = "192.0.2.77";
+  var USERS = ["admin", "root", "info", "backup", "postgres", "anna", "ben", "test"];
+
+  function clearTimers() {
+    timers.forEach(clearTimeout);
+    timers = [];
+  }
+
+  function later(fn, ms) {
+    timers.push(setTimeout(fn, ms));
+  }
+
+  // ---------- Startdaten: ein ruhiger Tag mit etwas Grundrauschen ----------
+  function seed() {
+    state.events = [];
+    state.blocks = [];
+    state.ok = 0;
+    seq = 0;
+
+    var shape = [1,0,2,1,0,1,3,2,1,4,2,1,0,2,5,3,2,1,3,2,4,2,1,2];
+    state.hourly = shape.slice();
+
+    var now = Date.now();
+    var seeded = [
+      { min: 41, kind: "ok",   ip: "203.0.113.17", user: "anna", msg: "Anmeldung erfolgreich" },
+      { min: 76, kind: "fail", ip: "198.51.100.12", user: "admin", msg: "HTTP 401" },
+      { min: 94, kind: "ok",   ip: "203.0.113.9",  user: "ben",  msg: "Anmeldung erfolgreich" },
+      { min: 128, kind: "fail", ip: "198.51.100.12", user: "root", msg: "HTTP 401" },
+      { min: 163, kind: "ok",   ip: "203.0.113.17", user: "anna", msg: "Anmeldung erfolgreich" }
+    ];
+    seeded.reverse().forEach(function (item) {
+      state.events.push({
+        id: ++seq,
+        ts: now - item.min * 60000,
+        kind: item.kind,
+        ip: item.ip,
+        user: item.user,
+        msg: item.msg,
+        fresh: false
+      });
+    });
+    state.ok = 3;
+  }
+
+  // ---------- Ereignisse ----------
+  function addEvent(kind, ip, user, msg) {
+    state.events.unshift({
+      id: ++seq, ts: Date.now(), kind: kind, ip: ip, user: user, msg: msg, fresh: true
+    });
+    if (state.events.length > 60) { state.events.pop(); }
+    if (kind === "fail") { state.hourly[state.hourly.length - 1] += 1; }
+    if (kind === "ok") { state.ok += 1; }
+    render();
+  }
+
+  function addBlock(ip, reason, seconds, level) {
+    var existing = state.blocks.filter(function (b) { return b.ip === ip; })[0];
+    if (existing) {
+      existing.until = Date.now() + seconds * 1000;
+      existing.reason = reason;
+      existing.level = level;
+    } else {
+      state.blocks.unshift({
+        ip: ip, reason: reason, until: Date.now() + seconds * 1000,
+        level: level, fresh: true
+      });
+    }
+    render();
+  }
+
+  // ---------- Angriffsabläufe ----------
+  function busy(on, label) {
+    running = on;
+    ["run-brute", "run-spray", "run-trap"].forEach(function (id) {
+      document.getElementById(id).disabled = on;
+    });
+    if (label) { document.getElementById("hint").textContent = label; }
+  }
+
+  function bruteForce() {
+    if (running) { return; }
+    busy(true, "Ein Angreifer probiert Passwörter für dasselbe Konto durch …");
+    var step = reduce ? 240 : 720;
+
+    for (var i = 1; i <= 4; i++) {
+      (function (n) {
+        later(function () {
+          addEvent("fail", ATTACKER, "admin", "Fehlversuch " + n + " von 5");
+        }, step * n);
+      })(i);
+    }
+
+    later(function () {
+      addEvent("fail", ATTACKER, "admin", "Schwelle erreicht – 5 Fehlversuche in 5 Minuten");
+      addBlock(ATTACKER, "brute_force_ip", 900, 0);
+      document.getElementById("hint").textContent =
+        "Gesperrt. Weitere Versuche kommen jetzt gar nicht mehr bis zur Passwortprüfung.";
+    }, step * 5);
+
+    later(function () {
+      addEvent("deny", ATTACKER, "admin", "Abgewiesen – IP gesperrt (HTTP 403)");
+    }, step * 6.4);
+
+    later(function () {
+      addEvent("deny", ATTACKER, "admin", "Abgewiesen – auch mit richtigem Passwort");
+      busy(false);
+    }, step * 7.6);
+  }
+
+  function spraying() {
+    if (running) { return; }
+    busy(true, "Eine IP probiert je zwei Passwörter für viele verschiedene Konten …");
+    var step = reduce ? 220 : 640;
+
+    for (var i = 0; i < 4; i++) {
+      (function (n) {
+        later(function () {
+          addEvent("fail", SPRAYER, USERS[n], "Fehlversuch – Konto " + (n + 1) + " von vielen");
+        }, step * (n + 1));
+      })(i);
+    }
+
+    later(function () {
+      addEvent("fail", SPRAYER, USERS[4], "5 verschiedene Konten in 10 Minuten");
+      addBlock(SPRAYER, "credential_spray", 900, 0);
+      document.getElementById("hint").textContent =
+        "Erkannt. Pro Konto waren es nur zwei Versuche – die normale Schwelle hätte das nie ausgelöst.";
+      busy(false);
+    }, step * 5);
+  }
+
+  function honeypot() {
+    if (running) { return; }
+    busy(true, "Ein Scanner sucht nach bekannten Schwachstellen …");
+    var step = reduce ? 260 : 780;
+
+    later(function () {
+      addEvent("trap", SCANNER, "–", "GET /.env – Köderdatei ausgeliefert (HTTP 200)");
+      addBlock(SCANNER, "honeypot_path", 86400, 0);
+    }, step);
+
+    later(function () {
+      addEvent("trap", SCANNER, "svc_backup",
+        "Köder-Zugangsdaten am Login benutzt – Beweis, kein Verdacht");
+      document.getElementById("hint").textContent =
+        "Ein einziger Treffer genügt: 24 Stunden Sperre, ohne dass je ein Passwort geraten wurde.";
+      busy(false);
+    }, step * 2.4);
+  }
+
+  // ---------- Darstellung ----------
+  var KINDS = {
+    fail: ["Fehlversuch", "chip-fail"],
+    ok:   ["Erfolg", "chip-ok"],
+    trap: ["Honeypot", "chip-trap"],
+    deny: ["Abgewiesen", "chip-deny"]
+  };
+
+  function el(tag, text, cls) {
+    var node = document.createElement(tag);
+    if (text !== undefined && text !== null) { node.textContent = String(text); }
+    if (cls) { node.className = cls; }
+    return node;
+  }
+
+  function fmtClock(ts) {
+    var d = new Date(ts);
+    return String(d.getHours()).padStart(2, "0") + ":" +
+           String(d.getMinutes()).padStart(2, "0") + ":" +
+           String(d.getSeconds()).padStart(2, "0");
+  }
+
+  function fmtLeft(ms) {
+    var s = Math.max(0, Math.round(ms / 1000));
+    if (s < 60) { return s + " s"; }
+    if (s < 3600) { return Math.floor(s / 60) + " min " + (s % 60) + " s"; }
+    return (s / 3600).toFixed(1) + " h";
+  }
+
+  var previous = {};
+
+  function setValue(id, value, key) {
+    var node = document.getElementById(id);
+    if (node.textContent === String(value)) { return; }
+    node.textContent = value;
+    if (previous[key] !== undefined && !reduce) {
+      node.classList.remove("bump");
+      void node.offsetWidth;
+      node.classList.add("bump");
+    }
+    previous[key] = value;
+  }
+
+  function renderKpis() {
+    var fails = state.events.filter(function (e) { return e.kind === "fail"; });
+    var traps = state.events.filter(function (e) { return e.kind === "trap"; });
+    var ips = {};
+    fails.concat(traps).forEach(function (e) { ips[e.ip] = true; });
+
+    setValue("k-fail", fails.length, "fail");
+    setValue("k-ips", Object.keys(ips).length, "ips");
+    setValue("k-blocks", state.blocks.length, "blocks");
+    setValue("k-trap", traps.length, "trap");
+    setValue("k-ok", state.ok, "ok");
+  }
+
+  function renderBlocks() {
+    var body = document.getElementById("blocks");
+    var empty = document.getElementById("blocks-empty");
+    var count = document.getElementById("block-count");
+
+    body.textContent = "";
+    empty.hidden = state.blocks.length > 0;
+    // Ohne Sperren bleibt sonst eine Kopfzeile ohne Inhalt stehen.
+    document.getElementById("blocks-table").hidden = state.blocks.length === 0;
+    count.textContent = state.blocks.length
+      ? state.blocks.length + (state.blocks.length === 1 ? " Adresse" : " Adressen")
+      : "";
+
+    state.blocks.forEach(function (block) {
+      var trap = block.reason === "honeypot_path";
+      var row = el("tr", null, "sev " + (trap ? "sev-warn" : "sev-crit") +
+                               (block.fresh && !reduce ? " enter" : ""));
+      block.fresh = false;
+
+      row.appendChild(el("td", block.ip, "ip"));
+
+      var reason = el("td");
+      reason.appendChild(el("span", block.reason, "chip " + (trap ? "chip-trap" : "chip-fail")));
+      row.appendChild(reason);
+
+      var left = el("td", fmtLeft(block.until - Date.now()), "num");
+      left.dataset.until = block.until;
+      row.appendChild(left);
+
+      row.appendChild(el("td", block.level, "num dim"));
+
+      var action = el("td");
+      var button = el("button", "Entsperren", "tiny");
+      button.addEventListener("click", function () {
+        state.blocks = state.blocks.filter(function (b) { return b !== block; });
+        addEvent("ok", block.ip, "–", "Sperre von Hand aufgehoben");
+      });
+      action.appendChild(button);
+      row.appendChild(action);
+
+      body.appendChild(row);
+    });
+  }
+
+  function renderStream() {
+    var stream = document.getElementById("stream");
+    stream.textContent = "";
+
+    var shown = state.events.filter(function (e) {
+      return state.filter === "all" || e.kind === state.filter;
+    });
+
+    if (!shown.length) {
+      stream.appendChild(el("div", "Keine Ereignisse in dieser Auswahl.", "empty"));
+      return;
+    }
+
+    shown.slice(0, 40).forEach(function (event) {
+      var row = el("div", null, "ev" + (event.fresh && !reduce ? " enter" : ""));
+      event.fresh = false;
+
+      row.appendChild(el("span", fmtClock(event.ts), "t"));
+
+      var kind = KINDS[event.kind];
+      var chipCell = el("span");
+      chipCell.appendChild(el("span", kind[0], "chip " + kind[1]));
+      row.appendChild(chipCell);
+
+      row.appendChild(el("span", event.ip, "ip"));
+      row.appendChild(el("span", event.user + "  ·  " + event.msg, "msg"));
+
+      stream.appendChild(row);
+    });
+  }
+
+  // ---------- Diagramm ----------
+  var canvas = document.getElementById("chart");
+  var ctx = canvas.getContext("2d");
+
+  function readToken(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function drawChart() {
+    var ratio = window.devicePixelRatio || 1;
+    var width = canvas.clientWidth;
+    var height = canvas.clientHeight;
+
+    canvas.width = width * ratio;
+    canvas.height = height * ratio;
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    var data = state.hourly;
+    var peak = Math.max.apply(null, data.concat([1]));
+    var pad = 10;
+    var usable = height - pad;
+    var slot = width / data.length;
+    var barWidth = Math.max(3, slot - 5);
+
+    // Feines Raster als Orientierung, nicht als Dekoration
+    ctx.strokeStyle = readToken("--grid");
+    ctx.lineWidth = 1;
+    for (var g = 1; g <= 3; g++) {
+      var y = Math.round(usable - (usable * g / 3)) + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+      ctx.stroke();
+    }
+
+    var accent = readToken("--accent");
+    var crit = readToken("--crit");
+
+    data.forEach(function (value, index) {
+      var barHeight = Math.max(2, (value / peak) * (usable - 6));
+      var x = index * slot + (slot - barWidth) / 2;
+      var y = usable - barHeight;
+      var isLast = index === data.length - 1;
+
+      ctx.fillStyle = isLast ? crit : accent;
+      ctx.globalAlpha = isLast ? 1 : 0.32 + 0.5 * (value / peak);
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(x, y, barWidth, barHeight, [2, 2, 0, 0]);
+      } else {
+        ctx.rect(x, y, barWidth, barHeight);
+      }
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    });
+
+    // Grundlinie
+    ctx.strokeStyle = readToken("--line");
+    ctx.beginPath();
+    ctx.moveTo(0, usable + 0.5);
+    ctx.lineTo(width, usable + 0.5);
+    ctx.stroke();
+
+    document.getElementById("chart-peak").textContent =
+      "Höchster Wert: " + peak + " Fehlversuche";
+  }
+
+  function render() {
+    renderKpis();
+    renderBlocks();
+    renderStream();
+    drawChart();
+  }
+
+  // ---------- Laufende Aktualisierung ----------
+  setInterval(function () {
+    var now = Date.now();
+    var expired = state.blocks.filter(function (b) { return b.until <= now; });
+
+    if (expired.length) {
+      state.blocks = state.blocks.filter(function (b) { return b.until > now; });
+      expired.forEach(function (b) {
+        addEvent("ok", b.ip, "–", "Sperre abgelaufen – Zugriff wieder möglich");
+      });
+      return;
+    }
+
+    document.querySelectorAll("#blocks td[data-until]").forEach(function (cell) {
+      cell.textContent = fmtLeft(Number(cell.dataset.until) - now);
+    });
+  }, 1000);
+
+  // ---------- Bedienung ----------
+  document.getElementById("run-brute").addEventListener("click", bruteForce);
+  document.getElementById("run-spray").addEventListener("click", spraying);
+  document.getElementById("run-trap").addEventListener("click", honeypot);
+
+  document.getElementById("reset").addEventListener("click", function () {
+    clearTimers();
+    busy(false);
+    seed();
+    previous = {};
+    document.getElementById("hint").textContent =
+      "Zurückgesetzt. Wähle ein Angriffsmuster.";
+    render();
+  });
+
+  var FILTERS = [
+    ["all", "Alle Ereignisse"],
+    ["fail", "Nur Fehlversuche"],
+    ["trap", "Nur Honeypot"],
+    ["ok", "Nur Erfolge"]
+  ];
+
+  document.getElementById("filter").addEventListener("click", function () {
+    var index = FILTERS.findIndex(function (f) { return f[0] === state.filter; });
+    var next = FILTERS[(index + 1) % FILTERS.length];
+    state.filter = next[0];
+    this.textContent = next[1];
+    renderStream();
+  });
+
+  var toggle = document.getElementById("theme");
+  toggle.addEventListener("click", function () {
+    var root = document.documentElement;
+    var dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    var current = root.getAttribute("data-theme") || (dark ? "dark" : "light");
+    root.setAttribute("data-theme", current === "dark" ? "light" : "dark");
+    drawChart();
+  });
+
+  window.addEventListener("resize", drawChart);
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawChart);
+
+  seed();
+  render();
+})();
+</script>
+</body>
+</html>

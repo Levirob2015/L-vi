@@ -1,0 +1,53 @@
+# Veroeffentlicht die klickbare Vorschau (docs/) auf GitHub Pages.
+#
+# Einmalige Voraussetzung: im Repository unter
+#   Settings -> Pages -> Build and deployment -> Source: "GitHub Actions"
+# auswaehlen. Danach laeuft das hier bei jedem Push automatisch.
+#
+# Ergebnis: https://levirob2015.github.io/L-vi/demo.html
+name: Vorschau veroeffentlichen
+
+on:
+  push:
+    branches:
+      - main
+      - claude/app-hack-protection-hi30nk
+    paths:
+      - "docs/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Laeuft ein Deployment schon, wird es nicht abgebrochen - die Vorschau
+# soll nie in einem halben Zustand stehen.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Vorschau zusammenstellen
+        run: |
+          mkdir -p _site
+          cp docs/demo.html _site/index.html
+          cp docs/demo.html _site/demo.html
+          cp docs/dashboard.png _site/dashboard.png
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

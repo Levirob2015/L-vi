@@ -10,6 +10,17 @@ Kommandozeile.
 
 ![Dashboard](docs/dashboard.png)
 
+### Klickbare Vorschau
+
+[`docs/demo.html`](docs/demo.html) ist eine bedienbare Version dieser
+Oberfläche &mdash; einzelne Datei, keine Installation. Herunterladen und
+doppelklicken, dann einen Angriff auslösen und zusehen, wie die Sperre
+zuschnappt.
+
+Über GitHub Pages wird sie automatisch veröffentlicht, sobald du unter
+*Settings → Pages → Source* einmalig **GitHub Actions** auswählst:
+`https://levirob2015.github.io/L-vi/`
+
 ---
 
 ## Schnellstart
