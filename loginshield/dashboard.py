@@ -213,6 +213,8 @@ def _handler_factory(guard: Guard, config: DashboardConfig):
                 })
             elif route == "/api/anomalies":
                 self._json(200, self._anomalies(params))
+            elif route == "/api/files":
+                self._json(200, self._files())
             elif route == "/api/allowlist":
                 self._json(200, {"allowlist": guard.store.allow_list()})
             else:
@@ -290,6 +292,44 @@ def _handler_factory(guard: Guard, config: DashboardConfig):
                 "baseline": status,
                 "global": gesamt.as_dict() if gesamt.signals else None,
                 "reports": [r.as_dict() for r in berichte],
+            }
+
+        def _files(self) -> dict:
+            """Zustand der Dateipruefung: Grundlage, letzter Befund, Quarantaene.
+
+            Bisher landeten diese Ergebnisse nur im Protokoll. Wer das
+            Dashboard benutzt, sah von der ganzen Dateipruefung nichts -
+            also ausgerechnet vom deutlichsten Hinweis darauf, dass jemand
+            schon im Haus ist.
+            """
+            status = guard.integrity.status()
+            bericht = guard.last_integrity
+            try:
+                quarantaene = guard.quarantine.list()
+            except OSError:      # pragma: no cover - Rechte
+                quarantaene = []
+
+            return {
+                "malware_enabled": bool(guard.config.malware.enabled),
+                "scan_uploads": bool(guard.config.malware.scan_uploads),
+                "clamav": guard.filescan.clamav_binary() or "",
+                "action": guard.config.malware.action,
+                "integrity": {
+                    "enabled": bool(guard.config.integrity.enabled),
+                    "ready": bool(status.get("ready")),
+                    "reason": status.get("reason", ""),
+                    "files": status.get("files", 0),
+                    "paths": status.get("paths", []),
+                    "interval": guard.config.integrity.check_interval,
+                },
+                "last_report": bericht.as_dict() if bericht is not None else None,
+                "quarantine": [
+                    {"id": eintrag.get("id", ""),
+                     "original": eintrag.get("original", ""),
+                     "ts": eintrag.get("quarantined_ts", 0),
+                     "summary": (eintrag.get("result") or {}).get("summary", "")}
+                    for eintrag in quarantaene[:50]
+                ],
             }
 
         def _attempts(self, params) -> dict:
@@ -434,6 +474,8 @@ td { padding:7px 10px 7px 0; border-bottom:1px solid var(--line); white-space:no
   font-variant-numeric:tabular-nums; }
 tr:last-child td { border-bottom:none; }
 .mono { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+td.wrap { white-space:normal; word-break:break-all; min-width:12ch; }
+.klein { font-size:11px; }
 .tag { display:inline-block; padding:1px 7px; border-radius:20px; font-size:12px;
   border:1px solid var(--line); color:var(--muted); }
 .tag.fail { color:var(--danger); border-color:var(--danger); }
@@ -560,6 +602,17 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
   </section>
 
   <section>
+    <h2>Dateien auf dem Server</h2>
+    <div class="body">
+      <div class="muted" id="files-note" style="font-size:13px"></div>
+      <table id="files" hidden><thead><tr>
+        <th>Art</th><th>Datei</th><th>Schwere</th><th>Bedeutung</th>
+      </tr></thead><tbody></tbody></table>
+      <div id="quarantine-note" class="muted" style="font-size:13px;margin-top:8px"></div>
+    </div>
+  </section>
+
+  <section>
     <h2>Letzte Ereignisse</h2>
     <div class="body scroll">
       <div class="row" style="margin-bottom:10px">
@@ -649,9 +702,17 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
   }
 
   function fill(tableId, emptyId, rows, builder) {
+    document.getElementById(emptyId).hidden = rows.length > 0;
+    fillTable(tableId, rows, builder);
+  }
+
+  // Nur die Tabelle fuellen, ohne einen zweiten Text auszublenden. Wird
+  // dort gebraucht, wo die Zeile darueber eine Zusammenfassung ist und
+  // keine "nichts gefunden"-Meldung: Die soll gerade dann stehen bleiben,
+  // wenn es etwas zu sehen gibt.
+  function fillTable(tableId, rows, builder) {
     var body = document.querySelector("#" + tableId + " tbody");
     body.textContent = "";
-    document.getElementById(emptyId).hidden = rows.length > 0;
     document.getElementById(tableId).hidden = rows.length === 0;
     rows.forEach(function (item) { body.appendChild(builder(item)); });
   }
@@ -780,7 +841,7 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
     }
     note.textContent = data.reports.length +
       " Adresse(n) weichen vom Normalzustand ab.";
-    fill("anomalies", "anomaly-note", data.reports, function (item) {
+    fillTable("anomalies", data.reports, function (item) {
       var row = el("tr");
       row.appendChild(el("td", item.ip, "mono"));
       var cell = el("td");
@@ -842,6 +903,74 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
     api("/api/attempts?limit=100&event=" + encodeURIComponent(event))
       .then(renderAttempts)
       .catch(function (error) { toast(error.message, true); });
+    api("/api/files")
+      .then(renderFiles)
+      .catch(function (error) { toast(error.message, true); });
+  }
+
+  function renderFiles(data) {
+    var note = document.getElementById("files-note");
+    var table = document.getElementById("files");
+    var quarantaene = document.getElementById("quarantine-note");
+
+    var teile = [];
+    teile.push(data.malware_enabled
+      ? "Dateipruefung aktiv" + (data.clamav ? " (mit ClamAV)" : "")
+      : "Dateipruefung abgeschaltet");
+    if (data.scan_uploads) { teile.push("Uploads werden geprueft"); }
+
+    if (!data.integrity.enabled) {
+      teile.push("Integritaetspruefung aus - eine abgelegte Webshell faellt nicht auf");
+    } else if (!data.integrity.ready) {
+      teile.push(data.integrity.reason || "keine Vergleichsgrundlage");
+    } else {
+      teile.push(data.integrity.files === 1
+        ? "1 Datei wird ueberwacht"
+        : data.integrity.files + " Dateien werden ueberwacht");
+    }
+
+    quarantaene.textContent = data.quarantine.length
+      ? data.quarantine.length + " Datei(en) in Quarantaene. Zurueckholen: " +
+        "loginshield quarantine --restore <ID>"
+      : "";
+
+    var bericht = data.last_report;
+    if (!bericht || !bericht.changes || !bericht.changes.length) {
+      table.hidden = true;
+      if (bericht && !bericht.error) {
+        teile.push("zuletzt geprueft: unveraendert");
+      }
+      note.textContent = teile.join(" - ") + ".";
+      return;
+    }
+
+    note.textContent = bericht.changes.length + " Veraenderung(en), Bewertung " +
+      bericht.verdict + ". " + teile.join(" - ") + ".";
+    fillTable("files", bericht.changes, function (change) {
+      var row = el("tr");
+      var art = el("td");
+      art.appendChild(el("span", change.kind,
+        "tag " + (change.severity >= 9 ? "fail" : "deny")));
+      row.appendChild(art);
+      // Der Dateiname zuerst und gross, der Ordner klein darunter: Auf
+      // dem Telefon draengt ein langer Pfad sonst alles Wichtige aus dem
+      // Bild.
+      var teile = change.path.split("/");
+      var name = teile.pop();
+      var zelle = el("td", null, "mono wrap");
+      zelle.appendChild(el("div", name));
+      if (teile.length) {
+        var ordner = teile.join("/") + "/";
+        // Sehr lange Pfade von links kuerzen - hinten steht das
+        // Interessante (welches Verzeichnis), vorne nur /var/www/...
+        if (ordner.length > 44) { ordner = "..." + ordner.slice(-44); }
+        zelle.appendChild(el("div", ordner, "muted klein"));
+      }
+      row.appendChild(zelle);
+      row.appendChild(el("td", String(change.severity)));
+      row.appendChild(el("td", change.description, "muted"));
+      return row;
+    });
   }
 
   document.getElementById("refresh").addEventListener("click", load);

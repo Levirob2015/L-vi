@@ -31,6 +31,7 @@ from .honeypot import Honeypot
 from .anomaly import AnomalyDetector
 from .filescan import FileScanner, Quarantine
 from .integrity import IntegrityMonitor
+from .notify import Notifier
 from .requestfilter import RequestFilter
 from .models import Block, Decision, Event, Reason
 from .netutils import (
@@ -86,6 +87,8 @@ class Guard:
         self.quarantine = Quarantine(self.config.malware.quarantine_dir)
         #: Ueberwachung von Dateiveraenderungen.
         self.integrity = IntegrityMonitor(self.config.integrity, self)
+        #: Sagt Bescheid, statt darauf zu warten, dass jemand nachsieht.
+        self.notifier = Notifier(self.config.notify)
 
         rules = self.config.rules
         self._limiter = SlidingWindow(rules.request_limit, rules.request_window)
@@ -103,14 +106,83 @@ class Guard:
         self._net_cache: List = []
         self._net_cache_at = 0.0
 
+        self._wartung_stop = threading.Event()
+        self._wartung_faden: Optional[threading.Thread] = None
+
         if self.firewall.enabled and self.config.firewall.sync_on_start:
             # Nach einem Neustart sind die Firewall-Regeln weg, die Sperren
             # in der Datenbank aber noch gueltig. Fehler hier duerfen den
             # Start nicht verhindern - die Sperre in der App gilt ohnehin.
             try:
+                # Erst nachsehen, ob die Regeln ueberhaupt stehen: Sonst
+                # laufen die Sperren beim Abgleich in eine Struktur, die
+                # es nicht mehr gibt - und der Schutz faellt erst bei der
+                # naechsten Wartung auf, im Zweifel fuenf Minuten spaeter.
+                self.firewall.watchdog()
                 self.sync_firewall()
             except Exception:  # pragma: no cover - systemabhaengig
                 log.exception("Firewall-Abgleich beim Start fehlgeschlagen")
+
+        self.start_maintenance()
+
+    # ------------------------------------------------------------------
+    # Wartung im Hintergrund
+    # ------------------------------------------------------------------
+    def start_maintenance(self) -> bool:
+        """Startet die regelmaessige Wartung, falls sie noetig und sinnvoll ist.
+
+        Warum von selbst und nicht auf Zuruf: An der Wartung haengen die
+        Wache ueber die Firewall-Regeln, die Dateiwache und die
+        Anomalie-Auswertung. Sie lief bisher nur, wenn ``loginshield
+        watch`` mitlief oder jemand das Dashboard aktualisierte - also
+        ausgerechnet **nicht** im haeufigsten Fall: der Middleware in der
+        eigenen Anwendung. Dort raeumte niemand auf; bei iptables und ufw
+        blieb eine abgelaufene Sperre dadurch fuer immer stehen.
+
+        Zwei Bedingungen muessen erfuellt sein:
+
+        * ``maintenance_interval`` ist groesser als 0, und
+        * es wird mit der echten Uhr gearbeitet.
+
+        Die zweite Bedingung klingt seltsam, ist aber das Entscheidende:
+        Wer eine eigene Uhr mitgibt, steuert die Zeit selbst - in Tests
+        etwa. Ein Faden, der nebenher in echter Zeit Sperren aufraeumt,
+        wuerde solchen Aufrufern dazwischenfunken.
+        """
+        if self._wartung_faden is not None:
+            return False
+        if self.config.maintenance_interval <= 0:
+            return False
+        if self.clock is not time.time:
+            return False
+
+        self._wartung_faden = threading.Thread(
+            target=self._wartung_schleife, name="loginshield-wartung", daemon=True,
+        )
+        self._wartung_faden.start()
+        log.debug("Wartung laeuft alle %ss im Hintergrund",
+                  self.config.maintenance_interval)
+        return True
+
+    def _wartung_schleife(self) -> None:
+        abstand = max(10, int(self.config.maintenance_interval))
+        # Nicht sofort loslegen: Beim Start hat die Anwendung Wichtigeres
+        # zu tun, und der Abgleich mit der Firewall ist ohnehin gerade
+        # gelaufen.
+        while not self._wartung_stop.wait(abstand):
+            try:
+                self.maintenance()
+            except Exception:  # pragma: no cover - darf den Faden nie beenden
+                log.exception("Wartung fehlgeschlagen - naechster Versuch in %ss",
+                              abstand)
+
+    def stop_maintenance(self) -> None:
+        self._wartung_stop.set()
+        faden = self._wartung_faden
+        if faden is not None and faden.is_alive():
+            # Kurz warten, damit ein laufender Durchlauf noch fertig wird.
+            faden.join(timeout=5.0)
+        self._wartung_faden = None
 
     # ------------------------------------------------------------------
     # Adressen
@@ -557,6 +629,18 @@ class Guard:
             self._invalidate_network_cache()
         if self.firewall.enabled:
             self.firewall.block(normalized, int(seconds))
+
+        # Eine Netzsperre wiegt schwerer als eine Einzelsperre: Sie trifft
+        # Adressen mit, die noch nicht aufgefallen sind, und deutet auf ein
+        # Botnetz. Deshalb eine Stufe hoeher gemeldet.
+        self.notifier.notify(
+            f"{'Netz' if network else 'IP'} gesperrt: {normalized}",
+            f"Grund: {reason}\nDauer: {int(seconds)}s\n"
+            f"Fruehere Sperren: {strikes}\n{detail or ''}".rstrip(),
+            schwere=9 if network else 7,
+            kennung=f"block:{reason}",
+        )
+
         if not network:
             self._maybe_block_subnet(normalized, now)
         return block
@@ -726,6 +810,14 @@ class Guard:
             wache = self.firewall.watchdog()
             if wache["repariert"]:
                 self.sync_firewall()
+                self.notifier.notify(
+                    "Firewall-Regeln waren verschwunden",
+                    "Die eigenen Regeln fehlten und wurden neu angelegt. "
+                    "Zwischenzeitlich galten die Sperren nur innerhalb der "
+                    "Anwendung. Hat ein anderes Werkzeug den Regelsatz "
+                    "geladen?",
+                    schwere=8, kennung="firewall:repariert",
+                )
         except Exception:  # pragma: no cover - darf die Wartung nie stoppen
             log.exception("Firewall-Wache fehlgeschlagen")
 
@@ -787,6 +879,30 @@ class Guard:
                     change.path, fund["result"].summary,
                     " - in Quarantaene" if fund["quarantined"] else "",
                 )
+                # Das Schwerste, was dieses Programm melden kann: Es liegt
+                # etwas auf dem Server, das nicht dorthin gehoert. Deshalb
+                # Schwere 10 - diese Meldung soll durch jede Einstellung
+                # hindurchkommen.
+                self.notifier.notify(
+                    "Schadcode auf dem Server gefunden",
+                    f"Datei: {change.path}\n"
+                    f"Befund: {fund['result'].summary}\n"
+                    + ("Die Datei liegt jetzt in der Quarantaene.\n"
+                       if fund["quarantined"] else
+                       "Die Datei liegt unveraendert an ihrem Platz.\n"),
+                    schwere=10, kennung="datei:schadcode",
+                )
+
+        if ergebnis["funde"] == 0 and self.last_integrity.score >= 9:
+            # Veraendert, aber kein Schadcode gefunden. Trotzdem wissenswert:
+            # Auf einem Webauftritt aendert sich nichts von allein.
+            self.notifier.notify(
+                "Dateien haben sich veraendert",
+                f"{len(bericht.changes)} Veraenderung(en), Bewertung "
+                f"{bericht.verdict}.\n"
+                + "\n".join(f"  {c.kind}: {c.path}" for c in bericht.changes[:10]),
+                schwere=7, kennung="datei:veraendert",
+            )
         return ergebnis
 
     def status(self, hours: float = 24.0) -> Dict[str, object]:
@@ -798,4 +914,14 @@ class Guard:
         return stats
 
     def close(self) -> None:
+        self.stop_maintenance()
+        self.notifier.close()
         self.store.close()
+
+    # Damit sich der Guard auch in einem with-Block benutzen laesst und der
+    # Faden dabei sicher endet.
+    def __enter__(self) -> "Guard":
+        return self
+
+    def __exit__(self, *fehler) -> None:
+        self.close()

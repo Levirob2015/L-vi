@@ -1,0 +1,92 @@
+# Fuehrt die Testsuite bei jedem Push und jedem Pull Request aus.
+#
+# Der Anlass war ein konkreter Fehler: Die Wartung - und damit die Wache
+# ueber die Firewall-Regeln, die Dateiwache und die Anomalie-Auswertung -
+# lief im haeufigsten Einsatzfall gar nicht. Aufgefallen ist das erst beim
+# Durchlesen von Hand. Tests, die niemand ausfuehrt, finden so etwas nicht.
+name: Tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 ist die aelteste unterstuetzte Fassung (siehe pyproject.toml),
+        # 3.13 die neueste. Beide Enden muessen gruen sein.
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python ${{ matrix.python-version }} einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Abhaengigkeiten installieren
+        # Das Paket selbst hat keine - nur pytest und PyYAML fuer die Tests.
+        run: python -m pip install --upgrade pip pytest PyYAML
+
+      - name: Tests
+        run: python -m pytest tests/ -q
+
+      - name: Laeuft ohne PyYAML genauso?
+        # PyYAML ist optional. Faellt es weg, muss die JSON-Konfiguration
+        # weiterhin funktionieren - sonst ist "keine Abhaengigkeiten" eine
+        # leere Behauptung.
+        run: |
+          python -m pip uninstall -y PyYAML
+          python -m pytest tests/ -q
+
+  ohne-fremde-pakete:
+    # Prueft die zentrale Zusage des Projekts: Das Paket selbst kommt mit
+    # der Standardbibliothek aus.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Nur Standardbibliothek?
+        run: |
+          python - <<'PY'
+          import ast, pathlib, sys
+          stdlib = set(sys.stdlib_module_names)
+          erlaubt = {"yaml"}          # optional, wird abgefangen
+          fremd = set()
+          for pfad in pathlib.Path("loginshield").rglob("*.py"):
+              for knoten in ast.walk(ast.parse(pfad.read_text())):
+                  if isinstance(knoten, ast.Import):
+                      namen = [n.name for n in knoten.names]
+                  elif isinstance(knoten, ast.ImportFrom) and knoten.level == 0:
+                      namen = [knoten.module or ""]
+                  else:
+                      continue
+                  for name in namen:
+                      wurzel = name.split(".")[0]
+                      if wurzel and wurzel not in stdlib and wurzel not in erlaubt:
+                          fremd.add(f"{wurzel} (in {pfad})")
+          if fremd:
+              print("Fremde Pakete gefunden:")
+              for eintrag in sorted(fremd):
+                  print(" -", eintrag)
+              raise SystemExit(1)
+          print("Nur Standardbibliothek.")
+          PY
+
+      - name: Laesst sich installieren und starten?
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+          loginshield --version
+          loginshield doctor --json > /dev/null

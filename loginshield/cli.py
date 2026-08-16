@@ -45,6 +45,12 @@ identity_hmac_key: "__HMAC__"
 
 retention_days: 30
 
+# Wartung im Hintergrund (Sekunden). Daran haengen: abgelaufene Sperren
+# aufheben, die Wache ueber die Firewall-Regeln, die Dateiwache und die
+# Anomalie-Auswertung. 0 = keine (dann selbst 'guard.maintenance()'
+# aufrufen oder 'loginshield prune' per Cron).
+maintenance_interval: 300
+
 rules:
   ip_failure_threshold: 5        # Fehlversuche einer IP ...
   ip_failure_window: 300         # ... in diesem Zeitraum -> Sperre
@@ -171,6 +177,26 @@ integrity:
   paths: []
   # - /var/www
   check_interval: 3600    # im Betrieb selbst pruefen (0 = nur von Hand)
+
+# Bescheid sagen, wenn etwas Ernstes passiert - sonst erfaehrt man es
+# nur, wenn man nachsieht.
+#   method: webhook  -> auch der Weg aufs iPhone: ein ntfy-Thema als URL
+#           email    -> ueber einen SMTP-Server
+#           command  -> eigenes Programm, {titel} und {text} werden ersetzt
+notify:
+  enabled: false
+  method: none
+  min_severity: 7         # 7 = Sperren und Funde, 10 = nur Schadcode
+  min_interval: 300       # Sperrfrist je Meldungsart (niemand liest 400)
+  url: ""                 # z.B. https://ntfy.sh/mein-geheimes-thema
+  format: text            # text (ntfy, Gotify) | json
+  # smtp_host: mail.example.com
+  # smtp_port: 587
+  # smtp_user: ""
+  # smtp_password: ""
+  # mail_from: loginshield@example.com
+  # mail_to: [admin@example.com]
+  # command: [/usr/local/bin/melden, "{titel}", "{text}"]
 
 # Optional: Logdateien mitlesen (loginshield watch)
 logwatch: []
@@ -959,6 +985,33 @@ def _doctor_grundlagen(config, guard, pruefe) -> None:
     else:
         pruefe(bereich, GUT, f"{len(config.allowlist)} Eintrag/Eintraege auf der "
                              f"Allowlist")
+
+    # An der Wartung haengen die Firewall-Wache, die Dateiwache und die
+    # Anomalie-Auswertung. Steht sie, laufen die drei gar nicht - und
+    # abgelaufene Sperren bleiben bei iptables/ufw fuer immer stehen.
+    if config.maintenance_interval > 0:
+        wort = _fmt_duration(config.maintenance_interval)
+        if guard._wartung_faden is not None:
+            pruefe(bereich, GUT, f"Wartung laeuft alle {wort} im Hintergrund")
+        else:
+            pruefe(bereich, INFO, f"Wartung eingestellt auf alle {wort}")
+    else:
+        pruefe(bereich, FEHLER,
+               "Wartung abgeschaltet (maintenance_interval: 0) - damit laufen "
+               "auch Firewall-Wache, Dateiwache und Anomalie-Auswertung nicht",
+               "Entweder maintenance_interval setzen oder 'guard.maintenance()' "
+               "selbst regelmaessig aufrufen")
+
+    if config.notify.enabled and config.notify.method != "none":
+        pruefe(bereich, GUT,
+               f"Benachrichtigung ueber {config.notify.method} "
+               f"(ab Schwere {config.notify.min_severity})")
+    else:
+        pruefe(bereich, WARNUNG,
+               "Keine Benachrichtigung - du erfaehrst nur etwas, wenn du "
+               "nachsiehst",
+               "notify.enabled: true, method: webhook und eine ntfy-Adresse "
+               "genuegen fuer eine Meldung aufs Telefon")
 
 
 def _doctor_firewall(config, guard, pruefe) -> None:

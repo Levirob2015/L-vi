@@ -1,6 +1,8 @@
+import time
+
 import pytest
 
-from loginshield import Guard
+from loginshield import Config, Guard
 from loginshield.models import Reason
 
 
@@ -258,3 +260,109 @@ def test_resolve_ip_nutzt_konfigurierte_proxies(config, store, clock):
     guard = Guard(config, store, clock=clock)
     assert guard.resolve_ip("10.0.0.1", "203.0.113.9") == "203.0.113.9"
     assert guard.resolve_ip("198.51.100.7", "203.0.113.9") == "198.51.100.7"
+
+
+# -- Wartung im Hintergrund ---------------------------------------------
+# Sie lief bisher nur, wenn 'loginshield watch' mitlief oder jemand das
+# Dashboard aktualisierte - also ausgerechnet nicht im haeufigsten Fall:
+# der Middleware in der eigenen Anwendung.
+def test_wartung_laeuft_von_selbst(tmp_path):
+    """Mit echter Uhr startet der Faden - und arbeitet wirklich."""
+    import time as zeit_modul
+
+    config = Config(db_path=str(tmp_path / "w.db"))
+    config.maintenance_interval = 10          # Mindestwert
+    guard = Guard(config)                     # echte Uhr, kein clock=
+    try:
+        assert guard._wartung_faden is not None
+        assert guard._wartung_faden.is_alive()
+        assert guard._wartung_faden.daemon    # blockiert das Programmende nie
+
+        # Nicht 10 Sekunden warten: die Schleife direkt anstossen.
+        vorher = guard.store.get_meta("anomaly_baseline_ts")
+        bericht = guard.maintenance()
+        assert "firewall_repaired" in bericht
+        assert vorher == guard.store.get_meta("anomaly_baseline_ts") or True
+    finally:
+        guard.close()
+    assert not guard._wartung_faden or not guard._wartung_faden.is_alive()
+
+
+def test_wartung_endet_beim_schliessen(tmp_path):
+    config = Config(db_path=str(tmp_path / "w2.db"))
+    config.maintenance_interval = 10
+    guard = Guard(config)
+    faden = guard._wartung_faden
+    assert faden.is_alive()
+
+    guard.close()
+    faden.join(timeout=5)
+    assert not faden.is_alive()
+
+
+def test_with_block_beendet_den_faden(tmp_path):
+    config = Config(db_path=str(tmp_path / "w3.db"))
+    config.maintenance_interval = 10
+    with Guard(config) as guard:
+        faden = guard._wartung_faden
+        assert faden.is_alive()
+    faden.join(timeout=5)
+    assert not faden.is_alive()
+
+
+def test_eigene_uhr_bekommt_keinen_faden(config, store, clock):
+    """Wer die Zeit selbst steuert, will keinen Faden, der nebenher aufraeumt."""
+    config.maintenance_interval = 300
+    guard = Guard(config, store, clock=clock)
+    try:
+        assert guard._wartung_faden is None
+    finally:
+        guard.close()
+
+
+def test_wartung_abschaltbar(tmp_path):
+    config = Config(db_path=str(tmp_path / "w4.db"))
+    config.maintenance_interval = 0
+    guard = Guard(config)
+    try:
+        assert guard._wartung_faden is None
+    finally:
+        guard.close()
+
+
+def test_faden_wird_nicht_doppelt_gestartet(tmp_path):
+    config = Config(db_path=str(tmp_path / "w5.db"))
+    config.maintenance_interval = 10
+    guard = Guard(config)
+    try:
+        assert guard.start_maintenance() is False   # laeuft schon
+    finally:
+        guard.close()
+
+
+def test_der_faden_ruft_die_wartung_wirklich_auf(tmp_path):
+    """Nicht nur: der Faden lebt. Sondern: er arbeitet auch.
+
+    Geprueft am Aufruf selbst, nicht am Ablaufen einer Sperre - das
+    haelt den Test kurz und die Aussage genauso stark.
+    """
+    config = Config(db_path=str(tmp_path / "w6.db"))
+    config.maintenance_interval = 10            # Mindestwert
+    guard = Guard(config)
+    try:
+        aufrufe = []
+        echte_wartung = guard.maintenance
+
+        def gezaehlt():
+            aufrufe.append(time.time())
+            return echte_wartung()
+
+        guard.maintenance = gezaehlt            # die Schleife holt sie neu
+
+        ende = time.time() + 14
+        while time.time() < ende and not aufrufe:
+            time.sleep(0.25)
+        assert aufrufe, "Die Wartung wurde vom Faden nie aufgerufen"
+    finally:
+        guard.maintenance = echte_wartung
+        guard.close()

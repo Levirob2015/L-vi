@@ -1,0 +1,79 @@
+# LoginShield als Dienst.
+#
+#   sudo cp deploy/loginshield.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now loginshield
+#   systemctl status loginshield
+#
+# Was hier laeuft, ist das Dashboard samt Hintergrundwartung: abgelaufene
+# Sperren aufheben, die Firewall-Regeln bewachen, Dateien pruefen, alte
+# Daten loeschen. Der Schutz der Anwendung selbst laeuft in der Anwendung
+# (Middleware) - dieser Dienst ist die Aufsicht darueber.
+#
+# Mit --watch liest er zusaetzlich die in der Konfiguration angegebenen
+# Logdateien mit (sshd, nginx).
+
+[Unit]
+Description=LoginShield - Angriffsschutz und Aufsicht
+Documentation=https://github.com/Levirob2015/L-vi
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/loginshield --config /etc/loginshield/loginshield.yaml serve --watch
+Restart=on-failure
+RestartSec=5s
+
+# -- Rechte -----------------------------------------------------------
+# Ein eigener Benutzer, den systemd selbst anlegt und wieder wegraeumt.
+DynamicUser=yes
+StateDirectory=loginshield
+# In der Konfiguration dann:  db_path: /var/lib/loginshield/loginshield.db
+WorkingDirectory=/var/lib/loginshield
+
+# Die Firewall zu bedienen ist das Einzige, wofuer erhoehte Rechte noetig
+# sind - und zwar genau eine Faehigkeit, nicht root. Wer die Firewall
+# nicht benutzt (firewall.enabled: false), kann beide Zeilen streichen.
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+
+# -- Absicherung ------------------------------------------------------
+# Ein Schutzprogramm, das selbst weit offen laeuft, waere ein schlechter
+# Scherz. Alles unten ist Standard-Haertung von systemd.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+# Nur lesend auf die Konfiguration; Schreiben nur ins eigene Verzeichnis.
+ReadOnlyPaths=/etc/loginshield
+# Fuer die Integritaetspruefung des Webauftritts (lesend genuegt):
+# ReadOnlyPaths=/var/www
+# Fuer 'watch' auf Logdateien:
+# ReadOnlyPaths=/var/log
+
+# Speicher- und Prozessgrenzen: Ein Angriff soll den Rechner nicht
+# lahmlegen koennen.
+MemoryMax=512M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

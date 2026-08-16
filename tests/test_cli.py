@@ -319,3 +319,28 @@ def test_doctor_ist_zufrieden_wenn_alles_steht(tmp_path, capsys):
 
     assert main(["--config", str(pfad), "--db", db, "doctor"]) == 0
     assert "Vergleichsgrundlage vorhanden" in capsys.readouterr().out
+
+
+def test_doctor_meldet_abgeschaltete_wartung(tmp_path, capsys):
+    """An der Wartung haengen drei andere Pruefungen - das muss auffallen."""
+    pfad = tmp_path / "ohne.json"
+    pfad.write_text('{"maintenance_interval": 0}')
+    code = main(["--config", str(pfad), "--db", str(tmp_path / "x.db"), "doctor"])
+
+    ausgabe = capsys.readouterr().out
+    assert "Wartung abgeschaltet" in ausgabe
+    assert "Firewall-Wache" in ausgabe
+    assert code == 1                    # ein Problem, kein Hinweis
+
+
+def test_doctor_meldet_fehlende_benachrichtigung(db, capsys):
+    run(["doctor"], db)
+    assert "Keine Benachrichtigung" in capsys.readouterr().out
+
+
+def test_doctor_lobt_eingerichtete_benachrichtigung(tmp_path, capsys):
+    pfad = tmp_path / "mit.json"
+    pfad.write_text('{"notify": {"enabled": true, "method": "webhook",'
+                    ' "url": "https://ntfy.sh/thema"}}')
+    main(["--config", str(pfad), "--db", str(tmp_path / "x.db"), "doctor"])
+    assert "Benachrichtigung ueber webhook" in capsys.readouterr().out

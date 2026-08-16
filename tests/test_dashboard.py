@@ -228,3 +228,61 @@ def test_bedienelemente_sind_auf_touch_gross_genug(dashboard):
     assert "min-height:44px" in seite
     assert "font-size:16px" in seite
     assert "env(safe-area-inset-bottom)" in seite
+
+
+# -- Die Dateipruefung im Dashboard --------------------------------------
+# Die Ergebnisse landeten bisher nur im Protokoll. Wer das Dashboard
+# benutzt, sah von der ganzen Dateipruefung nichts - also ausgerechnet
+# vom deutlichsten Hinweis darauf, dass jemand schon im Haus ist.
+def test_dateizustand_ueber_api(dashboard):
+    status, daten = json_request(dashboard, "/api/files")
+    assert status == 200
+    assert daten["malware_enabled"] is True
+    assert daten["integrity"]["enabled"] is False
+    assert daten["last_report"] is None
+    assert daten["quarantine"] == []
+
+
+def test_befund_taucht_im_dashboard_auf(guard, tmp_path):
+    wurzel = tmp_path / "www"
+    (wurzel / "uploads").mkdir(parents=True)
+    (wurzel / "index.php").write_text("<?php echo 1; ?>")
+
+    guard.config.integrity.enabled = True
+    guard.config.integrity.paths = [str(wurzel)]
+    guard.config.integrity.check_interval = 60
+    guard.integrity.config = guard.config.integrity
+    guard.integrity.learn()
+    (wurzel / "uploads" / "shell.php").write_text("<?php eval($_POST['x']); ?>")
+    guard.clock.advance(61)
+    guard.maintenance()
+
+    config = DashboardConfig(host="127.0.0.1", port=0, token=TOKEN)
+    dash = Dashboard(guard, config)
+    dash.start_background()
+    try:
+        _, daten = json_request(dash, "/api/files")
+        assert daten["integrity"]["ready"] is True
+        assert daten["last_report"]["verdict"] == "kritisch"
+        pfade = [c["path"] for c in daten["last_report"]["changes"]]
+        assert any(p.endswith("shell.php") for p in pfade)
+    finally:
+        dash.stop()
+
+
+def test_seite_hat_den_abschnitt(dashboard):
+    seite = request(dashboard, "/")[1].decode("utf-8")
+    assert "Dateien auf dem Server" in seite
+    assert 'id="files-note"' in seite
+
+
+def test_zusammenfassung_bleibt_sichtbar(dashboard):
+    """fill() blendete den Hinweistext aus, sobald es Zeilen gab.
+
+    Damit war die Zusammenfassung ueber der Tabelle nie zu sehen -
+    ausgerechnet dann nicht, wenn es etwas zu sehen gab.
+    """
+    seite = request(dashboard, "/")[1].decode("utf-8")
+    assert "function fillTable(" in seite
+    assert 'fillTable("files"' in seite
+    assert 'fillTable("anomalies"' in seite

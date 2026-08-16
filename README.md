@@ -867,6 +867,77 @@ das gehört nicht ungeschützt ins offene Netz.
 
 ---
 
+## Bescheid bekommen, statt nachzusehen
+
+Ohne das erfährst du von einem Angriff erst, wenn du selbst hinsiehst. Der
+kürzeste Weg aufs Telefon führt über [ntfy](https://ntfy.sh) – ein Thema
+abonnieren, die Adresse eintragen, fertig:
+
+```yaml
+notify:
+  enabled: true
+  method: webhook
+  url: https://ntfy.sh/mein-geheimes-thema   # Themenname = dein Passwort
+  min_severity: 7
+  min_interval: 300
+```
+
+Ebenso möglich: `method: email` über einen SMTP-Server oder `method: command`
+für ein eigenes Programm (`{titel}` und `{text}` werden ersetzt).
+
+**Gemeldet wird:**
+
+| Ereignis | Schwere |
+|---|---|
+| IP gesperrt | 7 |
+| Firewall-Regeln waren verschwunden | 8 |
+| Netz gesperrt (Botnetz-Verdacht) | 9 |
+| Dateien haben sich verändert | 7 |
+| **Schadcode auf dem Server gefunden** | **10** |
+
+Mit `min_severity: 10` bekommst du nur noch die eine Meldung, bei der man
+nachts aufsteht.
+
+### Zwei Dinge, die dabei wichtiger sind als die Zustellung
+
+**Nichts hält deine Anwendung auf.** Zugestellt wird ausschließlich in einem
+eigenen Faden. Ein SMTP-Server, der nicht antwortet, würde sonst jeden Login
+blockieren, der eine Sperre auslöst. Gemessen: 30 Sperren in 8 Millisekunden,
+während die Zustellung nebenher lief.
+
+**Niemand liest 400 Meldungen.** Ein Angriff erzeugt viele gleichartige
+Ereignisse. Die erste Meldung geht sofort raus, weitere derselben Art erst
+nach der Sperrfrist – und dann mit der Anzahl der übersprungenen im Betreff
+(„+29 weitere"). Aus denselben 30 Sperren oben wurden **zwei** Meldungen: die
+erste IP-Sperre und die Netzsperre, die eine andere Art ist.
+
+---
+
+## Dauerbetrieb
+
+Der Schutz deiner Anwendung läuft *in* der Anwendung (die Middleware). Daneben
+gehört ein Dienst, der die Aufsicht übernimmt: abgelaufene Sperren aufheben,
+die Firewall-Regeln bewachen, Dateien prüfen, alte Daten löschen.
+
+```bash
+sudo cp deploy/loginshield.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now loginshield
+```
+
+Die mitgelieferte Unit läuft unter einem eigenen Benutzer (`DynamicUser`),
+darf nur schreiben, was ihr gehört, und bekommt für die Firewall genau eine
+erhöhte Berechtigung – `CAP_NET_ADMIN` statt root. Ein Schutzprogramm, das
+selbst weit offen läuft, wäre ein schlechter Scherz.
+
+**Wenn du keinen Dienst laufen lässt:** Die Wartung läuft trotzdem, sobald
+irgendwo ein `Guard` lebt – also auch in deiner Anwendung selbst. Sie startet
+sich alle `maintenance_interval` Sekunden von allein. Wer das lieber selbst
+steuert, setzt den Wert auf 0 und ruft `guard.maintenance()` nach eigenem
+Zeitplan auf.
+
+---
+
 ## Konfiguration
 
 `loginshield init` legt eine kommentierte `loginshield.yaml` an (bzw. `.json`,
@@ -1039,9 +1110,11 @@ loginshield/
   firewall.py    System-Firewall (nftables, iptables, ufw, mehrere zugleich)
   requestfilter.py  Anfrage-Firewall: prüft den Inhalt der Anfragen
   anomaly.py     lernt den Normalzustand, meldet Abweichungen
+  notify.py      sagt Bescheid: ntfy/Webhook, E-Mail, eigenes Programm
   filescan.py    Webshells, getarnte Dateien, ClamAV-Anbindung, Quarantäne
   integrity.py   Fingerabdrücke: bemerkt neue, geänderte, gelöschte Dateien
   cli.py         Kommandozeile
+deploy/          systemd-Unit für den Dauerbetrieb
 examples/        lauffähige Beispielanwendung
 tests/           Testsuite
 ```

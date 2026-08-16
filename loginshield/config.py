@@ -361,6 +361,75 @@ class MalwareConfig:
 
 
 @dataclass
+class NotifyConfig:
+    """Bescheid sagen, wenn etwas Ernstes passiert.
+
+    Voreingestellt aus: Wohin gemeldet werden soll, weiss nur der Betreiber.
+    Der einfachste Weg aufs Telefon ist ``method: webhook`` mit einem
+    ntfy-Thema als Adresse.
+    """
+
+    enabled: bool = False
+    #: none | webhook | email | command
+    method: str = "none"
+    #: Ab welcher Schwere gemeldet wird (1-10). 7 = Sperren und Funde.
+    min_severity: int = 7
+    #: Sperrfrist je Meldungsart in Sekunden. Ein Angriff erzeugt viele
+    #: gleichartige Ereignisse - niemand liest 400 Meldungen.
+    min_interval: int = 300
+    timeout: int = 10
+
+    # webhook
+    url: str = ""
+    #: text = einfacher Text (ntfy, Gotify) | json = strukturiert
+    format: str = "text"
+    headers: Dict[str, str] = field(default_factory=dict)
+
+    # email
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_starttls: bool = True
+    smtp_ssl: bool = False
+    mail_from: str = ""
+    mail_to: List[str] = field(default_factory=list)
+
+    # command
+    command: List[str] = field(default_factory=list)
+
+    def validate(self) -> None:
+        erlaubt = ("none", "webhook", "email", "command")
+        if self.method not in erlaubt:
+            raise ConfigError(
+                "notify.method muss eines von " + ", ".join(erlaubt) + " sein"
+            )
+        if not self.enabled:
+            return
+        if self.method == "webhook":
+            if not self.url:
+                raise ConfigError("notify.method=webhook braucht notify.url")
+            if not str(self.url).startswith(("http://", "https://")):
+                raise ConfigError("notify.url muss mit http:// oder https:// beginnen")
+            if self.format not in ("text", "json"):
+                raise ConfigError("notify.format muss text oder json sein")
+        elif self.method == "email":
+            if not self.smtp_host:
+                raise ConfigError("notify.method=email braucht notify.smtp_host")
+            if not self.mail_to:
+                raise ConfigError("notify.method=email braucht notify.mail_to")
+        elif self.method == "command":
+            if not self.command:
+                raise ConfigError("notify.method=command braucht notify.command")
+        if not 1 <= self.min_severity <= 10:
+            raise ConfigError("notify.min_severity muss zwischen 1 und 10 liegen")
+        if self.min_interval < 0:
+            raise ConfigError("notify.min_interval darf nicht negativ sein")
+        if self.timeout <= 0:
+            raise ConfigError("notify.timeout muss groesser als 0 sein")
+
+
+@dataclass
 class IntegrityConfig:
     """Ueberwachung von Dateiveraenderungen."""
 
@@ -547,6 +616,18 @@ class Config:
     identity_hmac_key: str = ""
     #: Aufbewahrungsdauer der Ereignisse in Tagen.
     retention_days: int = 30
+    #: Abstand der Wartung im Hintergrund, in Sekunden. 0 = keine.
+    #:
+    #: Die Wartung ist nicht nur Aufraeumen: An ihr haengen die Wache ueber
+    #: die Firewall-Regeln, die Dateiwache und die Anomalie-Auswertung.
+    #: Ohne sie laufen diese drei gar nicht - und bei iptables/ufw bleibt
+    #: eine abgelaufene Sperre fuer immer in der Firewall stehen.
+    #:
+    #: Der Guard startet den Faden selbst, sobald er mit der echten Uhr
+    #: arbeitet. Wer die Wartung lieber selbst steuert (eigener
+    #: Zeitplaner, Cron), setzt hier 0 und ruft ``guard.maintenance()``
+    #: auf.
+    maintenance_interval: int = 300
     rules: RuleConfig = field(default_factory=RuleConfig)
     dashboard: DashboardConfig = field(default_factory=DashboardConfig)
     firewall: FirewallConfig = field(default_factory=FirewallConfig)
@@ -555,6 +636,7 @@ class Config:
     anomaly: AnomalyConfig = field(default_factory=AnomalyConfig)
     malware: MalwareConfig = field(default_factory=MalwareConfig)
     integrity: IntegrityConfig = field(default_factory=IntegrityConfig)
+    notify: NotifyConfig = field(default_factory=NotifyConfig)
     logwatch: List[LogSourceConfig] = field(default_factory=list)
 
     def validate(self) -> "Config":
@@ -562,6 +644,13 @@ class Config:
             raise ConfigError("identity_mode muss hashed, plain oder none sein")
         if self.retention_days <= 0:
             raise ConfigError("retention_days muss groesser als 0 sein")
+        if self.maintenance_interval < 0:
+            raise ConfigError("maintenance_interval darf nicht negativ sein")
+        if 0 < self.maintenance_interval < 10:
+            raise ConfigError(
+                "maintenance_interval unter 10 Sekunden waere sinnlos - die "
+                "Wartung raeumt auf, sie muss nicht dauernd laufen"
+            )
         self.rules.validate()
         self.dashboard.validate()
         self.firewall.validate()
@@ -570,6 +659,7 @@ class Config:
         self.anomaly.validate()
         self.malware.validate()
         self.integrity.validate()
+        self.notify.validate()
         for source in self.logwatch:
             source.validate()
         return self
@@ -599,6 +689,7 @@ class Config:
             ("anomaly", AnomalyConfig),
             ("malware", MalwareConfig),
             ("integrity", IntegrityConfig),
+            ("notify", NotifyConfig),
         ):
             if name in data:
                 kwargs[name] = _build(sub_cls, data.pop(name), name)
