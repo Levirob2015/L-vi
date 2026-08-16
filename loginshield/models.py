@@ -33,6 +33,7 @@ class Reason:
     RATE_LIMIT_ABUSE = "rate_limit_abuse"
     SUBNET_ABUSE = "subnet_abuse"      # ganzes Netz statt Einzel-IP
     MALICIOUS_REQUEST = "malicious_request"  # Anfrage-Firewall
+    ANOMALY = "anomaly"                # Abweichung vom Normalzustand
     MANUAL = "manual"
 
     # Honeypot: kein Schwellwert noetig, ein einziger Treffer genuegt

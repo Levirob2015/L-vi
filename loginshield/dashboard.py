@@ -202,7 +202,7 @@ def _handler_factory(guard: Guard, config: DashboardConfig):
             if not status.get("ready"):
                 return {"ready": False, "reason": status.get("reason", ""),
                         "reports": []}
-            berichte = guard.anomaly.scan(window=hours * 3600)
+            berichte = guard.anomaly.cached_scan(window=hours * 3600)
             return {
                 "ready": True,
                 "baseline": status,

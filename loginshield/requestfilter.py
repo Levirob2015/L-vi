@@ -37,6 +37,10 @@ from .models import Block, Reason
 
 log = logging.getLogger("loginshield.requestfilter")
 
+#: Obergrenze der geprueften Zeichen. Schuetzt davor, dass jemand mit sehr
+#: langen URLs Rechenzeit bindet.
+_MAX_INSPECT = 8192
+
 
 @dataclass(frozen=True)
 class FilterRule:
@@ -213,21 +217,32 @@ class RequestFilter:
         if self.config.exempt_paths and _matches(path, self.config.exempt_paths):
             return verdict
 
-        # Doppelt dekodieren: Angreifer verstecken Muster gern hinter
-        # %252e%252e statt %2e%2e.
         url = f"{path}?{query}" if query else path
-        haystacks: Dict[str, str] = {
-            "url": _decode(url, self.config.decode_rounds),
-            "user_agent": user_agent or "",
-            "method": (method or "").upper(),
-        }
+        laenge = len(url)
 
-        if len(url) > self.config.max_url_length:
+        if laenge > self.config.max_url_length:
             verdict.score += 3
             verdict.matched.append(
                 FilterRule("ueberlange_url", "", 3, "url",
                            f"URL laenger als {self.config.max_url_length} Zeichen")
             )
+
+        # Nur den Anfang pruefen. Ohne diese Grenze koennte jemand mit einer
+        # 200 KB langen URL pro Anfrage Rechenzeit binden - die Regeln
+        # laufen ueber die gesamte Zeichenkette. Ein Angriff steckt ohnehin
+        # im vorderen Teil; alles dahinter ist bereits als ueberlange URL
+        # vermerkt.
+        grenze = min(self.config.max_url_length, _MAX_INSPECT)
+        if laenge > grenze:
+            url = url[:grenze]
+
+        # Doppelt dekodieren: Angreifer verstecken Muster gern hinter
+        # %252e%252e statt %2e%2e.
+        haystacks: Dict[str, str] = {
+            "url": _decode(url, self.config.decode_rounds),
+            "user_agent": (user_agent or "")[:_MAX_INSPECT],
+            "method": (method or "").upper()[:16],
+        }
 
         for rule, pattern in self._compiled:
             text = haystacks.get(rule.target, "")

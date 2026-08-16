@@ -270,3 +270,28 @@ def test_regeln_haben_beschreibung_und_schwere():
     for rule in DEFAULT_RULES:
         assert rule.description, rule.name
         assert 1 <= rule.severity <= 10, rule.name
+
+
+# -- Schutz vor Ueberlastung --------------------------------------------
+def test_sehr_lange_url_kostet_kaum_zeit(filt):
+    import time as _time
+
+    lang = "/x?q=" + "a" * 200_000
+    start = _time.perf_counter()
+    verdict = filt.inspect(path=lang)
+    dauer = _time.perf_counter() - start
+
+    # Ohne Begrenzung liefen die Regeln ueber 200 KB - pro Anfrage.
+    assert dauer < 0.01, f"{dauer * 1000:.1f} ms fuer eine Anfrage"
+    assert any(r.name == "ueberlange_url" for r in verdict.matched)
+
+
+def test_angriff_am_anfang_einer_langen_url_wird_gefunden(filt):
+    verdict = filt.inspect(path="/../../../../etc/passwd?x=" + "a" * 200_000)
+    assert verdict.blocked
+
+
+def test_ueberlange_programmkennung(filt):
+    # Auch die Kennung wird gekappt, bevor die Regeln darauf laufen.
+    verdict = filt.inspect(path="/", user_agent="sqlmap " + "x" * 100_000)
+    assert verdict.blocked

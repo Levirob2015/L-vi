@@ -530,7 +530,11 @@ Abweichung ist ein Verdacht, kein Beweis – ein Werbeschub sieht einem Angriff
 zunächst ähnlich. Mit `action: block` lässt sich das ändern, dann greift es
 ab 70 von 100 Punkten.
 
-**3. Jedes Urteil ist begründet.** Kein Punktwert ohne die Signale, aus denen
+**3. Läuft von selbst.** Im Betrieb prüft sie alle fünf Minuten mit und
+frischt den Normalzustand täglich auf (`evaluate_interval`, `relearn_hours`).
+Ohne das liefe sie nur, wenn jemand von Hand nachsieht.
+
+**4. Jedes Urteil ist begründet.** Kein Punktwert ohne die Signale, aus denen
 er entstand, jeweils mit Beobachtung und Erwartung. Ein Test stellt sicher,
 dass der Punktwert genau die Summe der genannten Signale ist – nichts
 Verstecktes.
@@ -707,11 +711,35 @@ zuerst mit `loginshield demo` oder der Beispiel-App.
 
 ---
 
+## Leistung und Grenzen
+
+Gemessen auf einem gewöhnlichen Kern:
+
+| Vorgang | Durchsatz |
+|---|---|
+| `guard.check()` – die Prüfung pro Anfrage | ~70.000 / s |
+| Anfrage-Firewall pro Anfrage | ~110.000 / s |
+| Anomalie-Prüfung (50.000 Ereignisse/Std) | 0,23 s, alle 5 Min |
+
+Der Prüfpfad kostet also etwa 14 Mikrosekunden pro Anfrage – die Datenbank
+ist dabei kein Engpass, obwohl jede Prüfung SQLite anfasst.
+
+Was das System **nicht** leistet, damit die Erwartung stimmt:
+
+* **Kein Schutz vor DDoS.** Die Pakete kommen weiter an deiner Leitung an.
+* **Ein einzelner Prozess, eine SQLite-Datei.** Für mehrere Server bräuchte
+  es eine gemeinsame Datenbank – das ist nicht gebaut.
+* **Die Anomalie-Erkennung braucht Anlaufzeit.** Ohne 200 Ereignisse von 20
+  Adressen urteilt sie nicht. Die anderen drei Schichten wirken sofort.
+
+
+---
+
 ## Tests
 
 ```bash
 pip install pytest
-python -m pytest -q      # 334 Tests
+python -m pytest -q      # 344 Tests
 ```
 
 Abgedeckt sind unter anderem: Erkennungsregeln und Eskalation, Honeypot in

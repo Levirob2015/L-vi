@@ -606,8 +606,7 @@ class Firewall:
                 )
                 return None
             if is_network(target):
-                import ipaddress as _ip
-                if _ip.ip_network(target, strict=False).overlaps(network):
+                if ipaddress.ip_network(target, strict=False).overlaps(network):
                     log.warning(
                         "Firewall-Sperre fuer %s abgelehnt: enthaelt die eigene "
                         "Adresse des Servers", target,

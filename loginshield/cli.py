@@ -136,6 +136,9 @@ anomaly:
   block_score: 70
   min_events: 200         # darunter wird gar nicht geurteilt
   min_addresses: 20
+  evaluate_interval: 300  # wie oft im Betrieb geprueft wird (0 = nur auf Zuruf)
+  relearn_hours: 24       # wie oft der Normalzustand aufgefrischt wird
+  cache_seconds: 60       # Zwischenspeicher fuer das Dashboard
 
 # Optional: Logdateien mitlesen (loginshield watch)
 logwatch: []

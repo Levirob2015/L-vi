@@ -42,11 +42,12 @@ from dataclasses import asdict, dataclass, field
 from typing import Dict, List, Optional, Sequence
 
 from .config import AnomalyConfig
-from .models import Event
+from .models import Event, Reason
 
 log = logging.getLogger("loginshield.anomaly")
 
 BASELINE_KEY = "anomaly_baseline"
+LAST_LEARN_KEY = "anomaly_last_learn"
 
 
 # ----------------------------------------------------------------------
@@ -247,6 +248,10 @@ class AnomalyDetector:
         self.config = config or AnomalyConfig()
         self.guard = guard
         self._baseline: Optional[Baseline] = None
+        self._cache: Optional[List[AnomalyReport]] = None
+        self._cache_at = 0.0
+        self._cache_window = 0.0
+        self._last_evaluate = 0.0
 
     @property
     def enabled(self) -> bool:
@@ -278,7 +283,9 @@ class AnomalyDetector:
             now = self.guard.clock()
         baseline = learn(store, days=days or self.config.learn_days, now=now)
         store.set_meta(BASELINE_KEY, json.dumps(baseline.as_dict()))
+        store.set_meta(LAST_LEARN_KEY, str(baseline.created_ts))
         self._baseline = baseline
+        self._cache = None
         return baseline
 
     def ready(self, store=None) -> bool:
@@ -440,6 +447,64 @@ class AnomalyDetector:
         berichte.sort(key=lambda r: r.score, reverse=True)
         return berichte
 
+    def cached_scan(self, *, window: Optional[float] = None,
+                    now: Optional[float] = None) -> List[AnomalyReport]:
+        """Wie :meth:`scan`, aber mit kurzem Zwischenspeicher.
+
+        Das Dashboard aktualisiert alle zehn Sekunden. Ohne Zwischenspeicher
+        waere das auf einem belebten Server dauerhafte Rechenlast, weil jede
+        Auswertung eine Stunde Ereignisse durchgeht.
+        """
+        if now is None:
+            now = self.guard.clock() if self.guard else time.time()
+        window = window or self.config.window
+        ttl = self.config.cache_seconds
+
+        if (self._cache is not None and self._cache_window == window
+                and now - self._cache_at < ttl):
+            return self._cache
+
+        berichte = self.scan(window=window, now=now)
+        self._cache = berichte
+        self._cache_at = now
+        self._cache_window = window
+        return berichte
+
+    def maintain(self, *, now: Optional[float] = None, store=None) -> dict:
+        """Im laufenden Betrieb: bei Bedarf neu lernen und pruefen.
+
+        Wird aus :meth:`Guard.maintenance` aufgerufen. Ohne diesen Weg liefe
+        die Erkennung nur, wenn jemand von Hand nachsieht - eine Sperre bei
+        ``action: block`` kaeme dann nie zustande.
+        """
+        if not self.enabled:
+            return {"gelernt": False, "geprueft": 0}
+        store = store or (self.guard.store if self.guard else None)
+        if store is None:
+            return {"gelernt": False, "geprueft": 0}
+        if now is None:
+            now = self.guard.clock() if self.guard else time.time()
+
+        gelernt = False
+        if self.config.relearn_hours > 0:
+            try:
+                zuletzt = float(store.get_meta(LAST_LEARN_KEY) or 0.0)
+            except (TypeError, ValueError):
+                zuletzt = 0.0
+            # Auch der allererste Lauf lernt - dann steht die Grundlinie,
+            # sobald genug Daten da sind, ohne dass jemand 'learn' tippt.
+            if now - zuletzt >= self.config.relearn_hours * 3600:
+                self.learn_and_store(store, now=now)
+                gelernt = True
+
+        geprueft: List[AnomalyReport] = []
+        if self.config.evaluate_interval > 0:
+            if now - self._last_evaluate >= self.config.evaluate_interval:
+                self._last_evaluate = now
+                geprueft = self.evaluate(now=now)
+
+        return {"gelernt": gelernt, "geprueft": len(geprueft)}
+
     def evaluate(self, *, now: Optional[float] = None) -> List[AnomalyReport]:
         """Bewertet und handelt - je nach ``action``.
 
@@ -455,7 +520,7 @@ class AnomalyDetector:
             detail = f"Anomalie {report.score:.0f}/100: {report.summary}"
             if self.config.action == "block" and report.score >= self.config.block_score:
                 self.guard.record_honeypot(
-                    report.ip, route="", reason="anomaly",
+                    report.ip, route="", reason=Reason.ANOMALY,
                     source="anomaly", detail=detail,
                     seconds=self.config.block_seconds,
                 )

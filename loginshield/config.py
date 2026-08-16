@@ -269,6 +269,15 @@ class AnomalyConfig:
     #: Ab diesem Punktwert wird gesperrt (nur bei action: block).
     block_score: int = 70
     block_seconds: int = 3600
+    #: Wie oft im laufenden Betrieb geprueft wird (0 = nur auf Zuruf).
+    evaluate_interval: float = 300.0
+    #: Wie oft der Normalzustand neu gelernt wird. Ohne das veraltet die
+    #: Grundlinie, sobald sich die Seite aendert. 0 = nie automatisch.
+    relearn_hours: float = 24.0
+    #: Wie lange ein Pruefergebnis wiederverwendet wird. Das Dashboard
+    #: aktualisiert alle 10s - ohne Zwischenspeicher waere das auf einem
+    #: belebten Server dauerhafte Rechenlast.
+    cache_seconds: float = 60.0
     #: Unterhalb dieser Datenmenge wird gar nicht geurteilt - lieber gar
     #: keine Aussage als eine geratene.
     min_events: int = 200
@@ -295,6 +304,10 @@ class AnomalyConfig:
             raise ConfigError("anomaly.block_score darf nicht unter report_score liegen")
         if self.min_events < 1 or self.min_addresses < 1:
             raise ConfigError("anomaly.min_events/min_addresses muessen > 0 sein")
+        if self.evaluate_interval < 0 or self.relearn_hours < 0:
+            raise ConfigError(
+                "anomaly.evaluate_interval/relearn_hours duerfen nicht negativ sein"
+            )
 
 
 @dataclass

@@ -16,30 +16,46 @@ Kurzform::
         guard.record_failure(ip, identity=username)
 """
 
+from .anomaly import AnomalyDetector, AnomalyReport
 from .config import (
+    AnomalyConfig,
     Config,
     DashboardConfig,
     FirewallConfig,
+    HoneypotConfig,
     LogSourceConfig,
+    RequestFilterConfig,
     RuleConfig,
     load_config,
 )
+from .firewall import Firewall
+from .honeypot import Honeypot
+from .requestfilter import FilterVerdict, RequestFilter
 from .engine import Guard
 from .models import Attempt, Block, Decision, Event, Reason
 from .store import Store
 from .version import __version__
 
 __all__ = [
+    "AnomalyConfig",
+    "AnomalyDetector",
+    "AnomalyReport",
     "Attempt",
     "Block",
     "Config",
     "DashboardConfig",
     "Decision",
     "Event",
+    "Firewall",
     "FirewallConfig",
+    "FilterVerdict",
     "Guard",
+    "Honeypot",
+    "HoneypotConfig",
     "LogSourceConfig",
     "Reason",
+    "RequestFilter",
+    "RequestFilterConfig",
     "RuleConfig",
     "Store",
     "__version__",

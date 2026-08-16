@@ -272,3 +272,97 @@ def test_baseline_serialisierung():
     assert wieder.ereignisse == 100
     # Unbekannte Felder aus einer aelteren Version stoeren nicht.
     assert Baseline.from_dict({"ereignisse": 5, "gibt_es_nicht": 1}).ereignisse == 5
+
+
+# -- Automatischer Betrieb ----------------------------------------------
+def test_maintenance_prueft_von_selbst(config, store, clock):
+    """Der wichtigste Punkt: ohne diesen Weg liefe die Erkennung nur, wenn
+    jemand von Hand nachsieht - action: block kaeme nie zustande."""
+    config.anomaly.action = "block"
+    config.anomaly.evaluate_interval = 300
+    guard = Guard(config, store, clock=clock)
+    normalbetrieb(store, clock.now)
+    guard.anomaly.learn_and_store(days=7)
+
+    for index in range(60):
+        store.record_attempt("198.51.100.77", Event.LOGIN_FAILURE,
+                             route=f"/admin/x{index}", ts=clock.now - 100)
+
+    ergebnis = guard.maintenance()
+    assert ergebnis["anomalies"] >= 1
+    assert guard.store.active_block("198.51.100.77", now=clock.now) is not None
+
+
+def test_maintenance_haelt_das_intervall_ein(gelernt, clock):
+    for index in range(60):
+        gelernt.store.record_attempt("198.51.100.77", Event.LOGIN_FAILURE,
+                                     route=f"/x{index}", ts=clock.now - 100)
+    assert gelernt.maintenance()["anomalies"] >= 1
+    # Direkt danach nicht noch einmal - das waere reine Rechenlast.
+    assert gelernt.maintenance()["anomalies"] == 0
+
+    clock.advance(gelernt.config.anomaly.evaluate_interval + 1)
+    assert gelernt.maintenance()["anomalies"] >= 1
+
+
+def test_grundlinie_wird_aufgefrischt(config, store, clock):
+    config.anomaly.relearn_hours = 24
+    guard = Guard(config, store, clock=clock)
+    normalbetrieb(store, clock.now)
+
+    # Erster Lauf lernt selbst, ohne dass jemand 'learn' tippt.
+    assert guard.maintenance()["baseline_relearned"] is True
+    assert guard.anomaly.ready()
+
+    # Innerhalb der 24 Stunden nicht erneut.
+    assert guard.maintenance()["baseline_relearned"] is False
+    clock.advance(24 * 3600 + 1)
+    assert guard.maintenance()["baseline_relearned"] is True
+
+
+def test_automatik_abschaltbar(config, store, clock):
+    config.anomaly.evaluate_interval = 0
+    config.anomaly.relearn_hours = 0
+    guard = Guard(config, store, clock=clock)
+    normalbetrieb(store, clock.now)
+    ergebnis = guard.maintenance()
+    assert ergebnis["anomalies"] == 0
+    assert ergebnis["baseline_relearned"] is False
+
+
+def test_fehler_in_der_auswertung_stoppt_die_wartung_nicht(gelernt, monkeypatch):
+    def kaputt(**kwargs):
+        raise RuntimeError("absichtlich")
+
+    monkeypatch.setattr(gelernt.anomaly, "maintain", kaputt)
+    ergebnis = gelernt.maintenance()          # darf nicht durchschlagen
+    assert "pruned_attempts" in ergebnis
+    assert ergebnis["anomalies"] == 0
+
+
+def test_zwischenspeicher_entlastet_das_dashboard(gelernt, clock):
+    for index in range(60):
+        gelernt.store.record_attempt("198.51.100.77", Event.LOGIN_FAILURE,
+                                     route=f"/x{index}", ts=clock.now - 100)
+    erste = gelernt.anomaly.cached_scan(window=3600)
+    assert erste
+
+    # Neue Ereignisse - der Zwischenspeicher liefert trotzdem das alte
+    # Ergebnis, solange er gilt.
+    for index in range(60):
+        gelernt.store.record_attempt("198.51.100.99", Event.LOGIN_FAILURE,
+                                     route=f"/y{index}", ts=clock.now - 50)
+    assert gelernt.anomaly.cached_scan(window=3600) is erste
+
+    clock.advance(gelernt.config.anomaly.cache_seconds + 1)
+    danach = gelernt.anomaly.cached_scan(window=3600)
+    assert {r.ip for r in danach} == {"198.51.100.77", "198.51.100.99"}
+
+
+def test_lernen_leert_den_zwischenspeicher(gelernt, clock):
+    for index in range(60):
+        gelernt.store.record_attempt("198.51.100.77", Event.LOGIN_FAILURE,
+                                     route=f"/x{index}", ts=clock.now - 100)
+    gelernt.anomaly.cached_scan(window=3600)
+    gelernt.anomaly.learn_and_store(days=7)
+    assert gelernt.anomaly._cache is None

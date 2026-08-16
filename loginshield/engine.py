@@ -377,8 +377,10 @@ class Guard:
 
         # Die Anfrage-Firewall meldet ueber denselben Weg - im Log soll aber
         # stehen, was wirklich zugeschlagen hat.
-        quelle = ("Anfrage-Firewall" if reason == Reason.MALICIOUS_REQUEST
-                  else "Honeypot")
+        quelle = {
+            Reason.MALICIOUS_REQUEST: "Anfrage-Firewall",
+            Reason.ANOMALY: "Anomalie-Erkennung",
+        }.get(reason, "Honeypot")
 
         if self.is_allowlisted(ip):
             log.info("%s-Treffer von %s (%s) - Allowlist, keine Sperre",
@@ -617,10 +619,21 @@ class Guard:
                 self.firewall.unblock(ip)
         cutoff = now - self.config.retention_days * 86400
         attempts, blocks = self.store.prune(cutoff)
+
+        # Die Anomalie-Erkennung laeuft hier mit - sonst wuerde sie nur
+        # greifen, wenn jemand von Hand nachsieht.
+        anomalie = {"gelernt": False, "geprueft": 0}
+        try:
+            anomalie = self.anomaly.maintain(now=now)
+        except Exception:  # pragma: no cover - darf die Wartung nie stoppen
+            log.exception("Anomalie-Auswertung fehlgeschlagen")
+
         return {
             "expired_blocks": len(expired),
             "pruned_attempts": attempts,
             "pruned_blocks": blocks,
+            "anomalies": anomalie["geprueft"],
+            "baseline_relearned": anomalie["gelernt"],
         }
 
     def status(self, hours: float = 24.0) -> Dict[str, object]:
