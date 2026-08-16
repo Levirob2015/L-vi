@@ -170,6 +170,7 @@ integrity:
   enabled: false
   paths: []
   # - /var/www
+  check_interval: 3600    # im Betrieb selbst pruefen (0 = nur von Hand)
 
 # Optional: Logdateien mitlesen (loginshield watch)
 logwatch: []
@@ -389,6 +390,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     demo.add_argument("--events", type=int, default=400)
     demo.set_defaults(handler=cmd_demo)
+
+    doctor = subparsers.add_parser(
+        "doctor", help="Alles auf einmal pruefen: Was schuetzt gerade wirklich?"
+    )
+    doctor.add_argument("--json", action="store_true")
+    doctor.set_defaults(handler=cmd_doctor)
 
     return parser
 
@@ -843,6 +850,227 @@ def cmd_firewall(args) -> int:
         print("\n  Die Firewall ist in der Konfiguration nicht aktiv.")
         print("  Sperren gelten derzeit nur innerhalb der Anwendung.")
     return 0
+
+
+#: Bewertungen einer Einzelpruefung im Befehl 'doctor'.
+GUT, WARNUNG, FEHLER, INFO = "gut", "warnung", "fehler", "info"
+_ZEICHEN = {GUT: "+", WARNUNG: "!", FEHLER: "-", INFO: " "}
+
+
+def cmd_doctor(args) -> int:
+    """Prueft der Reihe nach alles, was schuetzen soll.
+
+    Der Grund fuer diesen Befehl: Die einzelnen Pruefungen gibt es
+    laengst, aber man muss wissen, dass es sie gibt. Wer eine Anwendung
+    absichert, will eine Antwort auf eine einzige Frage - **schuetzt das
+    hier gerade wirklich?** - und nicht zwoelf Unterbefehle auswendig
+    lernen.
+
+    Gemeldet wird auch, was *nicht* eingeschaltet ist. Ein Schutz, den man
+    zu haben glaubt, ist gefaehrlicher als ein Schutz, von dem man weiss,
+    dass er fehlt.
+    """
+    config = _config(args)
+    befunde = []
+
+    def pruefe(bereich, urteil, text, rat=""):
+        befunde.append({"bereich": bereich, "urteil": urteil,
+                        "text": text, "rat": rat})
+
+    guard = Guard(config)
+    try:
+        _doctor_grundlagen(config, guard, pruefe)
+        _doctor_firewall(config, guard, pruefe)
+        _doctor_dateien(config, guard, pruefe)
+        _doctor_erkennung(config, guard, pruefe)
+    finally:
+        guard.close()
+
+    if args.json:
+        print(json.dumps({"findings": befunde}, indent=2, ensure_ascii=False))
+        return 1 if any(b["urteil"] == FEHLER for b in befunde) else 0
+
+    print("Systempruefung")
+    print("=" * 62)
+    letzter = None
+    for befund in befunde:
+        if befund["bereich"] != letzter:
+            print(f"\n{befund['bereich']}")
+            letzter = befund["bereich"]
+        print(f"  {_ZEICHEN[befund['urteil']]} {befund['text']}")
+        if befund["rat"]:
+            print(f"      -> {befund['rat']}")
+
+    fehler = sum(1 for b in befunde if b["urteil"] == FEHLER)
+    warnungen = sum(1 for b in befunde if b["urteil"] == WARNUNG)
+    print("\n" + "=" * 62)
+    if fehler:
+        print(f"{fehler} Problem(e), {warnungen} Hinweis(e). "
+              f"Die Zeilen mit '-' zuerst.")
+        return 1
+    if warnungen:
+        print(f"Keine Probleme, {warnungen} Hinweis(e) - siehe die Zeilen "
+              f"mit '!'.")
+        return 0
+    print("Alles in Ordnung.")
+    return 0
+
+
+def _doctor_grundlagen(config, guard, pruefe) -> None:
+    bereich = "Grundlagen"
+    try:
+        # Wirklich schreiben, nicht nur lesen: Eine Datenbank auf einem
+        # vollen oder schreibgeschuetzten Datentraeger laesst sich oeffnen
+        # und abfragen - erst die erste Sperre schlaegt dann fehl.
+        guard.store.set_meta("doctor_probe", str(int(guard.clock())))
+        pruefe(bereich, GUT, f"Datenbank lesbar und beschreibbar "
+                             f"({config.db_path})")
+    except Exception as exc:                      # pragma: no cover
+        pruefe(bereich, FEHLER, f"Datenbank nicht beschreibbar: {exc}",
+               "Rechte und freien Platz des Verzeichnisses pruefen")
+
+    if config.dashboard.token:
+        if len(config.dashboard.token) < 20:
+            pruefe(bereich, WARNUNG, "Das Dashboard-Token ist kurz",
+                   "Ein langes zufaelliges Token setzen ('loginshield init' "
+                   "erzeugt eines)")
+        else:
+            pruefe(bereich, GUT, "Dashboard durch ein Token geschuetzt")
+    elif config.dashboard.host in ("127.0.0.1", "localhost", "::1"):
+        pruefe(bereich, INFO, "Dashboard ohne Token, aber nur lokal erreichbar")
+    else:
+        pruefe(bereich, FEHLER,
+               f"Dashboard ist auf {config.dashboard.host} erreichbar und hat "
+               f"kein Token", "dashboard.token setzen - sonst kann jeder "
+                              "Sperren aufheben")
+
+    if config.trusted_proxies:
+        pruefe(bereich, GUT, f"{len(config.trusted_proxies)} vertrauenswuerdige(r) "
+                             f"Proxy eingetragen")
+    else:
+        pruefe(bereich, INFO,
+               "Kein Proxy eingetragen - es zaehlt die direkte Absenderadresse",
+               "Hinter nginx/Cloudflare 'trusted_proxies' setzen, sonst "
+               "sperrst du den Proxy statt des Angreifers")
+
+    if not config.allowlist:
+        pruefe(bereich, WARNUNG, "Die Allowlist ist leer",
+               "Die eigene Adresse eintragen: loginshield allow add <deine-IP>")
+    else:
+        pruefe(bereich, GUT, f"{len(config.allowlist)} Eintrag/Eintraege auf der "
+                             f"Allowlist")
+
+
+def _doctor_firewall(config, guard, pruefe) -> None:
+    bereich = "Firewall"
+    if not config.firewall.enabled:
+        pruefe(bereich, WARNUNG, "Nicht eingeschaltet - Sperren gelten nur "
+                                 "innerhalb der Anwendung",
+               "firewall.enabled: true, dann 'loginshield firewall --setup'")
+        return
+
+    status = guard.firewall.status()
+    if not status.available:
+        pruefe(bereich, FEHLER, f"Backend '{status.backend}' ist nicht "
+                                f"verfuegbar", status.note)
+        return
+    pruefe(bereich, GUT, f"Backend {status.backend} verfuegbar")
+
+    if not status.ready:
+        pruefe(bereich, FEHLER, "Die eigene Struktur fehlt",
+               "loginshield firewall --setup")
+    elif not guard.firewall.backend.healthy():
+        pruefe(bereich, FEHLER, "Die Struktur ist da, die Regeln darin fehlen",
+               "Hat ein anderes Werkzeug den Regelsatz geladen? "
+               "loginshield firewall --setup")
+    else:
+        pruefe(bereich, GUT, f"Regeln stehen ({len(status.blocked)} Eintrag/"
+                             f"Eintraege)")
+
+    if config.firewall.dry_run:
+        pruefe(bereich, WARNUNG, "Trockenlauf aktiv - es wird nichts wirklich "
+                                 "gesperrt", "firewall.dry_run: false setzen")
+    if config.firewall.conn_limit_enabled:
+        pruefe(bereich, GUT, f"Verbindungsbremse aktiv "
+                             f"({config.firewall.conn_limit_rate}/Minute je IP)")
+    else:
+        pruefe(bereich, INFO, "Verbindungsbremse aus - eine Flut trifft die "
+                              "Anwendung ungebremst",
+               "Passenden Wert ablesen: loginshield firewall --limit-probe")
+
+
+def _doctor_dateien(config, guard, pruefe) -> None:
+    bereich = "Dateien"
+    if config.malware.enabled:
+        clam = guard.filescan.clamav_binary()
+        pruefe(bereich, GUT, "Dateipruefung aktiv" +
+               (f", ClamAV angebunden ({clam})" if clam else ""))
+        if not clam:
+            pruefe(bereich, INFO, "ClamAV ist nicht installiert - geprueft "
+                                  "wird nur mit den eigenen Merkmalen",
+                   "apt install clamav-daemon bringt gepflegte Signaturen dazu")
+        if config.malware.scan_uploads:
+            pruefe(bereich, GUT, "Uploads werden geprueft, bevor die Anwendung "
+                                 "sie sieht")
+        else:
+            pruefe(bereich, WARNUNG, "Uploads werden nicht geprueft",
+                   "malware.scan_uploads: true")
+    else:
+        pruefe(bereich, WARNUNG, "Dateipruefung ist abgeschaltet",
+               "malware.enabled: true")
+
+    status = guard.integrity.status()
+    if not config.integrity.enabled:
+        pruefe(bereich, WARNUNG,
+               "Integritaetspruefung aus - eine abgelegte Webshell faellt "
+               "nicht auf",
+               "integrity.enabled: true und integrity.paths setzen, dann "
+               "'loginshield integrity --learn'")
+    elif not status.get("ready"):
+        pruefe(bereich, FEHLER, "Keine Vergleichsgrundlage vorhanden",
+               "loginshield integrity --learn (nur auf einem sauberen System)")
+    else:
+        pruefe(bereich, GUT, f"Vergleichsgrundlage vorhanden "
+                             f"({status['files']} Dateien)")
+        if config.integrity.check_interval:
+            pruefe(bereich, GUT, f"Wird alle "
+                                 f"{_fmt_duration(config.integrity.check_interval)} "
+                                 f"selbst geprueft")
+        else:
+            pruefe(bereich, INFO, "Geprueft wird nur von Hand",
+                   "integrity.check_interval setzen")
+
+
+def _doctor_erkennung(config, guard, pruefe) -> None:
+    bereich = "Erkennung"
+    if config.honeypot.enabled:
+        pruefe(bereich, GUT, f"Honeypot aktiv "
+                             f"({len(guard.honeypot.traps)} Koederpfade)")
+    else:
+        pruefe(bereich, WARNUNG, "Honeypot aus", "honeypot.enabled: true")
+
+    if config.requestfilter.enabled:
+        wort = ("sperrt" if config.requestfilter.action == "block"
+                else "schreibt nur mit")
+        pruefe(bereich, GUT if config.requestfilter.action == "block" else INFO,
+               f"Anfrage-Firewall aktiv ({wort})")
+    else:
+        pruefe(bereich, WARNUNG, "Anfrage-Firewall aus",
+               "requestfilter.enabled: true")
+
+    if config.anomaly.enabled:
+        bericht = guard.anomaly.status() if hasattr(guard.anomaly, "status") else {}
+        if bericht.get("ready", True):
+            pruefe(bereich, GUT, "Anomalie-Erkennung aktiv")
+        else:
+            pruefe(bereich, INFO, "Anomalie-Erkennung lernt noch",
+                   "Braucht einige Tage normalen Betrieb")
+    else:
+        pruefe(bereich, INFO, "Anomalie-Erkennung aus")
+
+    aktive = guard.store.list_blocks(active_only=True, limit=5000,
+                                     now=guard.clock())
+    pruefe(bereich, INFO, f"{len(aktive)} aktive Sperre(n)")
 
 
 def _limit_probe(config, tage: float = 7.0) -> int:

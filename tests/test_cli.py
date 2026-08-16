@@ -253,3 +253,69 @@ def test_integrity_mit_pfad_prueft_auch_ohne_schalter(db, capsys, tmp_path):
     ausgabe = capsys.readouterr()
     assert "abgeschaltet" not in (ausgabe.out + ausgabe.err)
     assert "bild.php" in ausgabe.out
+
+
+# -- doctor: eine Frage, eine Antwort ------------------------------------
+def test_doctor_prueft_alle_bereiche(db, capsys):
+    assert run(["doctor"], db) in (0, 1)
+    ausgabe = capsys.readouterr().out
+    for bereich in ("Grundlagen", "Firewall", "Dateien", "Erkennung"):
+        assert bereich in ausgabe
+
+
+def test_doctor_meldet_was_fehlt(db, capsys):
+    """Ein Schutz, den man zu haben glaubt, ist gefaehrlicher als einer,
+    von dem man weiss, dass er fehlt."""
+    run(["doctor"], db)
+    ausgabe = capsys.readouterr().out
+    assert "Integritaetspruefung aus" in ausgabe
+    assert "loginshield integrity --learn" in ausgabe      # mit Rat
+
+
+def test_doctor_json(db, capsys):
+    run(["doctor", "--json"], db)
+    daten = json.loads(capsys.readouterr().out)
+    assert daten["findings"]
+    assert {"bereich", "urteil", "text", "rat"} <= set(daten["findings"][0])
+
+
+def test_offenes_dashboard_kommt_gar_nicht_erst_durch(tmp_path, capsys):
+    """Ein Dashboard ohne Token im Netz wird schon beim Laden abgelehnt.
+
+    Das ist strenger als eine Meldung im doctor: Es startet gar nicht.
+    Die entsprechende Pruefung im doctor bleibt als zweite Sicherung fuer
+    den Fall, dass die Einstellung im Programm gesetzt wird.
+    """
+    pfad = tmp_path / "offen.json"
+    pfad.write_text('{"dashboard": {"host": "0.0.0.0", "token": ""}}')
+    assert main(["--config", str(pfad), "--db", str(tmp_path / "x.db"),
+                 "doctor"]) == 2
+    assert "Sperren aufheben" in capsys.readouterr().err
+
+
+def test_doctor_meldet_kurzes_token(tmp_path, capsys):
+    pfad = tmp_path / "kurz.json"
+    pfad.write_text('{"dashboard": {"token": "1234"}}')
+    main(["--config", str(pfad), "--db", str(tmp_path / "x.db"), "doctor"])
+    assert "Token ist kurz" in capsys.readouterr().out
+
+
+def test_doctor_ist_zufrieden_wenn_alles_steht(tmp_path, capsys):
+    webroot = tmp_path / "www"
+    webroot.mkdir()
+    (webroot / "index.php").write_text("<?php echo 1; ?>")
+
+    pfad = tmp_path / "gut.json"
+    pfad.write_text(json.dumps({
+        "allowlist": ["203.0.113.7"],
+        "trusted_proxies": ["10.0.0.0/8"],
+        "dashboard": {"token": "x" * 40},
+        "integrity": {"enabled": True, "paths": [str(webroot)]},
+    }))
+    db = str(tmp_path / "gut.db")
+    main(["--config", str(pfad), "--db", db, "integrity", "--learn",
+          "--path", str(webroot)])
+    capsys.readouterr()
+
+    assert main(["--config", str(pfad), "--db", db, "doctor"]) == 0
+    assert "Vergleichsgrundlage vorhanden" in capsys.readouterr().out

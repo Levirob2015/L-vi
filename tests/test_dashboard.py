@@ -156,3 +156,75 @@ def test_ohne_token_auf_localhost_erlaubt(guard):
         assert status == 200
     finally:
         dashboard.stop()
+
+
+# -- Auf dem iPhone brauchbar --------------------------------------------
+# Der Server laeuft nicht auf iOS - das kann er nicht. Was auf dem iPhone
+# laufen soll, ist die Bedienoberflaeche: nachsehen, wer angreift, und
+# eine Sperre aufheben, ohne am Rechner zu sitzen.
+def test_symbol_fuer_den_startbildschirm(dashboard):
+    """iOS nimmt nur PNG - ein SVG wird still ignoriert."""
+    status, body = request(dashboard, "/apple-touch-icon.png", token=None)
+    assert status == 200
+    assert body[:8] == b"\x89PNG\r\n\x1a\n"
+
+    import struct
+    breite, hoehe = struct.unpack(">II", body[16:24])
+    assert (breite, hoehe) == (180, 180)
+
+
+def test_manifest_fuer_den_startbildschirm(dashboard):
+    status, body = request(dashboard, "/manifest.webmanifest", token=None)
+    assert status == 200
+    daten = json.loads(body)
+    assert daten["display"] == "standalone"
+    assert daten["icons"][0]["sizes"] == "180x180"
+
+
+def test_symbol_und_manifest_brauchen_keinen_token(dashboard):
+    """Safari holt beides ohne die Kopfzeile - und beide enthalten nichts."""
+    for pfad in ("/apple-touch-icon.png", "/manifest.webmanifest"):
+        assert request(dashboard, pfad, token=None)[0] == 200
+    # Die Daten dahinter bleiben geschuetzt.
+    with pytest.raises(urllib.error.HTTPError):
+        request(dashboard, "/api/summary", token=None)
+
+
+def test_richtlinie_erlaubt_das_eigene_symbol(dashboard):
+    """Bei 'default-src none' wuerde der Browser das Symbol verwerfen."""
+    url = f"http://127.0.0.1:{dashboard.port}/?token={TOKEN}"
+    with urllib.request.urlopen(url, timeout=5) as response:
+        richtlinie = response.getheader("Content-Security-Policy")
+    assert "img-src 'self' data:" in richtlinie
+    assert "manifest-src 'self'" in richtlinie
+    # Von aussen wird weiterhin nichts geladen.
+    assert "http" not in richtlinie
+
+
+def test_kopfzeilen_werden_nicht_doppelt_gesendet(dashboard):
+    url = f"http://127.0.0.1:{dashboard.port}/apple-touch-icon.png"
+    with urllib.request.urlopen(url, timeout=5) as response:
+        cache = response.getheaders()
+    treffer = [wert for name, wert in cache if name.lower() == "cache-control"]
+    assert treffer == ["public, max-age=86400"]
+
+
+def test_seite_ist_fuer_das_telefon_vorbereitet(dashboard):
+    seite = request(dashboard, "/")[1].decode("utf-8")
+
+    # Ohne viewport-fit bleiben neben der Kamera-Aussparung graue Balken.
+    assert "viewport-fit=cover" in seite
+    assert 'name="apple-mobile-web-app-capable"' in seite
+    assert 'rel="apple-touch-icon"' in seite
+    assert 'rel="manifest"' in seite
+    # iOS macht aus IP-Adressen sonst Telefonnummern-Links.
+    assert 'name="format-detection" content="telephone=no"' in seite
+
+
+def test_bedienelemente_sind_auf_touch_gross_genug(dashboard):
+    """44 Punkte ist Apples Mindestgroesse, 16px verhindert das Hineinzoomen."""
+    seite = request(dashboard, "/")[1].decode("utf-8")
+    assert "@media (pointer:coarse)" in seite
+    assert "min-height:44px" in seite
+    assert "font-size:16px" in seite
+    assert "env(safe-area-inset-bottom)" in seite

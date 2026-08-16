@@ -367,6 +367,11 @@ class IntegrityConfig:
     enabled: bool = False
     #: Welche Verzeichnisse ueberwacht werden. Leer = abgeschaltet.
     paths: List[str] = field(default_factory=list)
+    #: Abstand der Pruefung im laufenden Betrieb, in Sekunden. 0 = nur von
+    #: Hand. Ohne diesen Weg greift die Pruefung erst, wenn jemand
+    #: nachsieht - eine Webshell liegt aber oft wochenlang da, bevor sie
+    #: benutzt wird.
+    check_interval: int = 3600
     #: Teile eines Pfades, die auf ein Upload-Verzeichnis hindeuten.
     upload_dirs: List[str] = field(default_factory=lambda: [
         "upload", "uploads", "media", "files", "attachments", "tmp",
@@ -388,6 +393,13 @@ class IntegrityConfig:
             )
         if self.max_files < 1:
             raise ConfigError("integrity.max_files muss groesser als 0 sein")
+        if self.check_interval < 0:
+            raise ConfigError("integrity.check_interval darf nicht negativ sein")
+        if 0 < self.check_interval < 60:
+            raise ConfigError(
+                "integrity.check_interval unter 60 Sekunden waere sinnlos - "
+                "die Pruefung liest jede Datei neu ein"
+            )
 
 
 @dataclass

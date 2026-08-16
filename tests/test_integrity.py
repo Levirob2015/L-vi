@@ -226,3 +226,85 @@ def test_grundlage_ueberlebt_neustart(config, store, clock, webroot):
     frisch = IntegrityMonitor(config.integrity, guard)
     assert frisch.status()["ready"] is True
     assert frisch.check().clean
+
+
+# -- Dateiwache im laufenden Betrieb ------------------------------------
+# Ohne diesen Weg greift die Pruefung erst, wenn jemand von Hand
+# nachsieht. Eine Webshell liegt aber oft wochenlang da, bevor sie
+# benutzt wird.
+def test_wartung_bemerkt_die_abgelegte_webshell(config, store, clock, webroot):
+    config.integrity.enabled = True
+    config.integrity.paths = [str(webroot)]
+    config.integrity.check_interval = 3600
+    guard = Guard(config, store, clock=clock)
+    guard.integrity.learn()
+
+    (webroot / "uploads" / "shell.php").write_text("<?php eval($_POST['x']); ?>")
+    clock.advance(3601)
+
+    bericht = guard.maintenance()
+    assert bericht["file_findings"] == 1
+    assert guard.last_integrity.verdict == "kritisch"
+
+
+def test_wartung_prueft_nicht_bei_jedem_durchlauf(config, store, clock, webroot):
+    """Jede Pruefung liest alle Dateien neu - das gehoert nicht in jede Runde."""
+    config.integrity.enabled = True
+    config.integrity.paths = [str(webroot)]
+    config.integrity.check_interval = 3600
+    guard = Guard(config, store, clock=clock)
+    guard.integrity.learn()
+
+    clock.advance(3601)
+    assert guard.maintenance()["files_checked"] == 3
+    clock.advance(60)
+    assert guard.maintenance()["files_checked"] == 0      # noch zu frueh
+
+
+def test_wartung_abschaltbar(config, store, clock, webroot):
+    config.integrity.enabled = True
+    config.integrity.paths = [str(webroot)]
+    config.integrity.check_interval = 0
+    guard = Guard(config, store, clock=clock)
+    guard.integrity.learn()
+    clock.advance(100000)
+    assert guard.maintenance()["files_checked"] == 0
+
+
+def test_geaenderte_datei_wird_auf_schadcode_geprueft(config, store, clock, webroot):
+    """Die Verbindung beider Pruefungen ist das eigentlich Wirksame."""
+    config.integrity.enabled = True
+    config.integrity.paths = [str(webroot)]
+    config.integrity.check_interval = 60
+    config.malware.action = "quarantine"
+    config.malware.quarantine_dir = str(webroot.parent / "q")
+    guard = Guard(config, store, clock=clock)
+    guard.integrity.learn()
+
+    with open(webroot / "index.php", "a") as handle:
+        handle.write("\n<?php system($_GET['c']); ?>")
+    clock.advance(61)
+
+    assert guard.maintenance()["file_findings"] == 1
+    assert guard.quarantine.list()[0]["original"].endswith("index.php")
+
+
+def test_harmlose_aenderung_loest_nichts_aus(config, store, clock, webroot):
+    config.integrity.enabled = True
+    config.integrity.paths = [str(webroot)]
+    config.integrity.check_interval = 60
+    guard = Guard(config, store, clock=clock)
+    guard.integrity.learn()
+
+    (webroot / "stil.css").write_text("body { color: #444; }")
+    clock.advance(61)
+
+    bericht = guard.maintenance()
+    assert bericht["file_findings"] == 0
+    assert guard.last_integrity.changes            # bemerkt wurde es trotzdem
+
+
+def test_zu_kurzer_abstand_wird_abgelehnt():
+    with pytest.raises(ConfigError):
+        Config.from_dict({"integrity": {"enabled": True, "paths": ["/var/www"],
+                                        "check_interval": 5}})

@@ -35,6 +35,63 @@ MAX_BODY_BYTES = 64 * 1024
 LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 
 
+def _png(groesse: int = 180) -> bytes:
+    """Erzeugt das Symbol fuer den iOS-Startbildschirm - ohne Zusatzpaket.
+
+    iOS nimmt fuer ``apple-touch-icon`` nur PNG; ein SVG wird ignoriert und
+    man bekommt ein Bildschirmfoto der Seite als Symbol. Ein PNG von Hand
+    zu schreiben ist unaufwendiger, als es klingt: Kopf, ein Datenblock,
+    Ende - und jede Zeile mit einem Filterbyte 0 davor.
+    """
+    import struct
+    import zlib
+
+    mitte = groesse / 2.0
+    rohdaten = bytearray()
+    for y in range(groesse):
+        rohdaten.append(0)                       # Filter: keiner
+        for x in range(groesse):
+            # Ein Schild: oben eckig, unten spitz zulaufend.
+            nx = (x - mitte) / (groesse * 0.30)
+            ny = (y - groesse * 0.30) / (groesse * 0.46)
+            if ny < 0:
+                innen = abs(nx) <= 1.0 and ny >= -0.62
+            else:
+                innen = abs(nx) <= max(0.0, 1.0 - ny * ny * 0.95) and ny <= 1.0
+            if innen:
+                rohdaten += b"\xff\xff\xff"      # weiss
+            else:
+                rohdaten += b"\x2f\x6f\xeb"      # dasselbe Blau wie im Dashboard
+
+    def block(art: bytes, inhalt: bytes) -> bytes:
+        return (struct.pack(">I", len(inhalt)) + art + inhalt
+                + struct.pack(">I", zlib.crc32(art + inhalt) & 0xFFFFFFFF))
+
+    kopf = struct.pack(">IIBBBBB", groesse, groesse, 8, 2, 0, 0, 0)
+    return (b"\x89PNG\r\n\x1a\n" + block(b"IHDR", kopf)
+            + block(b"IDAT", zlib.compress(bytes(rohdaten), 9))
+            + block(b"IEND", b""))
+
+
+#: Einmal erzeugt und wiederverwendet - das Symbol aendert sich nie.
+APPLE_TOUCH_ICON = _png(180)
+
+#: Die Beschreibung fuer den Startbildschirm. Android und Chrome lesen sie,
+#: iOS nimmt die apple-Meta-Angaben - deshalb beides.
+MANIFEST = json.dumps({
+    "name": "LoginShield",
+    "short_name": "LoginShield",
+    "description": "Angriffe sehen und sperren",
+    "start_url": "./",
+    "display": "standalone",
+    "orientation": "any",
+    "background_color": "#f6f7f9",
+    "theme_color": "#171b21",
+    "icons": [{"src": "apple-touch-icon.png", "sizes": "180x180",
+               "type": "image/png", "purpose": "any"}],
+}, ensure_ascii=False)
+
+
 def _handler_factory(guard: Guard, config: DashboardConfig):
     token = config.token or ""
     token_required = bool(token) or config.host not in LOOPBACK_HOSTS
@@ -50,18 +107,28 @@ def _handler_factory(guard: Guard, config: DashboardConfig):
         def _send(self, status: int, body: bytes, content_type: str,
                   extra_headers: Optional[dict] = None) -> None:
             self.send_response(status)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("X-Content-Type-Options", "nosniff")
-            self.send_header("X-Frame-Options", "DENY")
-            self.send_header("Referrer-Policy", "no-referrer")
-            self.send_header(
-                "Content-Security-Policy",
-                "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
-                "connect-src 'self'; base-uri 'none'; form-action 'none'",
-            )
-            for key, value in (extra_headers or {}).items():
+            kopfzeilen = {
+                "Content-Type": content_type,
+                "Content-Length": str(len(body)),
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+                "X-Frame-Options": "DENY",
+                "Referrer-Policy": "no-referrer",
+                # img-src und manifest-src sind noetig, seit die Seite ein
+                # Symbol fuer den Startbildschirm hat: Bei 'default-src
+                # none' wuerde der Browser beides verwerfen. Beide bleiben
+                # auf 'self' beschraenkt, es wird nichts von aussen geladen.
+                "Content-Security-Policy": (
+                    "default-src 'none'; style-src 'unsafe-inline'; "
+                    "script-src 'unsafe-inline'; connect-src 'self'; "
+                    "img-src 'self' data:; manifest-src 'self'; "
+                    "base-uri 'none'; form-action 'none'"
+                ),
+            }
+            # Angegebene Kopfzeilen ersetzen die Voreinstellung, statt
+            # doppelt gesendet zu werden.
+            kopfzeilen.update(extra_headers or {})
+            for key, value in kopfzeilen.items():
                 self.send_header(key, value)
             self.end_headers()
             if self.command != "HEAD":
@@ -110,6 +177,20 @@ def _handler_factory(guard: Guard, config: DashboardConfig):
                     self._send(401, b"Token fehlt oder ist falsch.\n", "text/plain; charset=utf-8")
                     return
                 self._send(200, INDEX_HTML.encode("utf-8"), "text/html; charset=utf-8")
+                return
+
+            # Symbol und Beschreibung fuer den Startbildschirm. Bewusst
+            # ohne Token: Safari holt beides beim "Zum Home-Bildschirm"
+            # ohne die Kopfzeile mitzuschicken, und es steht nichts darin,
+            # was jemanden etwas anginge.
+            if route == "/apple-touch-icon.png":
+                self._send(200, APPLE_TOUCH_ICON, "image/png",
+                           {"Cache-Control": "public, max-age=86400"})
+                return
+            if route == "/manifest.webmanifest":
+                self._send(200, MANIFEST.encode("utf-8"),
+                           "application/manifest+json; charset=utf-8",
+                           {"Cache-Control": "public, max-age=86400"})
                 return
 
             if not route.startswith("/api/"):
@@ -283,7 +364,24 @@ INDEX_HTML = """<!doctype html>
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- viewport-fit=cover: Ohne das bleiben auf dem iPhone links und rechts
+     graue Balken neben der Kamera-Aussparung. Die Seite haelt dafuer
+     selbst Abstand (siehe env(safe-area-inset-*) weiter unten). -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171b21" media="(prefers-color-scheme: dark)">
+<!-- Zum Home-Bildschirm hinzufuegen: eigenes Symbol statt Bildschirmfoto,
+     Start ohne Safari-Leisten. iOS liest die apple-Angaben, Android das
+     Manifest - deshalb beides. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="LoginShield">
+<meta name="format-detection" content="telephone=no">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="apple-touch-icon.png" type="image/png">
+<link rel="manifest" href="manifest.webmanifest">
 <title>LoginShield</title>
 <style>
 :root {
@@ -297,13 +395,25 @@ INDEX_HTML = """<!doctype html>
   }
 }
 * { box-sizing:border-box; }
+html { -webkit-text-size-adjust:100%; text-size-adjust:100%; }
 body { margin:0; background:var(--bg); color:var(--text);
-  font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-tap-highlight-color:rgba(47,111,235,.15);
+  /* Kein Querscrollen der ganzen Seite: Breites (Tabellen) scrollt in
+     seinem eigenen Kasten, nicht das Dokument. */
+  overflow-x:hidden; }
 header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between;
-  padding:16px 20px; border-bottom:1px solid var(--line); background:var(--panel); }
+  padding:16px 20px; border-bottom:1px solid var(--line); background:var(--panel);
+  /* Auf dem iPhone im Vollbild liegt hier sonst die Uhr/Aussparung. */
+  padding-top:calc(16px + env(safe-area-inset-top));
+  padding-left:calc(20px + env(safe-area-inset-left));
+  padding-right:calc(20px + env(safe-area-inset-right)); }
 h1 { font-size:17px; margin:0; letter-spacing:-.01em; }
 h1 span { color:var(--muted); font-weight:400; font-size:13px; margin-left:8px; }
-main { padding:20px; max-width:1200px; margin:0 auto; }
+main { padding:20px; max-width:1200px; margin:0 auto;
+  padding-left:calc(20px + env(safe-area-inset-left));
+  padding-right:calc(20px + env(safe-area-inset-right));
+  padding-bottom:calc(20px + env(safe-area-inset-bottom)); }
 .cards { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); }
 .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
 .card .label { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
@@ -315,7 +425,7 @@ section { background:var(--panel); border:1px solid var(--line); border-radius:1
   margin-top:16px; overflow:hidden; }
 section > h2 { font-size:14px; margin:0; padding:12px 16px; border-bottom:1px solid var(--line);
   color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
-.body { padding:12px 16px; overflow-x:auto; }
+.body { padding:12px 16px; overflow-x:auto; -webkit-overflow-scrolling:touch; }
 .body.scroll { max-height:520px; overflow-y:auto; }
 table { width:100%; border-collapse:collapse; font-size:13.5px; }
 th { text-align:left; color:var(--muted); font-weight:500; padding:6px 10px 6px 0;
@@ -344,9 +454,53 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
 .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
 .muted { color:var(--muted); }
 .empty-state { color:var(--muted); padding:6px 0; }
-#toast { position:fixed; right:16px; bottom:16px; background:var(--panel); color:var(--text);
+#toast { position:fixed; right:16px; background:var(--panel); color:var(--text);
   border:1px solid var(--line); border-left:3px solid var(--accent); border-radius:8px;
-  padding:10px 14px; box-shadow:0 6px 24px rgba(0,0,0,.18); display:none; max-width:min(90vw,420px); }
+  padding:10px 14px; box-shadow:0 6px 24px rgba(0,0,0,.18); display:none; max-width:min(90vw,420px);
+  /* Ueber dem Streifen der Home-Taste, nicht darunter. */
+  bottom:calc(16px + env(safe-area-inset-bottom));
+  right:calc(16px + env(safe-area-inset-right)); }
+
+/* ------------------------------------------------------------------
+   Telefon und Tablet
+   ------------------------------------------------------------------
+   Zwei Dinge sind auf dem iPhone keine Geschmacksfrage:
+
+   * Schaltflaechen unter 44 Punkten trifft man mit dem Daumen nicht
+     zuverlaessig - das ist Apples eigene Mindestgroesse.
+   * Ein Eingabefeld mit weniger als 16px Schrift laesst Safari beim
+     Antippen in die Seite hineinzoomen, und man findet nicht mehr
+     heraus. Deshalb hier ueberall genau 16px.
+   ------------------------------------------------------------------ */
+@media (max-width:760px) {
+  header { padding:12px 14px; padding-top:calc(12px + env(safe-area-inset-top)); }
+  h1 span { display:block; margin-left:0; }
+  main { padding:14px; padding-bottom:calc(28px + env(safe-area-inset-bottom)); }
+  .cards { grid-template-columns:repeat(auto-fit,minmax(132px,1fr)); gap:10px; }
+  .card { padding:12px; }
+  .card .value { font-size:24px; }
+  section { margin-top:12px; }
+  .body { padding:10px 12px; }
+  table { font-size:14px; }
+  button { font-size:15px; padding:10px 14px; min-height:44px; }
+  input, select { font-size:16px; padding:9px 11px; min-height:44px; }
+  .row { gap:10px; }
+  .row > * { flex:1 1 auto; }
+  #toast { left:calc(12px + env(safe-area-inset-left));
+           right:calc(12px + env(safe-area-inset-right)); max-width:none; }
+}
+
+/* Wer keine genaue Zeigevorrichtung hat - also jedes Touchgeraet -
+   bekommt die groesseren Ziele auch auf dem iPad im Querformat. Dort
+   greift die Breitenabfrage oben naemlich nicht: Ein iPad Pro quer ist
+   1194 Punkte breit, zoomt beim Antippen eines kleinen Feldes aber
+   genauso hinein wie ein iPhone. */
+@media (pointer:coarse) {
+  button, input, select { min-height:44px; }
+  button { font-size:15px; padding:10px 14px; }
+  input, select { font-size:16px; padding:9px 11px; }
+  th, td { padding-top:10px; padding-bottom:10px; }
+}
 </style>
 </head>
 <body>

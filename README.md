@@ -370,6 +370,25 @@ Das liest die Spitzenwerte aus dem bisher aufgezeichneten Verkehr und schlägt
 einen Wert mit reichlich Luft vor. Gezählt werden dabei Anfragen, nicht
 TCP-Verbindungen – ein Anhaltspunkt, keine Messung.
 
+### Die Wache über die eigenen Regeln
+
+Der stillste Ausfall dieses Programms sähe so aus: Die Firewall-Regeln sind
+weg, die Sperren in der Datenbank gelten weiter, das Dashboard zeigt vierzig
+gesperrte Adressen – und keine einzige davon wird noch aufgehalten. Passieren
+kann das durch einen Neustart des Firewall-Dienstes, durch ein anderes
+Werkzeug, das seinen Regelsatz lädt, oder durch ein `nft flush ruleset` von
+Hand.
+
+Deshalb sieht LoginShield bei jeder Wartung nach, ob seine Regeln noch stehen
+– nicht nur, ob die Tabelle existiert, sondern ob die Regeln *darin* noch da
+sind. Fehlt etwas, wird es neu angelegt und die Sperren werden zurück-
+geschrieben. Im Protokoll steht dann:
+
+```
+Die Firewall-Regeln von LoginShield fehlen - sie werden neu angelegt.
+Firewall-Regeln wiederhergestellt.
+```
+
 ### Abgleich nach einem Neustart
 
 Nach einem Reboot sind nftables-/iptables-Regeln weg, die Sperren in der
@@ -757,6 +776,7 @@ loginshield unblock IP                 Sperre aufheben
 loginshield allow add|remove|list      Allowlist verwalten
 loginshield export --format csv        Ereignisse exportieren
 loginshield prune                      Alte Daten löschen
+loginshield doctor                     alles auf einmal pruefen
 loginshield demo                       Beispieldaten erzeugen
 ```
 
@@ -769,6 +789,81 @@ Lage der letzten 24 Stunden
   Angreifende IPs    6
   Aktive Sperren     3
 ```
+
+---
+
+## Ein Befehl für die eine Frage
+
+Schützt das hier gerade wirklich? Die einzelnen Prüfungen gibt es längst –
+aber man muss wissen, dass es sie gibt. `doctor` geht alles der Reihe nach
+durch:
+
+```bash
+loginshield doctor
+```
+
+```
+Grundlagen
+  + Datenbank lesbar und beschreibbar (loginshield.db)
+  + Dashboard durch ein Token geschuetzt
+  ! Die Allowlist ist leer
+      -> Die eigene Adresse eintragen: loginshield allow add <deine-IP>
+
+Firewall
+  + Backend nftables verfuegbar
+  - Die Struktur ist da, die Regeln darin fehlen
+      -> Hat ein anderes Werkzeug den Regelsatz geladen? loginshield firewall --setup
+
+Dateien
+  + Dateipruefung aktiv, ClamAV angebunden (clamdscan)
+  + Uploads werden geprueft, bevor die Anwendung sie sieht
+  - Keine Vergleichsgrundlage vorhanden
+      -> loginshield integrity --learn (nur auf einem sauberen System)
+```
+
+Gemeldet wird auch, was **nicht** eingeschaltet ist. Ein Schutz, den man zu
+haben glaubt, ist gefährlicher als einer, von dem man weiß, dass er fehlt.
+Exitcode 1 heißt: Es gibt etwas zu tun (`-`-Zeilen zuerst).
+
+---
+
+## Auf dem iPhone und iPad
+
+Gleich vorweg, damit keine falsche Erwartung entsteht: **Der Schutz selbst
+läuft nicht auf iOS.** Er gehört auf den Server, auf dem deine Anwendung
+liegt. iOS lässt keine Dienste im Hintergrund laufen, hat keine
+Systemrechte und keine Firewall, an die sich ein Programm hängen könnte.
+Ein iPhone kann einen Server nicht verteidigen.
+
+Was aufs iPhone gehört, ist die **Bedienoberfläche**: nachsehen, wer gerade
+angreift, und eine Sperre aufheben, ohne am Rechner zu sitzen. Genau dafür
+ist das Dashboard eingerichtet:
+
+* **Zum Home-Bildschirm hinzufügen** – es startet dann ohne Safari-Leisten,
+  mit eigenem Symbol, wie eine App.
+* **Nichts liegt unter der Kamera-Aussparung** oder hinter dem Streifen der
+  Home-Taste (`viewport-fit=cover` plus Sicherheitsabstände).
+* **Alle Schaltflächen sind mindestens 44 Punkte hoch** – Apples eigenes
+  Mindestmaß für das Tippen mit dem Daumen.
+* **Eingabefelder haben 16px Schrift.** Darunter zoomt Safari beim Antippen
+  in die Seite hinein, und man findet nicht mehr heraus.
+* **Keine Seite scrollt quer.** Breite Tabellen scrollen in ihrem eigenen
+  Kasten.
+* IP-Adressen werden nicht in Telefonnummern-Links verwandelt.
+
+So kommst du vom iPhone dran:
+
+```bash
+# Auf dem Server - im eigenen Netz erreichbar, mit Token:
+loginshield serve --host 0.0.0.0
+```
+
+Dann im Safari `http://<server-ip>:8787/?token=<dein-token>` öffnen, Teilen ->
+"Zum Home-Bildschirm". Das Token merkt sich die Seite danach selbst.
+
+**Über das Internet nur durch einen Tunnel** (WireGuard, Tailscale) oder
+hinter einem Reverse-Proxy mit HTTPS. Das Dashboard darf Sperren aufheben –
+das gehört nicht ungeschützt ins offene Netz.
 
 ---
 

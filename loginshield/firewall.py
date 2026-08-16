@@ -157,6 +157,17 @@ class Backend:
         """
         return True
 
+    def healthy(self) -> bool:
+        """Stehen die eigenen Regeln noch so da, wie sie gesetzt wurden?
+
+        Nicht dasselbe wie :meth:`is_ready`: Die Struktur kann vorhanden
+        sein, waehrend die Regeln darin fehlen. Genau das passiert im
+        Betrieb staendig - ein ``systemctl restart nftables``, ein
+        Wechsel der Firewall-Verwaltung, ein anderes Werkzeug, das seine
+        eigenen Regeln laedt.
+        """
+        return self.is_ready()
+
     def clear(self) -> bool:
         ok = True
         for ip in self.list_blocked():
@@ -327,6 +338,25 @@ class NftablesBackend(Backend):
                                       "blocked4"), self.config.timeout)
         return result.ok
 
+    def healthy(self) -> bool:
+        # Es genuegt nicht, dass die Tabelle da ist: Wird die Kette
+        # geleert, bleiben die Sets stehen und die Sperrliste sieht
+        # unveraendert aus - nur wirkt sie nicht mehr. Deshalb wird nach
+        # der Regel selbst gesehen.
+        result = self._run(
+            self._argv("nft", "list", "chain", "inet", self.table, "input"),
+            self.config.timeout,
+        )
+        if not result.ok:
+            return False
+        text = result.stdout
+        noetig = ["@blocked4", "@blocked6"]
+        if self.config.conn_limit_enabled:
+            noetig.append("limit rate over")
+        if self.config.sync_allowlist:
+            noetig.append("@erlaubt4")
+        return all(teil in text for teil in noetig)
+
     def block(self, ip: str, seconds: int) -> bool:
         set_name = self._set_for(ip)
         if set_name is None:
@@ -490,6 +520,18 @@ class IptablesBackend(Backend):
                            self.config.timeout)
         return result.ok
 
+    def healthy(self) -> bool:
+        # Die eigene Kette kann existieren, ohne dass INPUT noch
+        # hineinspringt - dann steht sie da und wird nie durchlaufen.
+        for binary in ("iptables", "ip6tables"):
+            if not self._run(self._argv(binary, "-S", self.chain),
+                             self.config.timeout).ok:
+                return False
+            if not self._run(self._argv(binary, "-C", "INPUT", "-j", self.chain),
+                             self.config.timeout).ok:
+                return False
+        return True
+
     def block(self, ip: str, seconds: int) -> bool:
         binary = self._binary_for(ip)
         if binary is None:
@@ -629,6 +671,11 @@ class MultiBackend(Backend):
         # durch, sperrt genau diese Schicht das eigene Buero aus.
         ergebnisse = [backend.allow_sync(cidrs) for backend in self.backends]
         return all(ergebnisse) if ergebnisse else False
+
+    def healthy(self) -> bool:
+        # Eine kaputte Schicht genuegt: Der Sinn zweier Firewalls ist,
+        # dass beide stehen.
+        return bool(self.backends) and all(b.healthy() for b in self.backends)
 
     def clear(self) -> bool:
         return all(backend.clear() for backend in self.backends)
@@ -816,6 +863,46 @@ class Firewall:
 
     def setup(self) -> bool:
         return self.backend.setup()
+
+    def watchdog(self) -> dict:
+        """Sieht nach, ob die eigenen Regeln noch stehen - und stellt sie her.
+
+        Der stillste Ausfall dieses Programms: Die Regeln sind weg, die
+        Sperren in der Datenbank gelten weiter, das Dashboard zeigt
+        vierzig gesperrte Adressen - und keine einzige davon wird noch
+        aufgehalten. Passieren kann das durch einen Neustart des
+        Firewall-Dienstes, durch ein anderes Werkzeug, das seinen
+        Regelsatz laedt, oder durch ein ``nft flush ruleset`` von Hand.
+
+        Deshalb wird bei jeder Wartung nachgesehen. Fehlt etwas, wird die
+        Struktur neu angelegt; die Sperren schreibt der Aufrufer
+        anschliessend zurueck.
+        """
+        ergebnis = {"geprueft": False, "gesund": True, "repariert": False}
+        if not self.enabled or self.config.dry_run:
+            return ergebnis
+        if isinstance(self.backend, NullBackend) or not self.backend.available():
+            return ergebnis
+
+        ergebnis["geprueft"] = True
+        if self.backend.healthy():
+            return ergebnis
+
+        ergebnis["gesund"] = False
+        log.warning(
+            "Die Firewall-Regeln von LoginShield fehlen - sie werden neu "
+            "angelegt. Hat ein anderes Werkzeug den Regelsatz geladen?"
+        )
+        if self.backend.setup():
+            ergebnis["repariert"] = True
+            log.warning("Firewall-Regeln wiederhergestellt.")
+        else:
+            log.error(
+                "Firewall-Regeln liessen sich nicht wiederherstellen. "
+                "Die Sperren gelten derzeit nur innerhalb der Anwendung. "
+                "Pruefen mit: loginshield firewall --selftest"
+            )
+        return ergebnis
 
     def sync_allowlist(self, cidrs: Sequence[str]) -> bool:
         """Traegt die Allowlist in die Firewall ein.

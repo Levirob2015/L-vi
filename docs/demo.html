@@ -12,7 +12,9 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#eef1f4" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0c1017" media="(prefers-color-scheme: dark)">
-<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%230c1017'/%3E%3Cpath d='M90 32 L138 52 v40 c0 30-20 47-48 56-28-9-48-26-48-56V52z' fill='none' stroke='%235b8bff' stroke-width='9' stroke-linejoin='round'/%3E%3Cpath d='M68 92 l16 16 30-32' fill='none' stroke='%235b8bff' stroke-width='11' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<!-- PNG, nicht SVG: iOS ignoriert ein SVG hier still und nimmt
+     stattdessen ein Bildschirmfoto der Seite als Symbol. -->
+<link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAIAAACyr5FlAAACh0lEQVR42u3d23UUQBBDQWdEaA6cIHAC5oAfu5bU1edGoKn/efn1+lt6txcTCA5l4/jjvuPgcHA4OOCAAw444IADDjjggAMOOOCAAw444HBwODgcHHDAAQcccMABBxxwwAEHHHDAAYeDw8Hh4IADDjjggAMOOOCAAw444IADDjgcHA4OBwcccMABBxxwwAEHHHDAAQcccMABBxwODgeHgwMOOOCAAw444IADDjjggAMOOHY+APS0LTLggAMOOOCAAw444HBwODjggAMOOOCAAw44+CADDjjggAMOOOBwh3DwUSEDDjjggAMOOBZw8JEvAw444ICjCwcf4TLggCMVBx/JMuCAAw44GnHwESsDDjiycfCRKQMOOOJx8BEoAw44GnDwkSYDDjhKcPARJQMOOHpw8BH1FnDA0YPjso+0h0jEcdNH4CvAAUcbjms+Mp8gF8cdH7H7wwFHJ44LPpLHT8ex7SN8eTjgaMax6iN/9g4cez4qNq/BseSjZfAmHBs+itaGA44VHO0+uqbuw9Hro27nShyNPhpHbsXR5aN04WIcLT5654UDjlEc+T6qt63HkeyjfdgFHJk+BlYdwZHmY2PSHRw5Pmb2nMKR4GNpzDUcP+tjbMlBHD/lY2/GTRzP9zG54SyOZ/pYHXAZx3N8DK83juPRPran28fxOB/zu53A8QgfF0a7guMbidyZ6xaOr/s4tdU5HF/xcW2oizg+5+PgSkdxfNTHzYnu4vh/H2f3OY3jn0SOLwPHX32YBQ7BITgEh+AQHIJDcAgOwSE4JDgEh+AQHIJDcAgOwSE4BIcEh+AQHIJDcAgOwSE4BIfgkOAQHIJDcAgOwSE4BIfgEByCQ4JDH+gNOS7mvXnQzaoAAAAASUVORK5CYII=">
 <style>
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -238,7 +240,11 @@ button {
    Tippen leicht daneben. */
 @media (pointer: coarse) {
   button { min-height: 46px; padding: 11px 16px; font-size: 13.5px; }
-  button.tiny { min-height: 38px; }
+  /* Auch die kleinen Filterknoepfe: 44 Punkte ist Apples Mindestmass,
+     darunter tippt man mit dem Daumen zuverlaessig daneben. Die 38
+     hier waren die einzige Ausnahme - und damit die einzige Stelle,
+     an der das Ausprobieren auf dem iPhone haken konnte. */
+  button.tiny { min-height: 44px; padding: 10px 14px; }
 }
 
 button:active { transform: translateY(1px); }

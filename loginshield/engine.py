@@ -93,6 +93,9 @@ class Guard:
         self._static_allow = parse_networks(self.config.allowlist)
 
         self._lock = threading.Lock()
+        #: Wann die Dateiwache zuletzt gelaufen ist, und ihr letzter Bericht.
+        self._letzte_dateiwache = 0.0
+        self.last_integrity = None
         self._deny_log_at: Dict[str, float] = {}
         self._rate_strikes: Dict[str, int] = {}
         self._allow_cache: List = []
@@ -715,13 +718,76 @@ class Guard:
         except Exception:  # pragma: no cover - darf die Wartung nie stoppen
             log.exception("Anomalie-Auswertung fehlgeschlagen")
 
+        # Stehen die Firewall-Regeln ueberhaupt noch? Fehlen sie, gelten
+        # die Sperren nur noch in der Anwendung - ohne dass es jemand
+        # merkt. Nach einer Reparatur muessen die Sperren zurueck.
+        wache = {"geprueft": False, "gesund": True, "repariert": False}
+        try:
+            wache = self.firewall.watchdog()
+            if wache["repariert"]:
+                self.sync_firewall()
+        except Exception:  # pragma: no cover - darf die Wartung nie stoppen
+            log.exception("Firewall-Wache fehlgeschlagen")
+
+        datei = {"geprueft": 0, "funde": 0}
+        try:
+            datei = self._dateiwache(now)
+        except Exception:  # pragma: no cover - darf die Wartung nie stoppen
+            log.exception("Dateiwache fehlgeschlagen")
+
         return {
             "expired_blocks": len(expired),
             "pruned_attempts": attempts,
             "pruned_blocks": blocks,
             "anomalies": anomalie["geprueft"],
             "baseline_relearned": anomalie["gelernt"],
+            "firewall_repaired": wache["repariert"],
+            "files_checked": datei["geprueft"],
+            "file_findings": datei["funde"],
         }
+
+    def _dateiwache(self, now: float) -> Dict[str, int]:
+        """Prueft in Abstaenden, ob sich auf der Platte etwas geaendert hat.
+
+        Ohne diesen Weg wuerde die Integritaetspruefung nur greifen, wenn
+        jemand von Hand nachsieht - also fruehestens dann, wenn ohnehin
+        schon etwas aufgefallen ist. Eine Webshell liegt aber oft wochenlang
+        da, bevor sie benutzt wird.
+
+        Was sich geaendert hat, wird zusaetzlich auf Schadcode geprueft.
+        Die Verbindung beider Pruefungen ist das eigentlich Wirksame: Die
+        Integritaetspruefung sagt *dass* sich etwas geaendert hat, die
+        Dateipruefung sagt *ob es schlimm ist*.
+        """
+        ergebnis = {"geprueft": 0, "funde": 0}
+        abstand = self.config.integrity.check_interval
+        if not abstand or not self.integrity.enabled:
+            return ergebnis
+        if now - self._letzte_dateiwache < abstand:
+            return ergebnis
+        self._letzte_dateiwache = now
+
+        bericht = self.integrity.check(now=now)
+        self.last_integrity = bericht
+        ergebnis["geprueft"] = bericht.checked
+        if bericht.error or not bericht.changes:
+            return ergebnis
+
+        log.warning("Integritaetspruefung: %s Veraenderung(en), Bewertung %s",
+                    len(bericht.changes), bericht.verdict)
+
+        for change in bericht.changes:
+            if change.kind == "geloescht":
+                continue
+            fund = self.scan_and_quarantine(change.path)
+            if self.filescan.is_malicious(fund["result"]):
+                ergebnis["funde"] += 1
+                log.error(
+                    "Schadcode in einer veraenderten Datei: %s (%s)%s",
+                    change.path, fund["result"].summary,
+                    " - in Quarantaene" if fund["quarantined"] else "",
+                )
+        return ergebnis
 
     def status(self, hours: float = 24.0) -> Dict[str, object]:
         now = self.clock()

@@ -720,3 +720,70 @@ def test_neue_freigabe_erreicht_die_firewall(tmp_path):
         assert runner.contains("erlaubt4 { 198.51.100.7 }")
     finally:
         guard.close()
+
+
+# -- Wache ueber die eigenen Regeln --------------------------------------
+# Der stillste Ausfall: Die Regeln sind weg, die Sperren in der Datenbank
+# gelten weiter, das Dashboard zeigt vierzig gesperrte Adressen - und
+# keine einzige wird noch aufgehalten.
+def test_wache_bemerkt_fehlende_regeln():
+    firewall, runner = make("nftables", responses={
+        "list chain": CommandResult([], 0, "chain input { }", ""),
+    })
+    ergebnis = firewall.watchdog()
+    assert ergebnis["gesund"] is False
+    assert ergebnis["repariert"] is True
+    assert runner.contains("add rule inet loginshield input ip saddr @blocked4")
+
+
+def test_wache_laesst_heile_regeln_in_ruhe():
+    heil = ("chain input { ip saddr @erlaubt4 accept "
+            "ip saddr @blocked4 drop ip6 saddr @blocked6 drop }")
+    firewall, runner = make("nftables", responses={
+        "list chain": CommandResult([], 0, heil, ""),
+    })
+    ergebnis = firewall.watchdog()
+    assert ergebnis["gesund"] is True and ergebnis["repariert"] is False
+    assert not runner.contains("add rule")
+
+
+def test_wache_bemerkt_fehlende_verbindungsbremse():
+    """Die Bremse gehoert zu den Regeln - fehlt sie, fehlt der Schutz."""
+    ohne_bremse = ("chain input { ip saddr @erlaubt4 accept "
+                   "ip saddr @blocked4 drop ip6 saddr @blocked6 drop }")
+    firewall, _ = make("nftables", conn_limit_enabled=True, responses={
+        "list chain": CommandResult([], 0, ohne_bremse, ""),
+    })
+    assert firewall.watchdog()["gesund"] is False
+
+
+def test_wache_im_trockenlauf_untaetig():
+    firewall, runner = make("nftables", dry_run=True)
+    assert firewall.watchdog()["geprueft"] is False
+    assert not runner.contains("add rule")
+
+
+def test_iptables_wache_bemerkt_fehlenden_sprung():
+    """Die Kette kann dastehen, ohne dass INPUT je hineinspringt."""
+    firewall, _ = make("iptables", responses={
+        "-C INPUT": CommandResult([], 1, "", "does a matching rule exist?"),
+    })
+    assert firewall.backend.healthy() is False
+
+
+def test_guard_repariert_und_schreibt_sperren_zurueck(tmp_path):
+    config = Config(db_path=str(tmp_path / "t.db"))
+    config.firewall = FirewallConfig(enabled=True, backend="nftables",
+                                     sync_on_start=False)
+    runner = FakeRunner({"list chain": CommandResult([], 0, "chain input { }", "")})
+    guard = Guard(config, firewall=Firewall(config.firewall, runner))
+    try:
+        guard.block("203.0.113.9", reason="test")
+        runner.calls.clear()
+        bericht = guard.maintenance()
+
+        assert bericht["firewall_repaired"] is True
+        # Die Sperre muss nach der Reparatur wieder in der Firewall stehen.
+        assert runner.contains("add element inet loginshield blocked4")
+    finally:
+        guard.close()
