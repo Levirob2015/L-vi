@@ -217,6 +217,10 @@ class NftablesBackend(Backend):
             # filter-Regeln (Prioritaet 0), aendert diese aber nicht.
             ["nft", "add", "chain", "inet", table, "input",
              "{ type filter hook input priority -10; policy accept; }"],
+            # Ungueltige Pakete verwerfen: Standardhaertung, die auch
+            # einfache Scan- und Umgehungsversuche abfaengt.
+            ["nft", "add", "rule", "inet", table, "input",
+             "ct", "state", "invalid", "drop"],
             ["nft", "add", "rule", "inet", table, "input",
              "ip", "saddr", "@blocked4", "drop"],
             ["nft", "add", "rule", "inet", table, "input",
@@ -404,6 +408,67 @@ class UfwBackend(Backend):
         return found
 
 
+class MultiBackend(Backend):
+    """Mehrere Firewalls gleichzeitig bespielen.
+
+    Zwei Schichten statt einer: faellt eine aus - falsch konfiguriert, Regeln
+    von aussen geloescht, Dienst neu gestartet - haelt die andere. Eine
+    Sperre gilt als gesetzt, sobald **eine** Firewall sie angenommen hat;
+    Fehler der anderen werden protokolliert.
+    """
+
+    name = "multi"
+
+    def __init__(self, config: FirewallConfig, backends: Sequence[Backend],
+                 run: Callable[..., CommandResult] = run_command) -> None:
+        super().__init__(config, run)
+        self.backends = [b for b in backends if b.available()]
+        self.name = "multi(" + "+".join(b.name for b in self.backends) + ")"
+
+    @property
+    def supports_timeout(self) -> bool:  # type: ignore[override]
+        return all(b.supports_timeout for b in self.backends) if self.backends else False
+
+    def available(self) -> bool:
+        return bool(self.backends)
+
+    def is_ready(self) -> bool:
+        return bool(self.backends) and all(b.is_ready() for b in self.backends)
+
+    def setup_commands(self) -> List[List[str]]:
+        commands: List[List[str]] = []
+        for backend in self.backends:
+            commands.extend(backend.setup_commands())
+        return commands
+
+    def setup(self) -> bool:
+        return all(backend.setup() for backend in self.backends) if self.backends else False
+
+    def block(self, ip: str, seconds: int) -> bool:
+        ergebnisse = [backend.block(ip, seconds) for backend in self.backends]
+        for backend, ok in zip(self.backends, ergebnisse):
+            if not ok:
+                log.error("%s konnte %s nicht sperren", backend.name, ip)
+        return any(ergebnisse)
+
+    def unblock(self, ip: str) -> bool:
+        # Beim Entsperren zaehlt jede Schicht: bleibt eine Sperre stehen,
+        # kommt derjenige weiterhin nicht durch.
+        ergebnisse = [backend.unblock(ip) for backend in self.backends]
+        return all(ergebnisse) if ergebnisse else False
+
+    def list_blocked(self) -> List[str]:
+        gesehen: List[str] = []
+        for backend in self.backends:
+            for eintrag in backend.list_blocked():
+                if eintrag not in gesehen:
+                    gesehen.append(eintrag)
+        return gesehen
+
+    def clear(self) -> bool:
+        return all(backend.clear() for backend in self.backends)
+
+
 class CommandBackend(Backend):
     """Eigene Kommandos aus der Konfiguration.
 
@@ -470,7 +535,28 @@ class Firewall:
         self.backend = self._select_backend()
 
     def _select_backend(self) -> Backend:
-        requested = (self.config.backend or "auto").lower()
+        namen = [name.lower() for name in self.config.backends]
+
+        # Mehrere Backends: alle gleichzeitig bespielen.
+        if len(namen) > 1:
+            gewaehlt = []
+            for name in namen:
+                backend_cls = BACKENDS.get(name)
+                if backend_cls is None:
+                    log.error("Unbekanntes Firewall-Backend %r - uebersprungen", name)
+                    continue
+                backend = backend_cls(self.config, self._run)
+                if backend.available():
+                    gewaehlt.append(backend)
+                else:
+                    log.warning("Firewall-Backend %r nicht verfuegbar", name)
+            if not gewaehlt:
+                return NullBackend(self.config, self._run)
+            if len(gewaehlt) == 1:
+                return gewaehlt[0]
+            return MultiBackend(self.config, gewaehlt, self._run)
+
+        requested = namen[0] if namen else "auto"
 
         if requested == "auto":
             # Eigene Kommandos haben Vorrang - wer sie setzt, will sie nutzen.
@@ -535,7 +621,26 @@ class Firewall:
         safe = self._safe_ip(ip)
         if safe is None:
             return False
-        return self.backend.block(safe, int(seconds))
+
+        ok = self.backend.block(safe, int(seconds))
+
+        # Mit verify wird nachgesehen, ob die Sperre wirklich angekommen ist.
+        # Ein Kommando, das Erfolg meldet ohne zu wirken, ist gefaehrlicher
+        # als gar keine Firewall - man haelt sich faelschlich fuer geschuetzt.
+        if self.config.verify and not self.config.dry_run:
+            if safe not in self.backend.list_blocked():
+                log.warning(
+                    "Sperre fuer %s war nach dem Kommando nicht auffindbar - "
+                    "zweiter Versuch", safe,
+                )
+                ok = self.backend.block(safe, int(seconds))
+                if safe not in self.backend.list_blocked():
+                    log.error(
+                        "Sperre fuer %s kommt in der Firewall nicht an. "
+                        "Pruefen mit: loginshield firewall --selftest", safe,
+                    )
+                    return False
+        return ok
 
     def unblock(self, ip: str) -> bool:
         if not self.enabled:
@@ -687,6 +792,16 @@ class Firewall:
         """
         result = {"added": 0, "removed": 0, "failed": 0}
         if not self.enabled:
+            return result
+
+        # Fehlt die eigene Tabelle, wuerde jeder einzelne Eintrag scheitern
+        # und das Log fluten. Eine Meldung mit dem noetigen Hinweis genuegt.
+        if not self.config.dry_run and not self.backend.is_ready():
+            log.warning(
+                "Firewall-Abgleich uebersprungen: die eigene Struktur fehlt. "
+                "Anlegen mit 'loginshield firewall --setup'."
+            )
+            result["failed"] = len(active)
             return result
 
         wanted = {}

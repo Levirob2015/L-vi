@@ -21,6 +21,11 @@ zuschnappt.
 *Settings → Pages → Source* einmalig **GitHub Actions** auswählst:
 `https://levirob2015.github.io/L-vi/`
 
+**Auf dem iPad:** Die Seite in Safari öffnen und über *Teilen → Zum
+Home-Bildschirm* ablegen – sie bekommt dann ein eigenes Symbol und startet
+ohne Browserleiste, wie eine App. Die Schutzsoftware selbst läuft dort
+nicht: sie schützt einen Server, kein Tablet.
+
 ---
 
 ## Schnellstart
@@ -58,6 +63,7 @@ dem richtigen Passwort.
 | **Request-Flut** | Zu viele Anfragen pro IP (unabhängig vom Login) | 60 / Min |
 | **Honeypot** | Zugriff auf eine vorgetäuschte Schwachstelle | **1 Treffer** |
 | **Netzsperre** | Mehrere gesperrte IPs aus demselben Adressblock | 4 IPs / 1 Std |
+| **Angriffsmuster** | SQL-Injection, Path Traversal, Log4Shell, Scanner | ab 8 Punkten |
 
 Spraying braucht eine eigene Regel: Wer pro Konto nur zwei Passwörter probiert,
 löst die klassische Fehlversuchs-Schwelle nie aus – über zwanzig Konten hinweg
@@ -386,6 +392,78 @@ interaktiv nach einem Passwort gefragt.
 
 ---
 
+## Zwei Firewalls
+
+Die beiden Ebenen sehen völlig Verschiedenes – und decken sich gegenseitig ab:
+
+| | **System-Firewall** | **Anfrage-Firewall** |
+|---|---|---|
+| Sieht | die Absenderadresse | den *Inhalt* der Anfrage |
+| Blockt | Pakete, für alle Dienste | einzelne Anfragen an deine App |
+| Greift bei | bekannten Angreifern | dem Angriff selbst, beim ersten Mal |
+| Werkzeug | nftables / iptables / ufw | eingebautes Regelwerk |
+
+Ein Angreifer mit frischer IP kommt an der System-Firewall vorbei – sie kennt
+ihn ja noch nicht. Die Anfrage-Firewall erkennt ihn trotzdem, weil sie sieht,
+**was** er versucht:
+
+```
+$ loginshield filter --test "/x?id=1' OR '1'='1"
+
+Regel           Schwere  Bedeutung
+--------------  -------  ------------------------------------
+sql_tautologie  8        SQL-Injection (immer-wahr-Bedingung)
+
+  Summe: 8 (Schwelle: 8)
+  -> Würde gesperrt (block)
+```
+
+Erkannt werden unter anderem SQL-Injection, Path Traversal, Log4Shell,
+Kommando-Einschleusung, PHP-Wrapper und die Kennungen bekannter
+Angriffswerkzeuge (`sqlmap`, `nikto`, `nmap`, …). Auch mehrfach kodierte
+Varianten: `%2527%2520OR` wird aufgelöst, bevor geprüft wird.
+
+### Falschmeldungen sind hier gefährlicher als Lücken
+
+Wer zu scharf filtert, sperrt echte Nutzer aus. Deshalb:
+
+* **Jede Regel hat eine Schwere**, gesperrt wird erst ab einer Summe. Eine
+  einzelne schwache Übereinstimmung genügt nie.
+* **Nur Muster, die in normalem Verkehr praktisch nicht vorkommen.** Eine
+  Suchanfrage nach `select the best option` oder ein Kommentar mit
+  `drop by the office` löst nichts aus.
+* **`action: log`** schreibt nur mit, ohne zu sperren – so lässt sich vor dem
+  Scharfschalten sehen, was passieren würde:
+
+```yaml
+requestfilter:
+  action: log          # erst beobachten, dann auf block umstellen
+  exempt_paths: []     # eigene Routen ausnehmen
+  disabled_rules: []   # einzelne Regeln abschalten
+```
+
+`loginshield filter --list` zeigt alle Regeln, `--test` prüft eine beliebige
+URL dagegen.
+
+### Beide System-Firewalls gleichzeitig
+
+Zwei Schichten statt einer – fällt eine aus, hält die andere:
+
+```yaml
+firewall:
+  enabled: true
+  backend: [nftables, iptables]   # beide gleichzeitig bespielen
+  verify: true                    # nach jeder Sperre nachsehen, ob sie ankam
+```
+
+`verify` deckt den heimtückischsten Fall auf: ein Kommando meldet Erfolg,
+bewirkt aber nichts – man hält sich fälschlich für geschützt. Schlägt die
+Nachprüfung fehl, wird ein zweiter Versuch unternommen und danach deutlich
+protokolliert.
+
+
+---
+
 ## Kommandozeile
 
 ```
@@ -399,6 +477,8 @@ loginshield firewall --status          Firewall-Anbindung pruefen
 loginshield firewall --setup           Firewall einrichten
 loginshield firewall --sync            Sperren in die Firewall schreiben
 loginshield firewall --selftest        prueft die Anbindung an einer Testadresse
+loginshield filter --list              Regeln der Anfrage-Firewall anzeigen
+loginshield filter --test URL          eine URL gegen die Regeln pruefen
 loginshield status [--hours 24]        Lage-Überblick im Terminal
 loginshield check IP                   Status einer IP abfragen
 loginshield block IP|CIDR [--minutes]  IP oder ganzes Netz sperren
@@ -540,7 +620,7 @@ zuerst mit `loginshield demo` oder der Beispiel-App.
 
 ```bash
 pip install pytest
-python -m pytest -q      # 255 Tests
+python -m pytest -q      # 312 Tests
 ```
 
 Abgedeckt sind unter anderem: Erkennungsregeln und Eskalation, Honeypot in
@@ -566,7 +646,8 @@ loginshield/
   honeypot.py    die Falle: Köderpfade, Honeytoken, Köder-Server
   logwatch.py    Logdateien mitlesen
   dashboard.py   Web-Oberfläche
-  firewall.py    Firewall-Backends (nftables, iptables, ufw, eigene)
+  firewall.py    System-Firewall (nftables, iptables, ufw, mehrere zugleich)
+  requestfilter.py  Anfrage-Firewall: prüft den Inhalt der Anfragen
   cli.py         Kommandozeile
 examples/        lauffähige Beispielanwendung
 tests/           Testsuite

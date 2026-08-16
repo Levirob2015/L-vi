@@ -482,3 +482,101 @@ def test_selftest_fasst_echte_sperre_nicht_an():
     ok, schritte = firewall.selftest()
     assert ok is False
     assert "bereits gesperrt" in schritte[0]
+
+
+# -- Zwei Firewalls gleichzeitig ----------------------------------------
+def test_mehrere_backends(monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda binary: "/usr/sbin/" + binary)
+    config = FirewallConfig(enabled=True, backend=["nftables", "iptables"])
+    runner = FakeRunner(RULE_MISSING)
+    firewall = Firewall(config, runner)
+
+    assert "nftables" in firewall.name and "iptables" in firewall.name
+    firewall.block("203.0.113.5", 900)
+    # Die Sperre landet in beiden Firewalls.
+    assert runner.contains("nft add element")
+    assert runner.contains("iptables -I LOGINSHIELD")
+
+
+def test_mehrere_backends_eines_faellt_aus(monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda binary: "/usr/sbin/" + binary)
+    config = FirewallConfig(enabled=True, backend=["nftables", "iptables"])
+    # nft schlaegt fehl, iptables nicht - die Sperre gilt trotzdem.
+    runner = FakeRunner({
+        "nft add element": CommandResult([], 1, "", "Permission denied"),
+        "-C ": CommandResult([], 1, "", "no rule"),
+    })
+    firewall = Firewall(config, runner)
+    assert firewall.block("203.0.113.5", 900) is True
+
+
+def test_mehrere_backends_beide_fallen_aus(monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda binary: "/usr/sbin/" + binary)
+    config = FirewallConfig(enabled=True, backend=["nftables", "iptables"])
+    runner = FakeRunner({"": CommandResult([], 1, "", "kaputt")})
+    firewall = Firewall(config, runner)
+    assert firewall.block("203.0.113.5", 900) is False
+
+
+def test_mehrere_backends_nicht_verfuegbare_werden_uebersprungen(monkeypatch):
+    monkeypatch.setattr(shutil, "which",
+                        lambda binary: None if binary == "nft" else "/sbin/" + binary)
+    config = FirewallConfig(enabled=True, backend=["nftables", "iptables"])
+    firewall = Firewall(config, FakeRunner(RULE_MISSING))
+    # Nur iptables uebrig - dann kein Multi-Backend, sondern direkt iptables.
+    assert firewall.name == "iptables"
+
+
+def test_mehrere_backends_liste_ist_vereinigt(monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda binary: "/usr/sbin/" + binary)
+    config = FirewallConfig(enabled=True, backend=["nftables", "iptables"])
+    runner = FakeRunner({
+        "list set inet loginshield blocked4":
+            CommandResult([], 0, "elements = { 203.0.113.5 timeout 1h }", ""),
+        "iptables -S LOGINSHIELD":
+            CommandResult([], 0, "-A LOGINSHIELD -s 198.51.100.9/32 -j DROP", ""),
+    })
+    firewall = Firewall(config, runner)
+    assert sorted(firewall.list_blocked()) == ["198.51.100.9", "203.0.113.5"]
+
+
+def test_auto_laesst_sich_nicht_kombinieren():
+    with pytest.raises(ConfigError):
+        Config.from_dict({"firewall": {"backend": ["auto", "iptables"]}})
+
+
+# -- Nachpruefen der Sperre ---------------------------------------------
+def test_verify_erkennt_wirkungsloses_kommando():
+    # Kommando meldet Erfolg, die Sperre taucht nicht auf.
+    firewall, runner = make("nftables", verify=True)
+    assert firewall.block("203.0.113.5", 900) is False
+    # Ein zweiter Versuch wurde unternommen.
+    assert len([c for c in runner.commands if "add element" in c]) == 2
+
+
+def test_verify_bestaetigt_wirksame_sperre():
+    zustand = {"drin": False}
+
+    def runner(argv, timeout=10):
+        text = " ".join(argv)
+        if "add element" in text:
+            zustand["drin"] = True
+        elif "list set" in text and "blocked4" in text:
+            inhalt = "elements = { 203.0.113.5 timeout 15m }" if zustand["drin"] else ""
+            return CommandResult(argv, 0, inhalt, "")
+        return CommandResult(argv, 0, "", "")
+
+    config = FirewallConfig(enabled=True, backend="nftables", verify=True)
+    assert Firewall(config, runner).block("203.0.113.5", 900) is True
+
+
+def test_verify_ohne_wirkung_im_trockenlauf():
+    firewall, runner = make("nftables", verify=True, dry_run=True)
+    # Im Trockenlauf wird nichts nachgeprueft - es gibt ja nichts zu finden.
+    assert firewall.block("203.0.113.5", 900) is True
+
+
+def test_nft_setup_verwirft_ungueltige_pakete():
+    firewall, _ = make("nftables")
+    befehle = [" ".join(p) for p in firewall.backend.setup_commands()]
+    assert any("ct state invalid drop" in c for c in befehle)

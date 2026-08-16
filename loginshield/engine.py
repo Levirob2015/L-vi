@@ -27,6 +27,7 @@ from typing import Dict, List, Optional
 from .config import Config
 from .firewall import Firewall
 from .honeypot import Honeypot
+from .requestfilter import RequestFilter
 from .models import Block, Decision, Event, Reason
 from .netutils import (
     client_ip,
@@ -72,6 +73,8 @@ class Guard:
         self.honeypot = Honeypot(
             self.config.honeypot, self, secret=self.config.identity_hmac_key
         )
+        #: Die zweite Firewall: filtert Anfragen nach Inhalt.
+        self.requestfilter = RequestFilter(self.config.requestfilter, self)
 
         rules = self.config.rules
         self._limiter = SlidingWindow(rules.request_limit, rules.request_window)
@@ -369,16 +372,39 @@ class Guard:
             ts=now,
         )
 
+        # Die Anfrage-Firewall meldet ueber denselben Weg - im Log soll aber
+        # stehen, was wirklich zugeschlagen hat.
+        quelle = ("Anfrage-Firewall" if reason == Reason.MALICIOUS_REQUEST
+                  else "Honeypot")
+
         if self.is_allowlisted(ip):
-            log.info("Honeypot-Treffer von %s (%s) - Allowlist, keine Sperre", ip, route)
+            log.info("%s-Treffer von %s (%s) - Allowlist, keine Sperre",
+                     quelle, ip, route)
             return None
 
-        log.warning("Honeypot ausgeloest von %s: %s (%s)", ip, route or "-", reason)
+        log.warning("%s ausgeloest von %s: %s (%s)", quelle, ip, route or "-", reason)
         return self.block(
             ip,
             seconds=seconds if seconds is not None else self.config.honeypot.block_seconds,
             reason=reason,
             detail=detail or route,
+        )
+
+    def record_suspicious(self, ip: Optional[str], *, route: str = "",
+                          user_agent: str = "", source: str = "app",
+                          detail: str = "") -> None:
+        """Haelt eine auffaellige Anfrage fest, ohne zu sperren.
+
+        Genutzt von der Anfrage-Firewall im Modus ``log`` und bei Treffern
+        unterhalb der Sperrschwelle - so laesst sich vor dem Scharfschalten
+        sehen, was passieren wuerde.
+        """
+        ip = normalize_ip(ip)
+        if ip is None:
+            return
+        self.store.record_attempt(
+            ip, Event.SUSPICIOUS, route=route, user_agent=user_agent,
+            source=source, detail=detail, ts=self.clock(),
         )
 
     def record_request(self, ip: Optional[str], *, route: str = "",

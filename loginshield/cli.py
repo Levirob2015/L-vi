@@ -84,6 +84,8 @@ dashboard:
 firewall:
   enabled: false
   backend: auto           # auto | nftables | iptables | ufw | command | none
+                          # Liste = mehrere gleichzeitig: [nftables, iptables]
+  verify: false           # nach jeder Sperre nachsehen, ob sie ankam
   dry_run: false          # true = Kommandos nur anzeigen, nichts aendern
   sudo: false             # Kommandos mit 'sudo -n' ausfuehren
   sync_on_start: true     # aktive Sperren beim Start in die Firewall schreiben
@@ -106,6 +108,19 @@ honeypot:
   hidden_field: website     # unsichtbares Formularfeld im Login (Bot-Falle)
   decoy_user: svc_backup    # untergeschobene Zugangsdaten
   decoy_password: ""        # leer = stabil aus dem Schluessel abgeleitet
+
+# Die zweite Firewall: filtert Anfragen nach Inhalt (SQL-Injection,
+# Path Traversal, Log4Shell, Angriffswerkzeuge).
+# Erst mit action: log einfahren und 'loginshield status' beobachten,
+# dann auf block umstellen.
+requestfilter:
+  enabled: true
+  action: block           # block | log
+  block_score: 8          # Summe der Regelschweren, ab der gesperrt wird
+  block_seconds: 21600
+  exempt_paths: []        # eigene Routen ausnehmen
+  disabled_rules: []      # einzelne Regeln abschalten
+  extra_rules: []         # eigene Muster ergaenzen
 
 # Optional: Logdateien mitlesen (loginshield watch)
 logwatch: []
@@ -247,6 +262,14 @@ def build_parser() -> argparse.ArgumentParser:
     firewall.add_argument("--yes", action="store_true",
                           help="Rueckfrage bei --clear ueberspringen")
     firewall.set_defaults(handler=cmd_firewall)
+
+    filt = subparsers.add_parser(
+        "filter", help="Anfrage-Firewall: Regeln anzeigen oder eine URL pruefen"
+    )
+    filt.add_argument("--test", metavar="URL",
+                      help="Eine URL oder Zeichenkette gegen die Regeln pruefen")
+    filt.add_argument("--list", action="store_true", help="Alle Regeln anzeigen")
+    filt.set_defaults(handler=cmd_filter)
 
     honeypot = subparsers.add_parser(
         "honeypot", help="Koeder-Server starten oder die Falle inspizieren"
@@ -717,6 +740,36 @@ def cmd_firewall(args) -> int:
         print("\n  Die Firewall ist in der Konfiguration nicht aktiv.")
         print("  Sperren gelten derzeit nur innerhalb der Anwendung.")
     return 0
+
+
+def cmd_filter(args) -> int:
+    guard = _guard(args)
+    try:
+        filt = guard.requestfilter
+
+        if args.test:
+            verdict = filt.explain(args.test)
+            print(f"Geprueft: {args.test}\n")
+            if verdict.clean:
+                print("  Unauffaellig - keine Regel greift.")
+                return 0
+            rows = [[r.name, r.severity, r.description] for r in verdict.matched]
+            print(_table(rows, ["Regel", "Schwere", "Bedeutung"]))
+            print(f"\n  Summe: {verdict.score} (Schwelle: {filt.config.block_score})")
+            if verdict.blocked:
+                print(f"  -> Wuerde gesperrt ({filt.config.action})")
+                return 1
+            print("  -> Wird nur vermerkt, nicht gesperrt")
+            return 0
+
+        print(f"Anfrage-Firewall: {len(filt.rules)} Regeln, "
+              f"Sperrschwelle {filt.config.block_score}, Modus {filt.config.action}\n")
+        rows = [[r.name, r.severity, r.target, r.description] for r in filt.rules]
+        print(_table(rows, ["Regel", "Schwere", "Prueft", "Bedeutung"]))
+        print("\nEine URL pruefen:  loginshield filter --test \"/x?id=1' OR '1'='1\"")
+        return 0
+    finally:
+        guard.close()
 
 
 def cmd_honeypot(args) -> int:

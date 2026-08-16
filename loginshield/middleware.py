@@ -23,7 +23,7 @@ import time
 from typing import Callable, Iterable, Optional, Sequence
 
 from .engine import Guard
-from .models import Decision
+from .models import Decision, Reason
 
 
 def path_matches(path: str, patterns: Sequence[str]) -> bool:
@@ -50,6 +50,7 @@ class ShieldMiddleware:
         identity_from_scope: Optional[Callable[[dict], Optional[str]]] = None,
         protect_all_paths: bool = True,
         honeypot=None,
+        requestfilter=None,
     ) -> None:
         self.app = app
         self.guard = guard
@@ -62,6 +63,10 @@ class ShieldMiddleware:
         self.protect_all_paths = protect_all_paths
         #: None = der Honeypot des Guards, False = abgeschaltet.
         self.honeypot = guard.honeypot if honeypot is None else (honeypot or None)
+        #: None = die Anfrage-Firewall des Guards, False = abgeschaltet.
+        self.requestfilter = (
+            guard.requestfilter if requestfilter is None else (requestfilter or None)
+        )
 
     async def __call__(self, scope, receive, send):
         if scope.get("type") != "http":
@@ -92,6 +97,26 @@ class ShieldMiddleware:
                     await asyncio.sleep(delay)
                 await _send_decoy(send, self.honeypot.decoy_response(trap))
                 return
+
+        # Zweite Firewall: den Inhalt der Anfrage pruefen, bevor die
+        # Anwendung sie zu sehen bekommt.
+        if self.requestfilter is not None and self.requestfilter.enabled:
+            verdict = self.requestfilter.inspect(
+                path=path,
+                query=scope.get("query_string", b"").decode("latin-1"),
+                user_agent=headers.get("user-agent", ""),
+                method=method,
+            )
+            if not verdict.clean:
+                self.requestfilter.handle(
+                    ip, verdict, route=path,
+                    user_agent=headers.get("user-agent", ""),
+                )
+                if verdict.blocked and self.requestfilter.config.action == "block":
+                    await _send_denied(send, Decision(
+                        False, Reason.MALICIOUS_REQUEST, detail=verdict.summary,
+                    ))
+                    return
 
         is_login = method in self.login_methods and path_matches(path, self.login_paths)
 
@@ -193,7 +218,7 @@ class WSGIShield:
                  failure_statuses: Iterable[int] = (401, 403, 422),
                  exempt_paths: Iterable[str] = (),
                  protect_all_paths: bool = True,
-                 honeypot=None) -> None:
+                 honeypot=None, requestfilter=None) -> None:
         self.app = app
         self.guard = guard
         self.login_paths = tuple(login_paths)
@@ -202,6 +227,9 @@ class WSGIShield:
         self.exempt_paths = tuple(exempt_paths)
         self.protect_all_paths = protect_all_paths
         self.honeypot = guard.honeypot if honeypot is None else (honeypot or None)
+        self.requestfilter = (
+            guard.requestfilter if requestfilter is None else (requestfilter or None)
+        )
 
     def __call__(self, environ, start_response):
         path = environ.get("PATH_INFO", "")
@@ -227,6 +255,28 @@ class WSGIShield:
                     [("Content-Type", content_type), ("Content-Length", str(len(body)))],
                 )
                 return [body]
+
+        if self.requestfilter is not None and self.requestfilter.enabled:
+            verdict = self.requestfilter.inspect(
+                path=path,
+                query=environ.get("QUERY_STRING", ""),
+                user_agent=environ.get("HTTP_USER_AGENT", ""),
+                method=method,
+            )
+            if not verdict.clean:
+                self.requestfilter.handle(
+                    ip, verdict, route=path,
+                    user_agent=environ.get("HTTP_USER_AGENT", ""),
+                )
+                if verdict.blocked and self.requestfilter.config.action == "block":
+                    payload = json.dumps({
+                        "error": "blocked", "reason": Reason.MALICIOUS_REQUEST,
+                    }).encode("utf-8")
+                    start_response("403 Blocked", [
+                        ("Content-Type", "application/json; charset=utf-8"),
+                        ("Content-Length", str(len(payload))),
+                    ])
+                    return [payload]
         is_login = method in self.login_methods and path_matches(path, self.login_paths)
 
         if self.protect_all_paths or is_login:

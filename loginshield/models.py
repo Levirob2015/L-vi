@@ -14,6 +14,7 @@ class Event:
     REQUEST = "request"
     DENIED = "denied"
     HONEYPOT = "honeypot"
+    SUSPICIOUS = "suspicious"   # auffaellige Anfrage, noch keine Sperre
 
 
 class Reason:
@@ -31,6 +32,7 @@ class Reason:
     CREDENTIAL_SPRAY = "credential_spray"
     RATE_LIMIT_ABUSE = "rate_limit_abuse"
     SUBNET_ABUSE = "subnet_abuse"      # ganzes Netz statt Einzel-IP
+    MALICIOUS_REQUEST = "malicious_request"  # Anfrage-Firewall
     MANUAL = "manual"
 
     # Honeypot: kein Schwellwert noetig, ein einziger Treffer genuegt
@@ -70,7 +72,7 @@ class Decision:
         """Passender HTTP-Status fuer diese Entscheidung."""
         if self.allowed:
             return 200
-        if self.reason == Reason.IP_BLOCKED:
+        if self.reason in (Reason.IP_BLOCKED, Reason.MALICIOUS_REQUEST):
             return 403
         return 429
 

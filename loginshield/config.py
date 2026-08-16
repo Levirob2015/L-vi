@@ -141,8 +141,14 @@ class FirewallConfig:
     """
 
     enabled: bool = False
-    #: auto | nftables | iptables | ufw | command | none
-    backend: str = "auto"
+    #: auto | nftables | iptables | ufw | command | none.
+    #: Auch eine Liste ist erlaubt - dann werden mehrere Firewalls
+    #: gleichzeitig bespielt: ["nftables", "iptables"].
+    backend: Any = "auto"
+    #: Nach jeder Sperre nachsehen, ob sie wirklich angekommen ist. Kostet
+    #: einen zusaetzlichen Aufruf, deckt aber Kommandos auf, die Erfolg
+    #: melden ohne zu wirken.
+    verify: bool = False
     #: Nur die Kommandos anzeigen, nichts ausfuehren. Zum gefahrlosen Testen.
     dry_run: bool = False
     #: Kommandos mit 'sudo -n' ausfuehren (nie interaktiv nachfragen).
@@ -157,13 +163,30 @@ class FirewallConfig:
     unblock_command: List[str] = field(default_factory=list)
     timeout: int = 10
 
+    @property
+    def backends(self) -> List[str]:
+        """Die Backend-Namen als Liste, egal wie sie angegeben wurden."""
+        if isinstance(self.backend, (list, tuple)):
+            return [str(name).strip() for name in self.backend if str(name).strip()]
+        return [str(self.backend).strip()]
+
     def validate(self) -> None:
         known = ("auto", "nftables", "iptables", "ufw", "command", "none")
-        if self.backend not in known:
+        namen = self.backends
+        if not namen:
+            raise ConfigError("firewall.backend darf nicht leer sein")
+        for name in namen:
+            if name not in known:
+                raise ConfigError(
+                    "firewall.backend muss eines von " + ", ".join(known)
+                    + f" sein (bekam {name!r})"
+                )
+        if len(namen) > 1 and "auto" in namen:
             raise ConfigError(
-                "firewall.backend muss eines von " + ", ".join(known) + " sein"
+                "firewall.backend: 'auto' laesst sich nicht mit anderen "
+                "Backends kombinieren - nenne sie einzeln"
             )
-        if self.enabled and self.backend == "command" and not self.block_command:
+        if self.enabled and "command" in namen and not self.block_command:
             raise ConfigError(
                 "firewall.backend=command gesetzt, aber kein block_command"
             )
@@ -174,6 +197,55 @@ class FirewallConfig:
             raise ConfigError(
                 "firewall.table darf nur Buchstaben, Ziffern und _ enthalten"
             )
+
+
+@dataclass
+class RequestFilterConfig:
+    """Die zweite Firewall: filtert Anfragen nach Inhalt.
+
+    Falschmeldungen sind hier gefaehrlicher als Luecken - wer zu scharf
+    filtert, sperrt echte Nutzer aus. Deshalb wird nicht bei jedem Treffer
+    gesperrt, sondern erst ab einer Summe aus Regelschweren.
+    """
+
+    enabled: bool = True
+    #: block = sperren, log = nur mitschreiben (zum gefahrlosen Einfahren)
+    action: str = "block"
+    #: Ab dieser Punktsumme wird gesperrt. Eine einzelne schwache Regel
+    #: (Schwere 4-5) reicht damit nie aus.
+    block_score: int = 8
+    block_seconds: int = 21600  # 6 Stunden
+    max_url_length: int = 2000
+    #: Wie oft Prozentkodierung aufgeloest wird (%252e versteckt %2e).
+    decode_rounds: int = 2
+    #: Eigene Routen, die von der Pruefung ausgenommen sind.
+    exempt_paths: List[str] = field(default_factory=list)
+    #: Namen eingebauter Regeln, die nicht greifen sollen.
+    disabled_rules: List[str] = field(default_factory=list)
+    #: Eigene Regeln: {name, pattern, severity, target, description}
+    extra_rules: List[dict] = field(default_factory=list)
+    #: True = eingebaute Regeln komplett ersetzen statt ergaenzen.
+    replace_default_rules: bool = False
+
+    def validate(self) -> None:
+        if self.action not in ("block", "log"):
+            raise ConfigError("requestfilter.action muss block oder log sein")
+        if self.block_score < 1:
+            raise ConfigError("requestfilter.block_score muss mindestens 1 sein")
+        if self.block_seconds <= 0:
+            raise ConfigError("requestfilter.block_seconds muss groesser als 0 sein")
+        if self.max_url_length < 100:
+            raise ConfigError("requestfilter.max_url_length ist unrealistisch klein")
+        for raw in self.extra_rules:
+            if not isinstance(raw, dict) or not raw.get("pattern"):
+                raise ConfigError("requestfilter.extra_rules: 'pattern' fehlt")
+            try:
+                re.compile(str(raw["pattern"]))
+            except re.error as exc:
+                raise ConfigError(
+                    f"requestfilter.extra_rules: ungueltiger Ausdruck "
+                    f"{raw.get('name', '?')}: {exc}"
+                ) from exc
 
 
 @dataclass
@@ -256,6 +328,7 @@ class Config:
     dashboard: DashboardConfig = field(default_factory=DashboardConfig)
     firewall: FirewallConfig = field(default_factory=FirewallConfig)
     honeypot: HoneypotConfig = field(default_factory=HoneypotConfig)
+    requestfilter: RequestFilterConfig = field(default_factory=RequestFilterConfig)
     logwatch: List[LogSourceConfig] = field(default_factory=list)
 
     def validate(self) -> "Config":
@@ -267,6 +340,7 @@ class Config:
         self.dashboard.validate()
         self.firewall.validate()
         self.honeypot.validate()
+        self.requestfilter.validate()
         for source in self.logwatch:
             source.validate()
         return self
@@ -292,6 +366,7 @@ class Config:
             ("dashboard", DashboardConfig),
             ("firewall", FirewallConfig),
             ("honeypot", HoneypotConfig),
+            ("requestfilter", RequestFilterConfig),
         ):
             if name in data:
                 kwargs[name] = _build(sub_cls, data.pop(name), name)
