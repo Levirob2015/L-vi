@@ -163,6 +163,31 @@ class FirewallConfig:
     unblock_command: List[str] = field(default_factory=list)
     timeout: int = 10
 
+    # -- Verbindungsbremse ---------------------------------------------
+    #: Neue Verbindungen je Absender-IP schon im Netzwerk begrenzen.
+    #:
+    #: Das ist die eine Sache, die die Anwendung selbst nicht kann: Wer
+    #: 10.000 Verbindungen pro Sekunde aufmacht, hat den Server schon
+    #: beschaeftigt, bevor auch nur eine Zeile Python laeuft. Diese Bremse
+    #: greift davor - im Kern des Betriebssystems.
+    #:
+    #: Bewusst abgeschaltet voreingestellt: Der Wert muss zum eigenen
+    #: Verkehr passen. Zu niedrig, und echte Besucher fliegen raus.
+    #: Erst mit 'loginshield firewall --limit-probe' ansehen, was der
+    #: normale Betrieb braucht.
+    conn_limit_enabled: bool = False
+    #: Auf welchen Ports (leer = alle TCP-Ports).
+    conn_limit_ports: List[int] = field(default_factory=lambda: [80, 443])
+    #: Erlaubte neue Verbindungen je IP und Minute.
+    conn_limit_rate: int = 120
+    #: Wie viele auf einen Schlag durchgehen duerfen. Ein normaler
+    #: Seitenaufruf oeffnet mehrere Verbindungen gleichzeitig - ohne
+    #: Spielraum wuerde die Startseite selbst zum Fund.
+    conn_limit_burst: int = 40
+    #: Die Allowlist auch in die Firewall schreiben. Damit kann die
+    #: Verbindungsbremse das eigene Buero nicht aussperren.
+    sync_allowlist: bool = True
+
     @property
     def backends(self) -> List[str]:
         """Die Backend-Namen als Liste, egal wie sie angegeben wurden."""
@@ -197,6 +222,25 @@ class FirewallConfig:
             raise ConfigError(
                 "firewall.table darf nur Buchstaben, Ziffern und _ enthalten"
             )
+        if self.conn_limit_rate < 1:
+            raise ConfigError("firewall.conn_limit_rate muss mindestens 1 sein")
+        if self.conn_limit_burst < 1:
+            raise ConfigError("firewall.conn_limit_burst muss mindestens 1 sein")
+        for port in self.conn_limit_ports:
+            if not isinstance(port, int) or not 1 <= port <= 65535:
+                raise ConfigError(
+                    f"firewall.conn_limit_ports: {port!r} ist kein Port"
+                )
+        if len(self.conn_limit_ports) > 15:
+            # multiport in iptables nimmt hoechstens 15 Ports.
+            raise ConfigError(
+                "firewall.conn_limit_ports: hoechstens 15 Ports - fuer mehr "
+                "die Liste leer lassen (gilt dann fuer alle Ports)"
+            )
+        if self.conn_limit_enabled and not self.enabled:
+            raise ConfigError(
+                "firewall.conn_limit_enabled braucht firewall.enabled = true"
+            )
 
 
 @dataclass
@@ -216,6 +260,11 @@ class RequestFilterConfig:
     block_score: int = 8
     block_seconds: int = 21600  # 6 Stunden
     max_url_length: int = 2000
+    #: Auch den Anfragekoerper pruefen. Ohne das bleibt eine SQL-Injection
+    #: aus einem Formular unsichtbar.
+    inspect_body: bool = True
+    #: So viele Bytes des Koerpers werden geprueft.
+    max_body_bytes: int = 65536
     #: Wie oft Prozentkodierung aufgeloest wird (%252e versteckt %2e).
     decode_rounds: int = 2
     #: Eigene Routen, die von der Pruefung ausgenommen sind.
@@ -236,6 +285,8 @@ class RequestFilterConfig:
             raise ConfigError("requestfilter.block_seconds muss groesser als 0 sein")
         if self.max_url_length < 100:
             raise ConfigError("requestfilter.max_url_length ist unrealistisch klein")
+        if self.max_body_bytes < 1024:
+            raise ConfigError("requestfilter.max_body_bytes ist unrealistisch klein")
         for raw in self.extra_rules:
             if not isinstance(raw, dict) or not raw.get("pattern"):
                 raise ConfigError("requestfilter.extra_rules: 'pattern' fehlt")
@@ -246,6 +297,97 @@ class RequestFilterConfig:
                     f"requestfilter.extra_rules: ungueltiger Ausdruck "
                     f"{raw.get('name', '?')}: {exc}"
                 ) from exc
+
+
+@dataclass
+class MalwareConfig:
+    """Dateipruefung: Webshells und getarnte Dateien finden.
+
+    Es wird kein eigener Virenscanner gebaut - siehe
+    :mod:`loginshield.filescan`. Ist ClamAV installiert, wird es genutzt.
+    """
+
+    enabled: bool = True
+    #: report = nur melden, quarantine = zusaetzlich beiseitelegen
+    action: str = "report"
+    quarantine_dir: str = "quarantine"
+    #: Ab dieser Punktsumme gilt eine Datei als schadhaft.
+    block_score: int = 8
+    #: So viele Bytes je Datei werden geprueft (Anfang reicht).
+    max_scan_bytes: int = 1_048_576
+    #: Groessere Dateien werden uebersprungen statt eingelesen.
+    max_file_bytes: int = 104_857_600
+    #: auto = nutzen, wenn vorhanden | on = erwarten | off = nie
+    clamav: str = "auto"
+    timeout: int = 30
+    #: Hochgeladene Dateien schon in der Middleware pruefen - bevor die
+    #: Anwendung sie zu Gesicht bekommt und irgendwo ablegt. Eine Webshell,
+    #: die nie auf der Platte landet, muss auch nicht gefunden werden.
+    scan_uploads: bool = True
+    #: So viel einer hochgeladenen Datei wird dabei angesehen. Webshells
+    #: sind klein; fuer die Erkennung reicht der Anfang.
+    max_upload_bytes: int = 262_144
+    #: In ZIP-Archive hineinsehen. Ein Archiv ist sonst ein blinder Fleck:
+    #: die Webshell darin faellt erst nach dem Auspacken auf.
+    inspect_archives: bool = True
+    #: Obergrenzen gegen "Zip-Bomben" - ein kleines Archiv kann sich zu
+    #: vielen Gigabyte entpacken.
+    max_archive_entries: int = 256
+    max_archive_bytes: int = 33_554_432
+    disabled_rules: List[str] = field(default_factory=list)
+    script_extensions: List[str] = field(default_factory=lambda: [
+        ".php", ".phtml", ".php3", ".php4", ".php5", ".phar",
+        ".jsp", ".jspx", ".asp", ".aspx", ".cgi", ".pl", ".py", ".sh", ".exe",
+    ])
+    skip_dirs: List[str] = field(default_factory=lambda: [
+        ".git", "node_modules", "__pycache__", "venv", ".venv", "vendor",
+    ])
+
+    def validate(self) -> None:
+        if self.action not in ("report", "quarantine"):
+            raise ConfigError("malware.action muss report oder quarantine sein")
+        if self.clamav not in ("auto", "on", "off"):
+            raise ConfigError("malware.clamav muss auto, on oder off sein")
+        if self.block_score < 1:
+            raise ConfigError("malware.block_score muss mindestens 1 sein")
+        if self.max_scan_bytes < 1024:
+            raise ConfigError("malware.max_scan_bytes ist unrealistisch klein")
+        if self.timeout <= 0:
+            raise ConfigError("malware.timeout muss groesser als 0 sein")
+        if self.max_archive_entries < 1:
+            raise ConfigError("malware.max_archive_entries muss mindestens 1 sein")
+        if self.max_archive_bytes < 1024:
+            raise ConfigError("malware.max_archive_bytes ist unrealistisch klein")
+
+
+@dataclass
+class IntegrityConfig:
+    """Ueberwachung von Dateiveraenderungen."""
+
+    enabled: bool = False
+    #: Welche Verzeichnisse ueberwacht werden. Leer = abgeschaltet.
+    paths: List[str] = field(default_factory=list)
+    #: Teile eines Pfades, die auf ein Upload-Verzeichnis hindeuten.
+    upload_dirs: List[str] = field(default_factory=lambda: [
+        "upload", "uploads", "media", "files", "attachments", "tmp",
+    ])
+    script_extensions: List[str] = field(default_factory=lambda: [
+        ".php", ".phtml", ".phar", ".jsp", ".jspx", ".asp", ".aspx",
+        ".cgi", ".pl", ".py", ".sh", ".exe",
+    ])
+    skip_dirs: List[str] = field(default_factory=lambda: [
+        ".git", "node_modules", "__pycache__", "venv", ".venv", "cache",
+    ])
+    #: Obergrenze, damit ein zu weit gefasster Pfad nicht den Server bindet.
+    max_files: int = 50_000
+
+    def validate(self) -> None:
+        if self.enabled and not self.paths:
+            raise ConfigError(
+                "integrity.enabled gesetzt, aber keine 'paths' angegeben"
+            )
+        if self.max_files < 1:
+            raise ConfigError("integrity.max_files muss groesser als 0 sein")
 
 
 @dataclass
@@ -399,6 +541,8 @@ class Config:
     honeypot: HoneypotConfig = field(default_factory=HoneypotConfig)
     requestfilter: RequestFilterConfig = field(default_factory=RequestFilterConfig)
     anomaly: AnomalyConfig = field(default_factory=AnomalyConfig)
+    malware: MalwareConfig = field(default_factory=MalwareConfig)
+    integrity: IntegrityConfig = field(default_factory=IntegrityConfig)
     logwatch: List[LogSourceConfig] = field(default_factory=list)
 
     def validate(self) -> "Config":
@@ -412,6 +556,8 @@ class Config:
         self.honeypot.validate()
         self.requestfilter.validate()
         self.anomaly.validate()
+        self.malware.validate()
+        self.integrity.validate()
         for source in self.logwatch:
             source.validate()
         return self
@@ -439,6 +585,8 @@ class Config:
             ("honeypot", HoneypotConfig),
             ("requestfilter", RequestFilterConfig),
             ("anomaly", AnomalyConfig),
+            ("malware", MalwareConfig),
+            ("integrity", IntegrityConfig),
         ):
             if name in data:
                 kwargs[name] = _build(sub_cls, data.pop(name), name)

@@ -17,7 +17,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .models import Attempt, Block, Event
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS attempts (
@@ -54,6 +54,13 @@ CREATE TABLE IF NOT EXISTS allowlist (
     cidr       TEXT PRIMARY KEY,
     note       TEXT NOT NULL DEFAULT '',
     created_ts REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS integrity (
+    path       TEXT PRIMARY KEY,
+    sha256     TEXT NOT NULL,
+    size       INTEGER NOT NULL DEFAULT 0,
+    seen_ts    REAL NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS meta (
@@ -596,6 +603,31 @@ class Store:
                 (since,),
             ).fetchall()
         return {row["user_agent"][:120]: int(row["n"]) for row in rows}
+
+    # -- Fingerabdruecke der Dateien -----------------------------------
+    def integrity_replace(self, entries: Sequence, now: float) -> None:
+        """Ersetzt die Vergleichsgrundlage vollstaendig."""
+        with self._lock:
+            self._conn.execute("DELETE FROM integrity")
+            self._conn.executemany(
+                "INSERT OR REPLACE INTO integrity(path, sha256, size, seen_ts)"
+                " VALUES(?,?,?,?)", list(entries),
+            )
+            self._conn.commit()
+
+    def integrity_all(self) -> Dict[str, dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT path, sha256, size, seen_ts FROM integrity"
+            ).fetchall()
+        return {row["path"]: dict(row) for row in rows}
+
+    def integrity_count(self) -> int:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM integrity"
+            ).fetchone()
+        return int(row["n"])
 
     # -- Pflege --------------------------------------------------------
     def prune(self, before: float) -> Tuple[int, int]:

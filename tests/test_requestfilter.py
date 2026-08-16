@@ -295,3 +295,72 @@ def test_ueberlange_programmkennung(filt):
     # Auch die Kennung wird gekappt, bevor die Regeln darauf laufen.
     verdict = filt.inspect(path="/", user_agent="sqlmap " + "x" * 100_000)
     assert verdict.blocked
+
+
+def test_hochgeladene_datei_loest_die_textregeln_nicht_aus(config, store, clock):
+    """Ein Bild enthaelt Nullbytes - das ist kein Angriff, sondern ein Bild.
+
+    Frueher ging der ganze Anfragekoerper an die Anfrage-Firewall. Damit
+    war jeder Upload einer Binaerdatei ein Treffer und der Kunde, der sein
+    Profilbild hochlaedt, gesperrt.
+    """
+    import asyncio
+
+    from tests.test_middleware import make_app
+    from loginshield.middleware import ShieldMiddleware
+
+    grenze = "grenze123"
+    bild = b"\xff\xd8\xff\xe0\x00\x10JFIF" + bytes(range(256)) * 3
+    koerper = (
+        f"--{grenze}\r\n".encode()
+        + b'Content-Disposition: form-data; name="datei"; filename="foto.jpg"\r\n'
+        + b"Content-Type: image/jpeg\r\n\r\n" + bild + b"\r\n"
+        + f"--{grenze}--\r\n".encode()
+    )
+
+    guard = Guard(config, store, clock=clock)
+    app = ShieldMiddleware(make_app(200), guard)
+    scope = {
+        "type": "http", "path": "/upload", "method": "POST",
+        "client": ("198.51.100.42", 5000), "query_string": b"",
+        "headers": [(b"content-type",
+                     f"multipart/form-data; boundary={grenze}".encode())],
+    }
+    nachrichten = []
+
+    async def receive():
+        return {"type": "http.request", "body": koerper, "more_body": False}
+
+    async def send(nachricht):
+        nachrichten.append(nachricht)
+
+    asyncio.run(app(scope, receive, send))
+    status = next(n["status"] for n in nachrichten
+                  if n["type"] == "http.response.start")
+    assert status == 200
+    assert guard.check("198.51.100.42").allowed
+
+
+def test_sql_injection_im_formularfeld_wird_weiter_gefunden(config, store, clock):
+    """Die Textfelder derselben Sendung werden sehr wohl geprueft."""
+    from loginshield.filescan import multipart_teile
+
+    grenze = "grenze123"
+    koerper = (
+        f"--{grenze}\r\n".encode()
+        + b'Content-Disposition: form-data; name="suche"\r\n\r\n'
+        + b"' OR '1'='1' --\r\n"
+        + f"--{grenze}\r\n".encode()
+        + b'Content-Disposition: form-data; name="datei"; filename="a.png"\r\n\r\n'
+        + b"\x89PNG\r\n\x1a\n\x00\x00\r\n"
+        + f"--{grenze}--\r\n".encode()
+    )
+    felder, dateien = multipart_teile(
+        koerper, f"multipart/form-data; boundary={grenze}")
+    assert b"OR '1'='1'" in felder
+    assert dateien[0][0] == "a.png"
+
+    guard = Guard(config, store, clock=clock)
+    verdict = guard.requestfilter.inspect(path="/suche", method="POST",
+                                          body=felder)
+    assert not verdict.clean

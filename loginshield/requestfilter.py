@@ -208,8 +208,14 @@ class RequestFilter:
         query: str = "",
         user_agent: str = "",
         method: str = "GET",
+        body: bytes = b"",
     ) -> FilterVerdict:
-        """Bewertet eine Anfrage, ohne etwas zu unternehmen."""
+        """Bewertet eine Anfrage, ohne etwas zu unternehmen.
+
+        ``body`` ist der Anfragekoerper. Ohne ihn bleibt eine SQL-Injection
+        aus einem Formular unsichtbar - Angriffe stecken oefter in POST-
+        Daten als in der URL.
+        """
         verdict = FilterVerdict()
         if not self.enabled:
             return verdict
@@ -244,11 +250,28 @@ class RequestFilter:
             "method": (method or "").upper()[:16],
         }
 
+        # Anfragekoerper: dieselben Regeln, dieselbe Laengenbegrenzung.
+        if body and self.config.inspect_body:
+            if isinstance(body, (bytes, bytearray)):
+                text = bytes(body[:self.config.max_body_bytes]).decode(
+                    "utf-8", "replace"
+                )
+            else:
+                text = str(body)[:self.config.max_body_bytes]
+            haystacks["body"] = _decode(text[:_MAX_INSPECT],
+                                        self.config.decode_rounds)
+
         for rule, pattern in self._compiled:
-            text = haystacks.get(rule.target, "")
-            if text and pattern.search(text):
-                verdict.matched.append(rule)
-                verdict.score += rule.severity
+            # url-Regeln gelten auch fuer den Koerper: eine SQL-Injection
+            # ist dieselbe, egal ob sie in der Adresszeile oder im
+            # Formular steht.
+            ziele = ("url", "body") if rule.target == "url" else (rule.target,)
+            for ziel in ziele:
+                text = haystacks.get(ziel, "")
+                if text and pattern.search(text):
+                    verdict.matched.append(rule)
+                    verdict.score += rule.severity
+                    break
 
         verdict.blocked = verdict.score >= self.config.block_score
         return verdict

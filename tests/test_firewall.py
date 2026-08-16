@@ -580,3 +580,143 @@ def test_nft_setup_verwirft_ungueltige_pakete():
     firewall, _ = make("nftables")
     befehle = [" ".join(p) for p in firewall.backend.setup_commands()]
     assert any("ct state invalid drop" in c for c in befehle)
+
+
+# -- Verbindungsbremse ---------------------------------------------------
+# Die Schicht, die die Anwendung nicht haben kann: Wer den Server mit
+# Verbindungsversuchen flutet, beschaeftigt ihn, bevor eine Zeile Python
+# laeuft. Diese Regeln greifen im Kern des Betriebssystems.
+def test_bremse_ist_voreingestellt_aus():
+    """Der Wert muss zum eigenen Verkehr passen - sonst fliegen Besucher raus."""
+    firewall, _ = make("nftables")
+    befehle = [" ".join(p) for p in firewall.backend.setup_commands()]
+    assert not any("limit rate over" in c for c in befehle)
+
+
+def test_nft_bremse_begrenzt_je_absender():
+    firewall, _ = make("nftables", conn_limit_enabled=True,
+                       conn_limit_rate=90, conn_limit_burst=30)
+    befehle = [" ".join(p) for p in firewall.backend.setup_commands()]
+    regel = [c for c in befehle if "limit rate over" in c]
+    assert len(regel) == 2                      # je einmal fuer IPv4 und IPv6
+    assert any("ip saddr limit rate over 90/minute burst 30 packets" in c
+               for c in regel)
+    assert any("ip6 saddr limit rate over 90/minute burst 30 packets" in c
+               for c in regel)
+    # Der Zaehler laeuft je Adresse und raeumt sich selbst weg.
+    assert any("flags dynamic, timeout" in c for c in befehle)
+
+
+def test_nft_bremse_nur_auf_den_genannten_ports():
+    firewall, _ = make("nftables", conn_limit_enabled=True,
+                       conn_limit_ports=[443])
+    befehle = [" ".join(p) for p in firewall.backend.setup_commands()]
+    assert any("dport { 443 }" in c for c in befehle)
+
+
+def test_nft_bremse_ohne_ports_gilt_fuer_alle():
+    firewall, _ = make("nftables", conn_limit_enabled=True, conn_limit_ports=[])
+    befehle = [" ".join(p) for p in firewall.backend.setup_commands()]
+    assert any("limit rate over" in c and "dport" not in c for c in befehle)
+
+
+def test_bremse_steht_hinter_der_allowlist():
+    """Sonst koennte die Bremse das eigene Buero ausbremsen."""
+    firewall, _ = make("nftables", conn_limit_enabled=True)
+    befehle = [" ".join(p) for p in firewall.backend.setup_commands()]
+    erlaubt = next(i for i, c in enumerate(befehle) if "@erlaubt4 accept" in c)
+    bremse = next(i for i, c in enumerate(befehle) if "limit rate over" in c)
+    assert erlaubt < bremse
+
+
+def test_iptables_bremse():
+    firewall, runner = make("iptables", responses=RULE_MISSING,
+                            conn_limit_enabled=True, conn_limit_rate=90)
+    firewall.setup()
+    assert runner.contains("--hashlimit-above 90/min")
+    assert runner.contains("--hashlimit-mode srcip")
+
+
+def test_iptables_bremse_wird_nicht_doppelt_gesetzt():
+    """Zwei Bremsen hintereinander wuerden das erlaubte Mass halbieren."""
+    firewall, runner = make("iptables", conn_limit_enabled=True)  # -C meldet Erfolg
+    firewall.setup()
+    assert not runner.contains("-A LOGINSHIELD -p tcp")
+
+
+def test_bremse_verlangt_eine_eingeschaltete_firewall():
+    with pytest.raises(ConfigError):
+        Config.from_dict({"firewall": {"conn_limit_enabled": True}})
+
+
+def test_unsinnige_werte_werden_abgelehnt():
+    with pytest.raises(ConfigError):
+        Config.from_dict({"firewall": {"conn_limit_rate": 0}})
+    with pytest.raises(ConfigError):
+        Config.from_dict({"firewall": {"conn_limit_ports": [70000]}})
+    with pytest.raises(ConfigError):
+        Config.from_dict({"firewall": {"conn_limit_ports": list(range(20))}})
+
+
+# -- Allowlist in der Firewall ------------------------------------------
+def test_nft_allowlist_wird_eingetragen():
+    firewall, runner = make("nftables")
+    assert firewall.sync_allowlist(["203.0.113.10", "198.51.100.0/24", "2001:db8::1"])
+    assert runner.contains("flush set inet loginshield erlaubt4")
+    assert runner.contains(
+        "add element inet loginshield erlaubt4 { 203.0.113.10, 198.51.100.0/24 }")
+    assert runner.contains("add element inet loginshield erlaubt6 { 2001:db8::1 }")
+
+
+def test_nft_setup_leert_die_eigene_kette_zuerst():
+    """'nft add rule' haengt an - ohne flush waere jede Regel doppelt."""
+    firewall, _ = make("nftables")
+    befehle = [" ".join(p) for p in firewall.backend.setup_commands()]
+    flush = next(i for i, c in enumerate(befehle) if "flush chain" in c)
+    erste_regel = next(i for i, c in enumerate(befehle) if "add rule" in c)
+    assert flush < erste_regel
+    # Die Sets werden nicht geleert - Sperren ueberstehen die Einrichtung.
+    assert not any("flush set" in c for c in befehle)
+
+
+def test_iptables_allowlist_als_return_regel():
+    firewall, runner = make("iptables")
+    firewall.sync_allowlist(["203.0.113.10"])
+    assert runner.contains("-I LOGINSHIELD 1 -s 203.0.113.10 -j RETURN")
+
+
+def test_allowlist_abschaltbar():
+    firewall, runner = make("nftables", sync_allowlist=False)
+    assert firewall.sync_allowlist(["203.0.113.10"]) is False
+    assert not runner.contains("erlaubt4")
+
+
+def test_ungueltige_allowlist_eintraege_werden_uebergangen():
+    firewall, runner = make("nftables")
+    firewall.sync_allowlist(["203.0.113.10", "kein-netz", ""])
+    assert runner.contains("{ 203.0.113.10 }")
+
+
+def test_guard_gibt_die_allowlist_weiter(tmp_path):
+    """Die Bremse zaehlt nur Pakete - sie muss die Freigabe selbst kennen."""
+    config = Config(db_path=str(tmp_path / "t.db"), allowlist=["203.0.113.10"])
+    config.firewall = FirewallConfig(enabled=True, backend="nftables")
+    runner = FakeRunner()
+    guard = Guard(config, firewall=Firewall(config.firewall, runner))
+    try:
+        guard.sync_allowlist()
+        assert runner.contains("erlaubt4 { 203.0.113.10 }")
+    finally:
+        guard.close()
+
+
+def test_neue_freigabe_erreicht_die_firewall(tmp_path):
+    config = Config(db_path=str(tmp_path / "t.db"))
+    config.firewall = FirewallConfig(enabled=True, backend="nftables")
+    runner = FakeRunner()
+    guard = Guard(config, firewall=Firewall(config.firewall, runner))
+    try:
+        guard.allow("198.51.100.7", "Buero")
+        assert runner.contains("erlaubt4 { 198.51.100.7 }")
+    finally:
+        guard.close()

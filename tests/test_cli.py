@@ -132,6 +132,23 @@ def test_firewall_setup_trockenlauf(db, capsys, monkeypatch):
     assert "nichts geaendert" in output
 
 
+def test_firewall_limit_probe_ohne_daten(db, capsys):
+    assert run(["firewall", "--limit-probe"], db) == 0
+    assert "Zu wenige Daten" in capsys.readouterr().out
+
+
+def test_firewall_limit_probe_schlaegt_wert_vor(db, capsys):
+    """Die Bremse wird nicht geraten, sondern aus dem Verkehr abgeleitet."""
+    assert run(["demo"], db) == 0
+    capsys.readouterr()
+    assert run(["firewall", "--limit-probe"], db) == 0
+
+    output = capsys.readouterr().out
+    assert "conn_limit_rate:" in output
+    # Die Einschraenkung muss dabeistehen - es ist kein Messwert.
+    assert "Anfragen, nicht Verbindungen" in output
+
+
 def test_firewall_clear_fragt_nach(db, capsys, monkeypatch):
     import shutil as shutil_module
 

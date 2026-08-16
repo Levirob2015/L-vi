@@ -148,6 +148,15 @@ class Backend:
     def list_blocked(self) -> List[str]:
         return []
 
+    def allow_sync(self, cidrs: Sequence[str]) -> bool:
+        """Traegt die Allowlist in die Firewall ein.
+
+        Nicht jedes Backend kann das - dann bleibt es bei der Allowlist der
+        Anwendung, die ohnehin verhindert, dass diese Adressen ueberhaupt
+        gesperrt werden.
+        """
+        return True
+
     def clear(self) -> bool:
         ok = True
         for ip in self.list_blocked():
@@ -202,7 +211,7 @@ class NftablesBackend(Backend):
 
     def setup_commands(self) -> List[List[str]]:
         table = self.table
-        return [
+        befehle = [
             ["nft", "add", "table", "inet", table],
             ["nft", "add", "set", "inet", table, "blocked4",
              "{ type ipv4_addr; flags timeout; }"],
@@ -213,10 +222,31 @@ class NftablesBackend(Backend):
              "{ type ipv4_addr; flags interval, timeout; }"],
             ["nft", "add", "set", "inet", table, "netzwerk6",
              "{ type ipv6_addr; flags interval, timeout; }"],
+            # Die Allowlist, damit die Firewall selbst weiss, wen sie nie
+            # anfassen darf. 'interval' wegen der CIDR-Eintraege.
+            ["nft", "add", "set", "inet", table, "erlaubt4",
+             "{ type ipv4_addr; flags interval; }"],
+            ["nft", "add", "set", "inet", table, "erlaubt6",
+             "{ type ipv6_addr; flags interval; }"],
             # Eigene Kette mit Prioritaet -10: greift vor den ueblichen
             # filter-Regeln (Prioritaet 0), aendert diese aber nicht.
             ["nft", "add", "chain", "inet", table, "input",
              "{ type filter hook input priority -10; policy accept; }"],
+            # Vorhandene Regeln der eigenen Kette leeren, bevor sie neu
+            # geschrieben werden. 'nft add rule' haengt naemlich jedes Mal
+            # an: Ein zweites 'firewall --setup' haette sonst jede Regel
+            # doppelt - und zwei Verbindungsbremsen hintereinander halbieren
+            # das erlaubte Mass. Die Sets bleiben unangetastet, gesperrte
+            # Adressen ueberstehen die Einrichtung also.
+            ["nft", "flush", "chain", "inet", table, "input"],
+            # Zuerst die Allowlist: 'accept' beendet nur diese Kette, die
+            # uebrigen Regeln des Systems gelten weiter. Damit kann sich
+            # niemand mit einer eigenen Regel selbst aussperren - der
+            # schlimmste denkbare Fehler dieses Programms.
+            ["nft", "add", "rule", "inet", table, "input",
+             "ip", "saddr", "@erlaubt4", "accept"],
+            ["nft", "add", "rule", "inet", table, "input",
+             "ip6", "saddr", "@erlaubt6", "accept"],
             # Ungueltige Pakete verwerfen: Standardhaertung, die auch
             # einfache Scan- und Umgehungsversuche abfaengt.
             ["nft", "add", "rule", "inet", table, "input",
@@ -230,6 +260,67 @@ class NftablesBackend(Backend):
             ["nft", "add", "rule", "inet", table, "input",
              "ip6", "saddr", "@netzwerk6", "drop"],
         ]
+        befehle.extend(self._verbindungsbremse(table))
+        return befehle
+
+    def _verbindungsbremse(self, table: str) -> List[List[str]]:
+        """Neue Verbindungen je Absender-IP schon im Kern begrenzen.
+
+        Das ist die Schicht, die die Anwendung nicht haben kann: Ein Fluten
+        mit Verbindungsversuchen beschaeftigt den Server, lange bevor eine
+        Zeile Python laeuft. Der Zaehler steht in einem dynamischen Set -
+        jede Adresse bekommt ihr eigenes Konto, und die Eintraege raeumen
+        sich nach einer Minute selbst weg.
+
+        Wichtig ist die Reihenfolge: Diese Regeln stehen **hinter** der
+        Allowlist. Wer dort steht, wird nie ausgebremst.
+        """
+        config = self.config
+        if not config.conn_limit_enabled:
+            return []
+        rate = f"{max(1, int(config.conn_limit_rate))}/minute"
+        burst = f"{max(1, int(config.conn_limit_burst))}"
+        befehle: List[List[str]] = []
+        for suffix, familie in (("4", "ip"), ("6", "ip6")):
+            befehle.append([
+                "nft", "add", "set", "inet", table, f"verbindungen{suffix}",
+                f"{{ type ipv{suffix}_addr; flags dynamic, timeout; "
+                f"timeout 1m; }}",
+            ])
+            regel = ["nft", "add", "rule", "inet", table, "input", "tcp"]
+            if config.conn_limit_ports:
+                ports = ", ".join(str(int(p)) for p in config.conn_limit_ports)
+                regel += ["dport", "{ " + ports + " }"]
+            regel += [
+                "ct", "state", "new",
+                "add", f"@verbindungen{suffix}",
+                f"{{ {familie} saddr limit rate over {rate} burst {burst} "
+                f"packets }}",
+                "drop",
+            ]
+            befehle.append(regel)
+        return befehle
+
+    def allow_sync(self, cidrs: Sequence[str]) -> bool:
+        """Schreibt die Allowlist in die Firewall (ersetzt den Inhalt)."""
+        ok = True
+        eintraege = {"erlaubt4": [], "erlaubt6": []}
+        for cidr in cidrs:
+            address = parse_ip(str(cidr).split("/")[0])
+            if address is None:
+                continue
+            eintraege["erlaubt4" if address.version == 4 else "erlaubt6"].append(
+                str(cidr)
+            )
+        for set_name, werte in eintraege.items():
+            self.execute("nft", "flush", "set", "inet", self.table, set_name)
+            if not werte:
+                continue
+            element = "{ " + ", ".join(werte) + " }"
+            if not self.execute("nft", "add", "element", "inet", self.table,
+                                set_name, element).ok:
+                ok = False
+        return ok
 
     def is_ready(self) -> bool:
         result = self._run(self._argv("nft", "list", "set", "inet", self.table,
@@ -323,6 +414,74 @@ class IptablesBackend(Backend):
             )
             if not check.ok and not self.config.dry_run:
                 if not self.execute(binary, "-I", "INPUT", "1", "-j", self.chain).ok:
+                    ok = False
+            if not self._verbindungsbremse(binary):
+                ok = False
+        return ok
+
+    def _verbindungsbremse(self, binary: str) -> bool:
+        """Neue Verbindungen je Absender-IP begrenzen (hashlimit).
+
+        ``--hashlimit-mode srcip`` fuehrt einen eigenen Zaehler je
+        Absenderadresse - eine einzelne IP kann den Server also nicht mit
+        Verbindungsversuchen zustellen. Die Regel steht am Ende der Kette,
+        also hinter allen Freigaben.
+        """
+        config = self.config
+        if not config.conn_limit_enabled:
+            return True
+        name = f"ls{'6' if binary == 'ip6tables' else '4'}conn"
+        regel = ["-p", "tcp"]
+        if config.conn_limit_ports:
+            regel += ["-m", "multiport", "--dports",
+                      ",".join(str(int(p)) for p in config.conn_limit_ports)]
+        regel += [
+            "-m", "conntrack", "--ctstate", "NEW",
+            "-m", "hashlimit",
+            "--hashlimit-above", f"{max(1, int(config.conn_limit_rate))}/min",
+            "--hashlimit-burst", str(max(1, int(config.conn_limit_burst))),
+            "--hashlimit-mode", "srcip",
+            "--hashlimit-name", name,
+            "-j", "DROP",
+        ]
+        # Nicht doppelt anlegen - sonst begrenzen zwei Regeln nacheinander.
+        vorhanden = self._run(
+            self._argv(binary, "-C", self.chain, *regel), self.config.timeout,
+        )
+        if vorhanden.ok:
+            return True
+        result = self.execute(binary, "-A", self.chain, *regel)
+        if not result.ok:
+            log.warning(
+                "Verbindungsbremse konnte nicht gesetzt werden (%s): %s - "
+                "fehlt das Modul xt_hashlimit?", binary, result.stderr[:200],
+            )
+        return result.ok
+
+    def allow_sync(self, cidrs: Sequence[str]) -> bool:
+        """Schreibt die Allowlist als RETURN-Regeln an den Anfang der Kette.
+
+        RETURN heisst: zurueck in die INPUT-Kette, ohne die uebrigen Regeln
+        dieser Kette zu pruefen. Wer hier steht, wird von LoginShield nie
+        verworfen - auch nicht von der Verbindungsbremse.
+        """
+        ok = True
+        for binary in ("iptables", "ip6tables"):
+            # Erst die alten Freigaben entfernen, damit entfernte Eintraege
+            # nicht ewig weiterwirken.
+            bestand = self._run(self._argv(binary, "-S", self.chain),
+                                self.config.timeout)
+            if bestand.ok:
+                for zeile in bestand.stdout.splitlines():
+                    treffer = re.search(r"-s\s+(\S+)", zeile)
+                    if treffer and zeile.rstrip().endswith("-j RETURN"):
+                        self.execute(binary, "-D", self.chain, "-s",
+                                     treffer.group(1), "-j", "RETURN")
+            for cidr in cidrs:
+                if self._binary_for(cidr) != binary:
+                    continue
+                if not self.execute(binary, "-I", self.chain, "1", "-s",
+                                    str(cidr), "-j", "RETURN").ok:
                     ok = False
         return ok
 
@@ -464,6 +623,12 @@ class MultiBackend(Backend):
                 if eintrag not in gesehen:
                     gesehen.append(eintrag)
         return gesehen
+
+    def allow_sync(self, cidrs: Sequence[str]) -> bool:
+        # Jede Schicht muss die Freigabe kennen: reicht eine sie nicht
+        # durch, sperrt genau diese Schicht das eigene Buero aus.
+        ergebnisse = [backend.allow_sync(cidrs) for backend in self.backends]
+        return all(ergebnisse) if ergebnisse else False
 
     def clear(self) -> bool:
         return all(backend.clear() for backend in self.backends)
@@ -651,6 +816,29 @@ class Firewall:
 
     def setup(self) -> bool:
         return self.backend.setup()
+
+    def sync_allowlist(self, cidrs: Sequence[str]) -> bool:
+        """Traegt die Allowlist in die Firewall ein.
+
+        Damit weiss auch die unterste Schicht, wen sie nie anfassen darf.
+        Ohne das koennte die Verbindungsbremse das eigene Buero ausbremsen -
+        sie zaehlt Pakete und kennt die Allowlist der Anwendung nicht.
+        """
+        if not self.enabled or not self.config.sync_allowlist:
+            return False
+        # Fehlt die eigene Struktur noch, scheitert jeder Eintrag einzeln
+        # und fuellt das Log mit Fehlern, die nur eines bedeuten: 'firewall
+        # --setup' fehlt. Das sagt die Meldung beim Abgleich bereits.
+        if not self.config.dry_run and not self.backend.is_ready():
+            return False
+        gepruefte = []
+        for cidr in cidrs:
+            target = parse_target(str(cidr))
+            if target is None:
+                log.warning("Allowlist-Eintrag uebersprungen, ungueltig: %r", cidr)
+                continue
+            gepruefte.append(target)
+        return self.backend.allow_sync(gepruefte)
 
     def list_blocked(self) -> List[str]:
         if isinstance(self.backend, NullBackend):

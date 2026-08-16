@@ -34,6 +34,7 @@ class Reason:
     SUBNET_ABUSE = "subnet_abuse"      # ganzes Netz statt Einzel-IP
     MALICIOUS_REQUEST = "malicious_request"  # Anfrage-Firewall
     ANOMALY = "anomaly"                # Abweichung vom Normalzustand
+    MALICIOUS_UPLOAD = "malicious_upload"    # hochgeladene Datei mit Schadcode
     MANUAL = "manual"
 
     # Honeypot: kein Schwellwert noetig, ein einziger Treffer genuegt
@@ -73,7 +74,12 @@ class Decision:
         """Passender HTTP-Status fuer diese Entscheidung."""
         if self.allowed:
             return 200
-        if self.reason in (Reason.IP_BLOCKED, Reason.MALICIOUS_REQUEST):
+        # 403 heisst "abgelehnt, ein spaeterer Versuch aendert daran
+        # nichts" - richtig fuer eine Sperre und fuer eine abgewiesene
+        # Datei. 429 waere eine Einladung, es gleich noch einmal zu
+        # versuchen, und das trifft nur die Bremse.
+        if self.reason in (Reason.IP_BLOCKED, Reason.MALICIOUS_REQUEST,
+                           Reason.MALICIOUS_UPLOAD):
             return 403
         return 429
 

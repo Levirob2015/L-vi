@@ -20,6 +20,7 @@ Dazu ein allgemeines Rate-Limit pro IP als Grundschutz.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from typing import Dict, List, Optional
@@ -28,6 +29,8 @@ from .config import Config
 from .firewall import Firewall
 from .honeypot import Honeypot
 from .anomaly import AnomalyDetector
+from .filescan import FileScanner, Quarantine
+from .integrity import IntegrityMonitor
 from .requestfilter import RequestFilter
 from .models import Block, Decision, Event, Reason
 from .netutils import (
@@ -78,6 +81,11 @@ class Guard:
         self.requestfilter = RequestFilter(self.config.requestfilter, self)
         #: Lernt den Normalzustand und meldet Abweichungen.
         self.anomaly = AnomalyDetector(self.config.anomaly, self)
+        #: Dateipruefung und Quarantaene.
+        self.filescan = FileScanner(self.config.malware, self)
+        self.quarantine = Quarantine(self.config.malware.quarantine_dir)
+        #: Ueberwachung von Dateiveraenderungen.
+        self.integrity = IntegrityMonitor(self.config.integrity, self)
 
         rules = self.config.rules
         self._limiter = SlidingWindow(rules.request_limit, rules.request_window)
@@ -133,11 +141,15 @@ class Guard:
         self.store.allow_add(cidr, note, now=self.clock())
         with self._lock:
             self._allow_cache_at = 0.0
+        if self.firewall.enabled:
+            self.sync_allowlist()
 
     def disallow(self, cidr: str) -> bool:
         removed = self.store.allow_remove(cidr)
         with self._lock:
             self._allow_cache_at = 0.0
+        if removed and self.firewall.enabled:
+            self.sync_allowlist()
         return removed
 
     # ------------------------------------------------------------------
@@ -412,6 +424,64 @@ class Guard:
             source=source, detail=detail, ts=self.clock(),
         )
 
+    # ------------------------------------------------------------------
+    # Dateien
+    # ------------------------------------------------------------------
+    def scan_upload(self, data: bytes, filename: str = "",
+                    ip: Optional[str] = None, route: str = ""):
+        """Prueft eine hochgeladene Datei, **bevor** sie gespeichert wird.
+
+        Das ist die eigentliche Abwehr: Eine Webshell, die nie auf der
+        Platte landet, muss auch nicht wieder gefunden werden. Erkennen
+        allein reicht nicht - wer eine ablegt, wird gesperrt.
+
+        Rueckgabe ist das Pruefergebnis. ``result.clean`` heisst: speichern
+        ist in Ordnung. Bei einem Fund ist es Sache des Aufrufers, die
+        Datei nicht zu speichern - dieses Modul kennt sie ja nur als Bytes.
+        """
+        result = self.filescan.scan_bytes(data, filename=filename)
+        if result.clean:
+            return result
+
+        schadhaft = self.filescan.is_malicious(result)
+        ip = normalize_ip(ip)
+        if ip is None:
+            return result
+
+        if schadhaft and not self.is_allowlisted(ip):
+            log.warning("Schadhafter Upload von %s: %s (%s)",
+                        ip, filename or "-", result.summary)
+            self.block(
+                ip, seconds=None,
+                reason=Reason.MALICIOUS_UPLOAD,
+                detail=f"{os.path.basename(filename)[:60]}: {result.summary}"[:200],
+            )
+        else:
+            self.record_suspicious(
+                ip, route=route or "upload", source="filescan",
+                detail=f"{os.path.basename(filename)[:60]}: {result.summary}"[:200],
+            )
+        return result
+
+    def scan_and_quarantine(self, path: str, ip: Optional[str] = None) -> dict:
+        """Prueft eine Datei auf der Platte und legt sie noetigenfalls beiseite.
+
+        Beiseitelegen statt loeschen: Nach einem Einbruch ist die Datei ein
+        Beweismittel, und ein Fehlalarm darf nichts vernichten. Verschoben
+        wird nur, wenn ``malware.action`` auf ``quarantine`` steht.
+        """
+        result = self.filescan.scan_file(path)
+        verschoben = None
+        if (self.filescan.is_malicious(result)
+                and self.config.malware.action == "quarantine"):
+            verschoben = self.quarantine.store(path, result)
+        if ip is not None and self.filescan.is_malicious(result):
+            self.record_suspicious(
+                normalize_ip(ip), route="datei", source="filescan",
+                detail=f"{os.path.basename(path)[:60]}: {result.summary}"[:200],
+            )
+        return {"result": result, "quarantined": verschoben}
+
     def record_request(self, ip: Optional[str], *, route: str = "",
                        user_agent: str = "", source: str = "app") -> None:
         """Optionales Protokollieren normaler Requests (standardmaessig ungenutzt)."""
@@ -605,7 +675,24 @@ class Guard:
         now = self.clock()
         self.store.expire_blocks(now)
         active = self.store.list_blocks(active_only=True, limit=10_000, now=now)
-        return self.firewall.sync(active, now)
+        ergebnis = self.firewall.sync(active, now)
+        self.sync_allowlist()
+        return ergebnis
+
+    def sync_allowlist(self) -> bool:
+        """Gibt die Allowlist an die Firewall weiter.
+
+        Die Anwendung sperrt diese Adressen ohnehin nie. Die
+        Verbindungsbremse arbeitet aber unterhalb der Anwendung und zaehlt
+        nur Pakete - sie muss die Freigabe selbst kennen.
+        """
+        eintraege = list(self.config.allowlist)
+        eintraege += [row["cidr"] for row in self.store.allow_list()]
+        try:
+            return self.firewall.sync_allowlist(eintraege)
+        except Exception:  # pragma: no cover - systemabhaengig
+            log.exception("Allowlist konnte nicht an die Firewall gegeben werden")
+            return False
 
     def maintenance(self) -> Dict[str, int]:
         """Abgelaufene Sperren aufheben und alte Daten loeschen."""

@@ -18,6 +18,7 @@ im eigenen Login-Handler auf, das ist praeziser.
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import time
 from typing import Callable, Iterable, Optional, Sequence
@@ -37,7 +38,53 @@ def path_matches(path: str, patterns: Sequence[str]) -> bool:
     return False
 
 
-class ShieldMiddleware:
+class _KoerperPruefung:
+    """Gemeinsames Verhalten von ASGI- und WSGI-Schicht.
+
+    Zwei Pruefungen wollen den Anfragekoerper: die Anfrage-Firewall
+    (SQL-Injection aus einem Formular) und die Dateipruefung (Webshell im
+    Upload). Gelesen wird er trotzdem nur einmal - und danach unveraendert
+    weitergereicht.
+    """
+
+    def _prueft_koerper(self) -> bool:
+        return (self.requestfilter is not None and self.requestfilter.enabled
+                and self.requestfilter.config.inspect_body)
+
+    def _prueft_uploads(self) -> bool:
+        malware = self.guard.config.malware
+        return bool(malware.enabled and malware.scan_uploads
+                    and self.guard.filescan.enabled)
+
+    def _braucht_koerper(self) -> bool:
+        return self._prueft_koerper() or self._prueft_uploads()
+
+    def _koerper_grenze(self) -> int:
+        grenzen = []
+        if self._prueft_koerper():
+            grenzen.append(self.requestfilter.config.max_body_bytes)
+        if self._prueft_uploads():
+            grenzen.append(self.guard.config.malware.max_upload_bytes)
+        return max(grenzen) if grenzen else 0
+
+    def _pruefbarer_koerper(self, koerper: bytes, content_type: str) -> bytes:
+        """Was die Anfrage-Firewall vom Koerper zu sehen bekommt.
+
+        Bei einer Formularsendung mit Dateien nur die Textfelder. Der
+        Dateiinhalt selbst geht an die Dateipruefung - er wuerde die
+        Textregeln sonst reihenweise ausloesen (ein Bild enthaelt
+        Nullbytes) und jeden Upload zum Angriff erklaeren.
+        """
+        if not self._prueft_koerper():
+            return b""
+        if "multipart/form-data" not in (content_type or "").lower():
+            return koerper
+        from .filescan import multipart_teile
+
+        return multipart_teile(koerper, content_type)[0]
+
+
+class ShieldMiddleware(_KoerperPruefung):
     def __init__(
         self,
         app,
@@ -100,12 +147,32 @@ class ShieldMiddleware:
 
         # Zweite Firewall: den Inhalt der Anfrage pruefen, bevor die
         # Anwendung sie zu sehen bekommt.
+        koerper = b""
+        gepuffert = False
+        if method in ("POST", "PUT", "PATCH") and self._braucht_koerper():
+            # Der Koerper wird zwischengespeichert und danach unveraendert
+            # weitergereicht - die Anwendung merkt nichts davon.
+            koerper, receive = await _buffer_body(receive, self._koerper_grenze())
+            gepuffert = True
+
+        if gepuffert and self._prueft_uploads():
+            treffer = _upload_pruefen(
+                self.guard, koerper, headers.get("content-type", ""), ip, path,
+            )
+            if treffer is not None:
+                await _send_denied(send, Decision(
+                    False, Reason.MALICIOUS_UPLOAD, detail=treffer,
+                ))
+                return
+
         if self.requestfilter is not None and self.requestfilter.enabled:
             verdict = self.requestfilter.inspect(
                 path=path,
                 query=scope.get("query_string", b"").decode("latin-1"),
                 user_agent=headers.get("user-agent", ""),
                 method=method,
+                body=self._pruefbarer_koerper(
+                    koerper, headers.get("content-type", "")),
             )
             if not verdict.clean:
                 self.requestfilter.handle(
@@ -159,6 +226,60 @@ class ShieldMiddleware:
             )
 
 
+def _upload_pruefen(guard, koerper: bytes, content_type: str,
+                    ip, route: str):
+    """Prueft hochgeladene Dateien und meldet den ersten schweren Fund.
+
+    Rueckgabe ist ``None``, wenn nichts zu beanstanden ist - sonst der
+    Grund, mit dem die Anfrage abgewiesen wird. Die Datei erreicht die
+    Anwendung dann gar nicht erst.
+    """
+    from .filescan import upload_teile
+
+    for name, daten in upload_teile(koerper, content_type):
+        if not daten:
+            continue
+        result = guard.scan_upload(
+            daten[:guard.config.malware.max_upload_bytes],
+            filename=name, ip=ip, route=route,
+        )
+        if guard.filescan.is_malicious(result):
+            return f"{name[:60]}: {result.summary}"
+    return None
+
+
+async def _buffer_body(receive, limit: int):
+    """Liest den Anfragekoerper und gibt ein receive zurueck, das ihn erneut liefert.
+
+    Ohne dieses Zurueckspielen wuerde die Anwendung einen leeren Koerper
+    sehen - der Schutz wuerde die Anwendung kaputtmachen.
+    """
+    teile = []
+    gelesen = 0
+    weitere = True
+    while weitere and gelesen < limit:
+        nachricht = await receive()
+        if nachricht.get("type") != "http.request":
+            weitere = False
+            break
+        stueck = nachricht.get("body", b"") or b""
+        teile.append(stueck)
+        gelesen += len(stueck)
+        weitere = bool(nachricht.get("more_body", False))
+
+    puffer = b"".join(teile)
+    verbraucht = False
+
+    async def receive_mit_puffer():
+        nonlocal verbraucht
+        if not verbraucht:
+            verbraucht = True
+            return {"type": "http.request", "body": puffer, "more_body": weitere}
+        return await receive()
+
+    return puffer, receive_mit_puffer
+
+
 def _headers(scope) -> dict:
     result = {}
     for raw_key, raw_value in scope.get("headers") or ():
@@ -207,7 +328,26 @@ async def _send_denied(send, decision: Decision) -> None:
     await send({"type": "http.response.body", "body": payload})
 
 
-class WSGIShield:
+def _wsgi_body(environ, limit: int) -> bytes:
+    """Liest den Koerper und legt ihn wieder in environ zurueck."""
+    try:
+        laenge = int(environ.get("CONTENT_LENGTH") or 0)
+    except ValueError:
+        laenge = 0
+    if laenge <= 0:
+        return b""
+    strom = environ.get("wsgi.input")
+    if strom is None:
+        return b""
+    daten = strom.read(min(laenge, limit))
+    rest = b""
+    if laenge > limit:
+        rest = strom.read(laenge - limit)
+    environ["wsgi.input"] = io.BytesIO(daten + rest)
+    return daten
+
+
+class WSGIShield(_KoerperPruefung):
     """Gleiche Logik fuer WSGI (Flask, Django, Bottle).
 
         app.wsgi_app = WSGIShield(app.wsgi_app, guard, login_paths=["/login"])
@@ -256,12 +396,34 @@ class WSGIShield:
                 )
                 return [body]
 
+        koerper = b""
+        gepuffert = False
+        if method in ("POST", "PUT", "PATCH") and self._braucht_koerper():
+            koerper = _wsgi_body(environ, self._koerper_grenze())
+            gepuffert = True
+
+        if gepuffert and self._prueft_uploads():
+            treffer = _upload_pruefen(
+                self.guard, koerper, environ.get("CONTENT_TYPE", ""), ip, path,
+            )
+            if treffer is not None:
+                payload = json.dumps({
+                    "error": "blocked", "reason": Reason.MALICIOUS_UPLOAD,
+                }).encode("utf-8")
+                start_response("403 Blocked", [
+                    ("Content-Type", "application/json; charset=utf-8"),
+                    ("Content-Length", str(len(payload))),
+                ])
+                return [payload]
+
         if self.requestfilter is not None and self.requestfilter.enabled:
             verdict = self.requestfilter.inspect(
                 path=path,
                 query=environ.get("QUERY_STRING", ""),
                 user_agent=environ.get("HTTP_USER_AGENT", ""),
                 method=method,
+                body=self._pruefbarer_koerper(
+                    koerper, environ.get("CONTENT_TYPE", "")),
             )
             if not verdict.clean:
                 self.requestfilter.handle(

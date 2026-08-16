@@ -91,6 +91,16 @@ firewall:
   sync_on_start: true     # aktive Sperren beim Start in die Firewall schreiben
   table: loginshield      # eigene nft-Tabelle bzw. iptables-Kette
   timeout: 10
+  sync_allowlist: true    # Allowlist auch der Firewall bekannt machen
+  # Verbindungsbremse: begrenzt neue Verbindungen je Absender-IP schon im
+  # Kern des Systems - also bevor eine Zeile Python laeuft. Wirkt gegen
+  # Fluten, gegen die die Anwendung selbst machtlos ist.
+  # ACHTUNG: zu niedrig eingestellt sperrt sie echte Besucher aus.
+  # Vorher ansehen:  loginshield firewall --limit-probe
+  conn_limit_enabled: false
+  conn_limit_ports: [80, 443]   # leer = alle TCP-Ports
+  conn_limit_rate: 120          # neue Verbindungen je IP und Minute
+  conn_limit_burst: 40          # wie viele auf einen Schlag durchgehen
   # Nur fuer backend: command
   block_command: []
   unblock_command: []
@@ -118,6 +128,8 @@ requestfilter:
   action: block           # block | log
   block_score: 8          # Summe der Regelschweren, ab der gesperrt wird
   block_seconds: 21600
+  inspect_body: true      # auch POST-Daten pruefen (nicht nur die URL)
+  max_body_bytes: 65536
   exempt_paths: []        # eigene Routen ausnehmen
   disabled_rules: []      # einzelne Regeln abschalten
   extra_rules: []         # eigene Muster ergaenzen
@@ -139,6 +151,25 @@ anomaly:
   evaluate_interval: 300  # wie oft im Betrieb geprueft wird (0 = nur auf Zuruf)
   relearn_hours: 24       # wie oft der Normalzustand aufgefrischt wird
   cache_seconds: 60       # Zwischenspeicher fuer das Dashboard
+
+# Dateipruefung: Webshells und getarnte Dateien finden.
+# Kein eigener Virenscanner - ist ClamAV installiert, wird es mitbenutzt.
+# Pruefen mit:  loginshield scan /var/www
+malware:
+  enabled: true
+  action: report          # report | quarantine
+  quarantine_dir: quarantine
+  block_score: 8
+  clamav: auto            # auto | on | off
+  inspect_archives: true  # in ZIP-Dateien hineinsehen (auch .docx usw.)
+
+# Dateiveraenderungen ueberwachen - die wirksamste Erkennung NACH einem
+# Einbruch. Erst auf einem sauberen System lernen:
+#   loginshield integrity --learn --path /var/www
+integrity:
+  enabled: false
+  paths: []
+  # - /var/www
 
 # Optional: Logdateien mitlesen (loginshield watch)
 logwatch: []
@@ -275,11 +306,45 @@ def build_parser() -> argparse.ArgumentParser:
     firewall_action.add_argument("--selftest", action="store_true",
                                  help="Sperren, nachsehen, entsperren - prueft die "
                                       "Anbindung an einer Testadresse")
+    firewall_action.add_argument("--limit-probe", action="store_true",
+                                 help="Aus dem bisherigen Verkehr ablesen, welche "
+                                      "Verbindungsbremse gefahrlos waere")
     firewall.add_argument("--dry-run", action="store_true",
                           help="Nur anzeigen, was ausgefuehrt wuerde")
     firewall.add_argument("--yes", action="store_true",
                           help="Rueckfrage bei --clear ueberspringen")
     firewall.set_defaults(handler=cmd_firewall)
+
+    scan = subparsers.add_parser(
+        "scan", help="Dateien auf Webshells und getarnte Inhalte pruefen"
+    )
+    scan.add_argument("pfad", help="Datei oder Verzeichnis")
+    scan.add_argument("--quarantine", action="store_true",
+                      help="Funde beiseitelegen (loescht nie)")
+    scan.add_argument("--json", action="store_true")
+    scan.set_defaults(handler=cmd_scan)
+
+    integrity = subparsers.add_parser(
+        "integrity", help="Dateiveraenderungen ueberwachen"
+    )
+    integrity_action = integrity.add_mutually_exclusive_group()
+    integrity_action.add_argument("--learn", action="store_true",
+                                  help="Aktuellen Zustand als Grundlage festhalten")
+    integrity_action.add_argument("--check", action="store_true",
+                                  help="Gegen die Grundlage pruefen (Standard)")
+    integrity_action.add_argument("--status", action="store_true")
+    integrity.add_argument("--path", action="append", default=[],
+                           help="Zu ueberwachender Pfad (wiederholbar)")
+    integrity.add_argument("--json", action="store_true")
+    integrity.set_defaults(handler=cmd_integrity)
+
+    quarantine = subparsers.add_parser(
+        "quarantine", help="Beiseitegelegte Dateien verwalten"
+    )
+    quarantine.add_argument("--list", action="store_true", help="Inhalt anzeigen")
+    quarantine.add_argument("--restore", metavar="KENNUNG",
+                            help="Datei zurueckholen (bei einem Fehlalarm)")
+    quarantine.set_defaults(handler=cmd_quarantine)
 
     learn = subparsers.add_parser(
         "learn", help="Normalzustand aus den eigenen Aufzeichnungen lernen"
@@ -740,6 +805,9 @@ def cmd_firewall(args) -> int:
         print("Ergebnis: Die Anbindung funktioniert NICHT.", file=sys.stderr)
         return 1
 
+    if args.limit_probe:
+        return _limit_probe(config)
+
     if args.clear:
         blocked = firewall.list_blocked()
         if not args.yes:
@@ -775,6 +843,205 @@ def cmd_firewall(args) -> int:
         print("\n  Die Firewall ist in der Konfiguration nicht aktiv.")
         print("  Sperren gelten derzeit nur innerhalb der Anwendung.")
     return 0
+
+
+def _limit_probe(config, tage: float = 7.0) -> int:
+    """Liest aus dem bisherigen Verkehr ab, welche Bremse gefahrlos waere.
+
+    Eine Verbindungsbremse ist die einzige Einstellung dieses Programms,
+    die im Zweifel echte Besucher aussperrt. Deshalb wird sie nicht
+    geraten, sondern aus den eigenen Zahlen abgeleitet.
+
+    Eine Einschraenkung, die man kennen muss: Gezaehlt wird, was die
+    Anwendung gemeldet hat - Anfragen, nicht TCP-Verbindungen. Ein
+    Browser oeffnet mehrere Verbindungen fuer eine Seite und nutzt sie
+    dann fuer viele Anfragen. Die Zahl unten ist damit ein Anhaltspunkt,
+    keine Messung. Der Vorschlag rechnet deshalb reichlich Luft dazu.
+    """
+    # Hier wird nur gelesen - die Firewall wird gar nicht angefasst.
+    config.firewall.enabled = False
+    guard = Guard(config)
+    try:
+        jetzt = guard.clock()
+        profile = guard.store.profile_by_ip(jetzt - tage * 86400, jetzt)
+        spitzen = []
+        for ip, eintrag in profile.items():
+            zeiten = sorted(eintrag.get("timestamps") or [])
+            if len(zeiten) < 2:
+                continue
+            # Groesste Anzahl innerhalb einer Minute (gleitendes Fenster).
+            hoechst, start = 0, 0
+            for ende in range(len(zeiten)):
+                while zeiten[ende] - zeiten[start] > 60:
+                    start += 1
+                hoechst = max(hoechst, ende - start + 1)
+            spitzen.append((hoechst, ip))
+
+        print("Verbindungsbremse - Anhaltspunkt aus dem eigenen Verkehr")
+        print("=" * 58)
+        if not spitzen:
+            print("  Zu wenige Daten. Lass LoginShield erst einige Tage "
+                  "mitlaufen.")
+            return 0
+
+        spitzen.sort(reverse=True)
+        gemessen = spitzen[0][0]
+        print(f"  Zeitraum            letzte {tage:.0f} Tage")
+        print(f"  Adressen            {len(spitzen)}")
+        print(f"  Hoechster Wert      {gemessen} Anfragen je Minute "
+              f"({spitzen[0][1]})")
+        if len(spitzen) > 1:
+            print("  Die naechsten:")
+            for wert, ip in spitzen[1:4]:
+                print(f"    {wert:5d}  {ip}")
+
+        vorschlag = max(60, int(gemessen * 3))
+        print()
+        print("  Vorschlag (dreifache Spitze, mindestens 60):")
+        print("    firewall:")
+        print("      conn_limit_enabled: true")
+        print(f"      conn_limit_rate: {vorschlag}")
+        print(f"      conn_limit_burst: {max(20, vorschlag // 3)}")
+        print()
+        print("  Gezaehlt wurden Anfragen, nicht Verbindungen - das ist ein")
+        print("  Anhaltspunkt, keine Messung. Erst die eigene Adresse in die")
+        print("  Allowlist, dann einschalten und die Seite selbst aufrufen.")
+        return 0
+    finally:
+        guard.close()
+
+
+def cmd_scan(args) -> int:
+    guard = _guard(args)
+    try:
+        scanner = guard.filescan
+        if not scanner.enabled:
+            print("Die Dateipruefung ist abgeschaltet (malware.enabled).",
+                  file=sys.stderr)
+            return 1
+
+        clam = scanner.clamav_binary()
+        if not args.json:
+            print(f"Pruefe {args.pfad}")
+            hinweis = clam or ("nicht installiert - es wird nur mit den "
+                               "eigenen Merkmalen geprueft")
+            print(f"ClamAV: {hinweis}\n")
+
+        if os.path.isdir(args.pfad):
+            ergebnisse = scanner.scan_dir(args.pfad)
+        else:
+            einzeln = scanner.scan_file(args.pfad)
+            ergebnisse = [] if einzeln.clean else [einzeln]
+
+        if args.json:
+            print(json.dumps([r.as_dict() for r in ergebnisse], indent=2,
+                             ensure_ascii=False))
+            return 1 if ergebnisse else 0
+
+        if not ergebnisse:
+            print("  Nichts gefunden.")
+            return 0
+
+        rows = [[r.verdict, r.score, os.path.relpath(r.path), r.summary[:52]]
+                for r in sorted(ergebnisse, key=lambda r: -r.score)]
+        print(_table(rows, ["Bewertung", "Punkte", "Datei", "Begruendung"]))
+
+        if args.quarantine:
+            print()
+            for ergebnis in ergebnisse:
+                if scanner.is_malicious(ergebnis):
+                    ziel = guard.quarantine.store(ergebnis.path, ergebnis)
+                    if ziel:
+                        print(f"  beiseitegelegt: {os.path.relpath(ergebnis.path)}")
+            print("\nZurueckholen mit: loginshield quarantine --list")
+        else:
+            print("\nBeiseitelegen mit: loginshield scan <pfad> --quarantine")
+        return 1
+    finally:
+        guard.close()
+
+
+def cmd_integrity(args) -> int:
+    guard = _guard(args)
+    try:
+        monitor = guard.integrity
+        pfade = args.path or list(monitor.config.paths)
+
+        if args.status:
+            status = monitor.status()
+            if status["ready"]:
+                print(f"Grundlage vorhanden: {status['files']} Dateien")
+                print(f"Ueberwacht: {', '.join(status['paths']) or '-'}")
+                return 0
+            print(status["reason"], file=sys.stderr)
+            return 1
+
+        if not pfade:
+            print("Kein Pfad angegeben. Entweder 'integrity.paths' in der "
+                  "Konfiguration setzen oder --path benutzen.", file=sys.stderr)
+            return 1
+
+        if args.learn:
+            print("Achtung: nur auf einem System lernen, das sauber ist.")
+            print("Nach einem Einbruch gilt die Webshell sonst als normal.\n")
+            anzahl = monitor.learn(pfade)
+            print(f"Grundlage angelegt: {anzahl} Dateien aus "
+                  f"{', '.join(pfade)}")
+            return 0
+
+        bericht = monitor.check(pfade)
+        if args.json:
+            print(json.dumps(bericht.as_dict(), indent=2, ensure_ascii=False))
+            return 1 if bericht.changes else 0
+
+        if bericht.error:
+            print(bericht.error, file=sys.stderr)
+            return 1
+
+        print(f"Geprueft: {bericht.checked} Dateien")
+        if not bericht.changes:
+            print("  Unveraendert.")
+            return 0
+
+        print(f"\n{bericht.verdict.upper()} - {len(bericht.changes)} Veraenderung(en):\n")
+        rows = [[c.kind, os.path.relpath(c.path), c.severity, c.description[:48]]
+                for c in sorted(bericht.changes, key=lambda c: -c.severity)]
+        print(_table(rows, ["Art", "Datei", "Schwere", "Bedeutung"]))
+        return 1
+    finally:
+        guard.close()
+
+
+def cmd_quarantine(args) -> int:
+    guard = _guard(args)
+    try:
+        if args.restore:
+            ziel = guard.quarantine.restore(args.restore)
+            if ziel:
+                print(f"Zurueckgeholt nach: {ziel}")
+                return 0
+            print(f"Nicht gefunden: {args.restore}", file=sys.stderr)
+            return 1
+
+        eintraege = guard.quarantine.list()
+        if not eintraege:
+            print("Die Quarantaene ist leer.")
+            return 0
+        rows = [
+            [
+                eintrag["id"],
+                os.path.basename(eintrag.get("original", "?")),
+                (eintrag.get("result") or {}).get("verdict", "-"),
+                time.strftime("%d.%m. %H:%M",
+                              time.localtime(eintrag.get("quarantined_ts", 0))),
+            ]
+            for eintrag in eintraege
+        ]
+        print(_table(rows, ["Kennung", "Datei", "Bewertung", "Seit"]))
+        print("\nZurueckholen mit: loginshield quarantine --restore <Kennung>")
+        return 0
+    finally:
+        guard.close()
 
 
 def cmd_learn(args) -> int:

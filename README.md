@@ -68,6 +68,9 @@ dem richtigen Passwort.
 | **Angriffsmuster** | SQL-Injection, Path Traversal, Log4Shell, Scanner | ab 8 Punkten |
 | **Anomalie** | Verhalten, das für *diesen* Server unüblich ist | ab 40/100 |
 | **Verteilter Angriff** | Viele Adressen, jede für sich unauffällig | Gesamtsicht |
+| **Webshell im Upload** | Hochgeladene Datei mit Schadcode | **1 Treffer** |
+| **Veränderte Datei** | Etwas auf dem Server ist nicht mehr wie gelernt | Vergleich |
+| **Verbindungsflut** | Zu viele neue Verbindungen je IP (im Kern des Systems) | opt-in |
 
 Spraying braucht eine eigene Regel: Wer pro Konto nur zwei Passwörter probiert,
 löst die klassische Fehlversuchs-Schwelle nie aus – über zwanzig Konten hinweg
@@ -316,18 +319,56 @@ Ruhe:
 
 ```
 table inet loginshield {
-    set blocked4 { type ipv4_addr; flags timeout; }
-    set blocked6 { type ipv6_addr; flags timeout; }
+    set blocked4  { type ipv4_addr; flags timeout; }
+    set blocked6  { type ipv6_addr; flags timeout; }
+    set erlaubt4  { type ipv4_addr; flags interval; }   # deine Allowlist
+    set erlaubt6  { type ipv6_addr; flags interval; }
     chain input {
         type filter hook input priority -10; policy accept;
+        ip  saddr @erlaubt4 accept        # zuerst: wer nie angefasst wird
+        ip6 saddr @erlaubt6 accept
+        ct state invalid drop
         ip  saddr @blocked4 drop
         ip6 saddr @blocked6 drop
     }
 }
 ```
 
+Die **Allowlist steht ganz oben** und wird von LoginShield selbst dorthin
+geschrieben (`sync_allowlist: true`). `accept` beendet dabei nur diese Kette –
+alle übrigen Regeln deines Systems gelten unverändert weiter.
+
 `policy accept` ist wichtig: Diese Kette **verwirft nur, was auf der
 Sperrliste steht**. Sie kann dich nicht aussperren, wenn etwas schiefgeht.
+
+### Die Verbindungsbremse
+
+Das ist die eine Sache, die die Anwendung selbst **nicht** kann: Wer den
+Server mit Verbindungsversuchen flutet, beschäftigt ihn, bevor auch nur eine
+Zeile Python läuft. Diese Bremse greift davor – im Kern des Betriebssystems:
+
+```yaml
+firewall:
+  conn_limit_enabled: true
+  conn_limit_ports: [80, 443]   # leer = alle TCP-Ports
+  conn_limit_rate: 120          # neue Verbindungen je IP und Minute
+  conn_limit_burst: 40          # wie viele auf einen Schlag durchgehen
+```
+
+Jede Absender-IP bekommt ihr eigenes Konto; die Zähler räumen sich nach einer
+Minute selbst weg. Adressen auf deiner Allowlist sind ausgenommen.
+
+**Sie ist absichtlich abgeschaltet voreingestellt.** Zu niedrig eingestellt
+sperrt sie echte Besucher aus – ein Seitenaufruf öffnet mehrere Verbindungen
+gleichzeitig. Vorher ansehen, was dein normaler Betrieb braucht:
+
+```bash
+loginshield firewall --limit-probe
+```
+
+Das liest die Spitzenwerte aus dem bisher aufgezeichneten Verkehr und schlägt
+einen Wert mit reichlich Luft vor. Gezählt werden dabei Anfragen, nicht
+TCP-Verbindungen – ein Anhaltspunkt, keine Messung.
 
 ### Abgleich nach einem Neustart
 
@@ -595,6 +636,97 @@ Die Gewichtung jedes Signals lässt sich in der Konfiguration anpassen.
 
 ---
 
+## Dateien: Webshells finden, statt Virenschutz zu behaupten
+
+Nach einem erfolgreichen Einbruch legt ein Angreifer fast immer eine Datei ab –
+eine **Webshell**, ein kleines Skript, über das sich der Server fernsteuern
+lässt. Das ist der Punkt, an dem eine Sperre auf IP-Ebene zu spät kommt.
+
+**Was hier nicht passiert:** Es wird kein eigener Virenscanner gebaut. Eine
+Erkennungsmaschine ohne gepflegte Signaturdatenbank, ohne Aktualisierung, die
+trotzdem „Virenschutz“ behauptet, wäre unehrlich – und gefährlicher als gar
+keine, weil man sich darauf verlässt. Stattdessen drei Dinge, die auf einem
+Webserver wirklich zählen:
+
+### 1. Webshells erkennen
+
+```bash
+loginshield scan --path /var/www
+```
+
+Gesucht wird nach der Kombination **Ausführung + Eingabe von außen**:
+`eval($_POST[…])`, `system($_GET[…])`, `include($_GET[…])`. Einzelne dieser
+Funktionen kommen auch in harmlosem Code vor – erst die Verbindung macht den
+Fund.
+
+Wer heute eine Webshell ablegt, schreibt sie selten so hin. Deshalb wird auch
+der Umweg erkannt: der über eine Variable aufgerufene Funktionsname
+(`$f = 'ev'.'al'; $f($_POST['x'])`), die aus Bruchstücken zusammengesetzte
+Superglobale (`${'_PO'.'ST'}`), `chr()`-Ketten, lange base64-Blöcke.
+
+Dazu **getarnte Dateien**: eine `rechnung.pdf.php`, eine `.jpg`, die in
+Wahrheit mit `<?php` beginnt, oder eine `.htaccess`, die Bilder im
+Upload-Ordner plötzlich als Programm ausführen lässt. In **ZIP-Archiven** wird
+hineingesehen – auch nach Einträgen wie `../../config.php`, die beim Auspacken
+fremde Dateien überschreiben.
+
+Ist **ClamAV** installiert, wird es zusätzlich benutzt. Damit kommen echte,
+gepflegte Signaturen ins Spiel, ohne dass dieses Projekt so tut, als hätte es
+eigene.
+
+### 2. Uploads stoppen, bevor sie ankommen
+
+Die Middleware prüft hochgeladene Dateien, **bevor** die Anwendung sie zu
+sehen bekommt. Eine Webshell, die nie auf der Platte landet, muss auch nicht
+gefunden werden. Wer eine ablegt, wird gesperrt:
+
+```yaml
+malware:
+  scan_uploads: true      # Voreinstellung
+```
+
+Das läuft ohne eine Zeile Änderung in deiner Anwendung. Wer selbst prüfen
+will, etwa vor dem Speichern:
+
+```python
+ergebnis = guard.scan_upload(daten, filename=name, ip=absender_ip)
+if not ergebnis.clean:
+    return "Datei abgelehnt: " + ergebnis.summary
+```
+
+### 3. Veränderungen bemerken
+
+Die wirksamste Erkennung **nach** einem Einbruch – und sie kommt ohne
+Signaturen aus. Erst auf einem sauberen System den Zustand festhalten:
+
+```bash
+loginshield integrity --learn --path /var/www
+loginshield integrity                     # später: was hat sich geändert?
+```
+
+Neue Datei, geänderte Datei, gelöschte Datei – alle drei fallen auf, wenn man
+weiß, wie es vorher aussah. Am schwersten wiegt eine **neue Skriptdatei in
+einem Upload-Verzeichnis**: dort gehören Bilder hin, keine Programme.
+
+### Gefunden – und dann?
+
+Voreingestellt wird nur **gemeldet**. Verschoben wird erst auf Ansage:
+
+```yaml
+malware:
+  action: quarantine
+```
+
+**Gelöscht wird nie.** Nach einem Einbruch sind diese Dateien Beweismittel,
+und ein Fehlalarm darf keine Daten vernichten – alles lässt sich zurückholen:
+
+```bash
+loginshield quarantine --list
+loginshield quarantine --restore <ID>
+```
+
+---
+
 ## Kommandozeile
 
 ```
@@ -608,6 +740,12 @@ loginshield firewall --status          Firewall-Anbindung pruefen
 loginshield firewall --setup           Firewall einrichten
 loginshield firewall --sync            Sperren in die Firewall schreiben
 loginshield firewall --selftest        prueft die Anbindung an einer Testadresse
+loginshield firewall --limit-probe     Verbindungsbremse aus dem Verkehr ablesen
+loginshield scan --path VERZEICHNIS    Dateien auf Schadcode pruefen
+loginshield integrity --learn          Zustand der Dateien festhalten
+loginshield integrity                  auf Veraenderungen pruefen
+loginshield quarantine --list          beiseitegelegte Dateien anzeigen
+loginshield quarantine --restore ID    Datei zurueckholen (Fehlalarm)
 loginshield filter --list              Regeln der Anfrage-Firewall anzeigen
 loginshield filter --test URL          eine URL gegen die Regeln pruefen
 loginshield learn                      Normalzustand lernen
@@ -806,6 +944,8 @@ loginshield/
   firewall.py    System-Firewall (nftables, iptables, ufw, mehrere zugleich)
   requestfilter.py  Anfrage-Firewall: prüft den Inhalt der Anfragen
   anomaly.py     lernt den Normalzustand, meldet Abweichungen
+  filescan.py    Webshells, getarnte Dateien, ClamAV-Anbindung, Quarantäne
+  integrity.py   Fingerabdrücke: bemerkt neue, geänderte, gelöschte Dateien
   cli.py         Kommandozeile
 examples/        lauffähige Beispielanwendung
 tests/           Testsuite
