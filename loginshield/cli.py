@@ -744,7 +744,9 @@ def cmd_demo(args) -> int:
     try:
         now = time.time()
         rng = random.Random(20240815)
-        attackers = ["45.155.205.%d" % rng.randint(2, 250) for _ in range(6)]
+        # Nur fuer Dokumentation reservierte Bereiche (RFC 5737) - diese
+        # Adressen gehoeren niemandem und beschuldigen keinen echten Betreiber.
+        attackers = ["198.51.100.%d" % rng.randint(2, 250) for _ in range(6)]
         users = ["admin", "root", "info", "test", "backup", "postgres", "anna", "ben"]
         legit = ["203.0.113.%d" % rng.randint(2, 60) for _ in range(4)]
 
@@ -778,7 +780,7 @@ def cmd_demo(args) -> int:
                          "/phpmyadmin/index.php", "/backup.sql"]
         for index, path in enumerate(scanner_paths):
             store.record_attempt(
-                "185.234.219.%d" % (30 + index),
+                "192.0.2.%d" % (30 + index),
                 Event.HONEYPOT,
                 route=path,
                 user_agent="Mozilla/5.0 (compatible; Nmap Scripting Engine)",
@@ -786,7 +788,7 @@ def cmd_demo(args) -> int:
                 detail=f"{Reason.HONEYPOT_PATH} Demo-Daten",
                 ts=now - rng.random() * 6 * 3600,
             )
-        guard.block("185.234.219.30", reason=Reason.HONEYPOT_PATH,
+        guard.block("192.0.2.30", reason=Reason.HONEYPOT_PATH,
                     seconds=guard.config.honeypot.block_seconds, detail="/.env")
 
         for ip in attackers[:3]:
