@@ -282,11 +282,16 @@ class AnomalyConfig:
     #: keine Aussage als eine geratene.
     min_events: int = 200
     min_addresses: int = 20
+    #: So viele Ereignisse braucht eine Adresse fuer ein volles Urteil.
+    #: Darunter wird der Punktwert anteilig gedaempft - drei Zugriffe
+    #: reichen nicht fuer "kritisch", egal wie ungewoehnlich sie sind.
+    min_evidence: int = 15
     #: Gewichtung der Einzelsignale (Punkte-Obergrenze je Signal).
     weights: dict = field(default_factory=lambda: {
         "volumen": 25, "pfadvielfalt": 25, "neue_pfade": 20,
         "fehlerquote": 20, "kontenvielfalt": 20, "kennung": 10,
-        "uhrzeit": 10, "takt": 15,
+        "uhrzeit": 10, "takt": 15, "regelmaessigkeit": 20,
+        "pfadstreuung": 15,
     })
 
     def validate(self) -> None:
@@ -304,6 +309,8 @@ class AnomalyConfig:
             raise ConfigError("anomaly.block_score darf nicht unter report_score liegen")
         if self.min_events < 1 or self.min_addresses < 1:
             raise ConfigError("anomaly.min_events/min_addresses muessen > 0 sein")
+        if self.min_evidence < 1:
+            raise ConfigError("anomaly.min_evidence muss mindestens 1 sein")
         if self.evaluate_interval < 0 or self.relearn_hours < 0:
             raise ConfigError(
                 "anomaly.evaluate_interval/relearn_hours duerfen nicht negativ sein"

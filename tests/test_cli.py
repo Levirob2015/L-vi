@@ -205,7 +205,9 @@ def test_learn_und_anomalies(db, capsys):
 
     assert run(["anomalies", "--json"], db) == 0
     daten = json.loads(capsys.readouterr().out)
-    assert daten[0]["signals"]
+    # Neuer Aufbau: Gesamtlage und Einzeladressen getrennt.
+    assert daten["adressen"][0]["signals"]
+    assert "gesamt" in daten
 
 
 def test_anomalies_ohne_grundlinie(db, capsys):

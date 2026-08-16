@@ -81,9 +81,33 @@ def robust_z(value: float, center: float, streuung: float) -> float:
         # Ohne Streuung ist jede Abweichung nach oben bemerkenswert, aber
         # nicht unendlich - sonst kippt ein einziger Wert die Bewertung.
         if center <= 0:
+            # Wo vorher nichts war, ist jede Aktivitaet bemerkenswert. Der
+            # feste Wert liegt genau auf der ueblichen Schwelle - Aufrufer
+            # muessen ihn deshalb mit >= pruefen, nicht mit >.
             return 3.0 if value > 0 else 0.0
         return min(10.0, max(0.0, (value - center) / max(center, 1.0)) * 3.0)
     return 0.6745 * (value - center) / streuung
+
+
+def regelmaessigkeit(zeitstempel: Sequence[float]) -> Optional[float]:
+    """Wie gleichmaessig ist der Rhythmus? 0 = maschinell exakt, 1 = wie ein Mensch.
+
+    Gemessen als Variationskoeffizient der Abstaende. Das ist deutlich
+    schaerfer als die Durchschnittsgeschwindigkeit: Ein Programm, das alle
+    30 Sekunden anfragt, ist langsam - aber unmenschlich regelmaessig. Ein
+    Mensch macht Pausen, liest, klickt schnell hintereinander.
+    """
+    if len(zeitstempel) < 6:
+        return None
+    geordnet = sorted(zeitstempel)
+    abstaende = [b - a for a, b in zip(geordnet, geordnet[1:]) if b > a]
+    if len(abstaende) < 5:
+        return None
+    mittel = sum(abstaende) / len(abstaende)
+    if mittel <= 0:
+        return 0.0
+    varianz = sum((wert - mittel) ** 2 for wert in abstaende) / len(abstaende)
+    return math.sqrt(varianz) / mittel
 
 
 def entropy(counts: Sequence[float]) -> float:
@@ -122,6 +146,14 @@ class Baseline:
     fehlerquote: float = 0.0
     fehler_je_stunde_median: float = 0.0
     fehler_je_stunde_streuung: float = 0.0
+    #: Wie breit streuen normale Besucher ihre Zugriffe ueber die Seiten?
+    pfad_entropie_median: float = 0.0
+    pfad_entropie_streuung: float = 0.0
+    #: Wie regelmaessig sind normale Besucher (Variationskoeffizient)?
+    regelmaessigkeit_median: float = 0.0
+    #: Wie viele Adressen waren im Lernzeitraum wegen eines Angriffs
+    #: ausgeschlossen? Nur zur Nachvollziehbarkeit.
+    ausgeschlossen: int = 0
 
     #: Pfade und Programmkennungen, die im Lernzeitraum vorkamen.
     bekannte_pfade: Dict[str, int] = field(default_factory=dict)
@@ -150,18 +182,31 @@ def learn(store, *, days: float = 7.0, now: Optional[float] = None) -> Baseline:
 
     Bewusst aus den eigenen Daten des Servers: was auf einem Firmenportal
     normal ist, waere auf einem Blog voellig unueblich.
+
+    Adressen, die im Lernzeitraum gesperrt wurden, bleiben aussen vor.
+    Sonst lernt die Grundlinie den Angriff als normal - und erkennt ihn
+    beim naechsten Mal nicht mehr.
     """
     now = time.time() if now is None else now
     since = now - days * 86400.0
 
-    profile = store.profile_by_ip(since)
+    gesperrt = set(store.blocked_ips_since(since, include_networks=False))
+    profile = store.profile_by_ip(since, exclude=gesperrt)
     ereignisse_je_ip = [entry["events"] for entry in profile.values()]
     pfade_je_ip = [len(entry["routes"]) for entry in profile.values()]
     konten_je_ip = [len(entry["identities"]) for entry in profile.values()]
 
     gesamt = sum(ereignisse_je_ip)
     fehler = sum(entry["failures"] for entry in profile.values())
-    stundenwerte = store.hourly_counts(since, Event.LOGIN_FAILURE, now=now)
+
+    # Nur Stunden mit Betrieb zaehlen. Sonst zieht jede stille Nacht den
+    # Median auf 0 - und gegen 0 ist jeder Vergleich wertlos.
+    alle_stunden = store.hourly_counts(since, now=now)
+    fehler_stunden = store.hourly_counts(since, Event.LOGIN_FAILURE, now=now)
+    stundenwerte = [
+        wert for wert, gesamt_stunde in zip(fehler_stunden, alle_stunden)
+        if gesamt_stunde > 0
+    ] or fehler_stunden
 
     stunden_last: Dict[int, int] = {}
     for entry in profile.values():
@@ -170,8 +215,22 @@ def learn(store, *, days: float = 7.0, now: Optional[float] = None) -> Baseline:
     schwelle = (max(stunden_last.values()) * 0.1) if stunden_last else 0
     aktive = sorted(s for s, last in stunden_last.items() if last >= schwelle)
 
+    entropien = [
+        entropy(list(entry["route_counts"].values()))
+        for entry in profile.values() if entry["route_counts"]
+    ]
+    takte = [
+        wert for wert in (
+            regelmaessigkeit(entry["timestamps"]) for entry in profile.values()
+        ) if wert is not None
+    ]
+
     baseline = Baseline(
         created_ts=now,
+        ausgeschlossen=len(gesperrt),
+        pfad_entropie_median=median(entropien),
+        pfad_entropie_streuung=mad(entropien),
+        regelmaessigkeit_median=median(takte),
         von_ts=since,
         bis_ts=now,
         ereignisse=gesamt,
@@ -190,8 +249,9 @@ def learn(store, *, days: float = 7.0, now: Optional[float] = None) -> Baseline:
         aktive_stunden=aktive,
     )
     log.info(
-        "Grundlinie gelernt: %s Ereignisse von %s Adressen ueber %.1f Tage",
-        baseline.ereignisse, baseline.adressen, days,
+        "Grundlinie gelernt: %s Ereignisse von %s Adressen ueber %.1f Tage "
+        "(%s gesperrte Adressen ausgeschlossen)",
+        baseline.ereignisse, baseline.adressen, days, len(gesperrt),
     )
     return baseline
 
@@ -218,6 +278,10 @@ class AnomalyReport:
     ip: str
     score: float = 0.0
     signals: List[Signal] = field(default_factory=list)
+    #: Wie viele Ereignisse liegen dem Urteil zugrunde ...
+    evidence: int = 0
+    #: ... und wie stark wurde der Rohwert deshalb gedaempft (0..1).
+    confidence: float = 1.0
 
     @property
     def verdict(self) -> str:
@@ -237,6 +301,8 @@ class AnomalyReport:
             "score": round(self.score, 1),
             "verdict": self.verdict,
             "summary": self.summary,
+            "evidence": self.evidence,
+            "confidence": round(self.confidence, 2),
             "signals": [signal.as_dict() for signal in self.signals],
         }
 
@@ -405,7 +471,7 @@ class AnomalyDetector:
                     f"({still[0]:02d} Uhr UTC)",
                 ))
 
-        # 8. Gleichmaessiger Takt: Maschinen tippen im Sekundentakt, Menschen nicht
+        # 8. Takt: erst die schiere Geschwindigkeit ...
         dauer = entry["last_ts"] - entry["first_ts"]
         if entry["events"] >= 10 and dauer > 0:
             takt = dauer / entry["events"]
@@ -414,9 +480,121 @@ class AnomalyDetector:
                 report.signals.append(Signal(
                     "takt", round(takt, 2), 0, punkte,
                     f"ein Zugriff alle {takt:.1f}s ueber {dauer:.0f}s - "
-                    f"maschinell getaktet",
+                    f"maschinell schnell",
                 ))
 
+        # 9. ... dann der Rhythmus. Das ist die schaerfere Frage: ein
+        # Programm, das alle 30 Sekunden anfragt, ist langsam - aber
+        # unmenschlich gleichmaessig. Nur ueber die Geschwindigkeit waere
+        # es nicht aufgefallen.
+        gleichmass = regelmaessigkeit(entry.get("timestamps") or [])
+        if gleichmass is not None and gleichmass < 0.35:
+            erwartet = baseline.regelmaessigkeit_median
+            if erwartet <= 0 or gleichmass < erwartet * 0.5:
+                punkte = gewichte.get("regelmaessigkeit", 20)
+                report.signals.append(Signal(
+                    "regelmaessigkeit", round(gleichmass, 3), round(erwartet, 2),
+                    punkte,
+                    f"unmenschlich gleichmaessiger Rhythmus "
+                    f"(Schwankung {gleichmass * 100:.0f}%, ueblich "
+                    f"{erwartet * 100:.0f}%)",
+                ))
+
+        # 10. Streuung ueber die Pfade: ein Scanner ruft jede Seite genau
+        # einmal auf, ein Besucher kehrt zurueck. Bei gleicher Anzahl
+        # unterscheidet erst die Verteilung die beiden.
+        zaehler = list((entry.get("route_counts") or {}).values())
+        if len(zaehler) >= 5 and baseline.pfad_entropie_median > 0:
+            streuung = entropy(zaehler)
+            z = robust_z(streuung, baseline.pfad_entropie_median,
+                         baseline.pfad_entropie_streuung)
+            if z > 2:
+                punkte = min(gewichte.get("pfadstreuung", 15), z * 4)
+                report.signals.append(Signal(
+                    "pfadstreuung", round(streuung, 2),
+                    round(baseline.pfad_entropie_median, 2), punkte,
+                    f"Zugriffe gleichmaessig ueber {len(zaehler)} Pfade verteilt "
+                    f"statt auf wenige konzentriert",
+                ))
+
+        roh = sum(signal.punkte for signal in report.signals)
+
+        # Beweislast: Wer nur wenige Ereignisse erzeugt hat, kann nicht
+        # "kritisch" sein - dafuer ist die Datenbasis zu duenn. Der Wert
+        # waechst mit der Zahl der Belege.
+        mindest = max(1, self.config.min_evidence)
+        vertrauen = min(1.0, entry["events"] / mindest)
+        report.evidence = entry["events"]
+        report.confidence = vertrauen
+        report.score = min(100.0, roh * vertrauen)
+        return report
+
+    def global_report(self, *, window: Optional[float] = None,
+                      now: Optional[float] = None, store=None) -> AnomalyReport:
+        """Die Lage im Ganzen statt Adresse fuer Adresse.
+
+        Der blinde Fleck jeder Einzelbewertung: Verteilen 200 Adressen je
+        fuenf Fehlversuche unter sich auf, ist keine davon auffaellig - in
+        der Summe ist es trotzdem ein Angriff. Diese Sicht misst deshalb den
+        Server als Ganzes gegen die Grundlinie.
+        """
+        report = AnomalyReport(ip="(gesamt)")
+        store = store or (self.guard.store if self.guard else None)
+        baseline = self.baseline(store)
+        if store is None or baseline is None or not self.enabled:
+            return report
+        if not baseline.usable(self.config.min_events, self.config.min_addresses):
+            return report
+
+        if now is None:
+            now = self.guard.clock() if self.guard else time.time()
+        window = window or self.config.window
+        seit = now - window
+        stunden = max(window / 3600.0, 0.01)
+
+        profile = store.profile_by_ip(seit)
+        fehler = sum(entry["failures"] for entry in profile.values())
+        fehler_je_stunde = fehler / stunden
+
+        # 1. Fehlversuche insgesamt weit ueber dem Ueblichen
+        z = robust_z(fehler_je_stunde, baseline.fehler_je_stunde_median,
+                     baseline.fehler_je_stunde_streuung)
+        if z >= 3 and fehler >= 20:
+            punkte = min(40, z * 5)
+            report.signals.append(Signal(
+                "gesamtlast", round(fehler_je_stunde, 1),
+                round(baseline.fehler_je_stunde_median, 1), punkte,
+                f"{fehler} Fehlversuche in {stunden:.1f}h - ueblich sind "
+                f"{baseline.fehler_je_stunde_median:.0f} pro Stunde",
+            ))
+
+        # 2. Ungewoehnlich viele Adressen beteiligt: das Kennzeichen eines
+        #    verteilten Angriffs, bei dem einzeln niemand auffaellt.
+        beteiligt = sum(1 for entry in profile.values() if entry["failures"] > 0)
+        ueblich_beteiligt = max(1.0, baseline.adressen * (window / max(
+            baseline.bis_ts - baseline.von_ts, 1.0)))
+        if beteiligt >= 20 and beteiligt > ueblich_beteiligt * 3:
+            punkte = min(35, (beteiligt / ueblich_beteiligt) * 5)
+            report.signals.append(Signal(
+                "verteilte_last", beteiligt, round(ueblich_beteiligt, 1), punkte,
+                f"{beteiligt} verschiedene Adressen mit Fehlversuchen - "
+                f"ueblich sind etwa {ueblich_beteiligt:.0f}",
+            ))
+
+        # 3. Die Fehlerquote des ganzen Servers kippt
+        gesamt = sum(entry["events"] for entry in profile.values())
+        if gesamt >= 50:
+            quote = fehler / gesamt
+            if quote > max(0.4, baseline.fehlerquote * 3):
+                punkte = min(25, quote * 25)
+                report.signals.append(Signal(
+                    "gesamtfehlerquote", round(quote, 2),
+                    round(baseline.fehlerquote, 2), punkte,
+                    f"{quote * 100:.0f}% aller Anfragen sind Fehlversuche - "
+                    f"ueblich sind {baseline.fehlerquote * 100:.0f}%",
+                ))
+
+        report.evidence = gesamt
         report.score = min(100.0, sum(signal.punkte for signal in report.signals))
         return report
 

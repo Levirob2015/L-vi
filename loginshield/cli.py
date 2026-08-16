@@ -814,13 +814,16 @@ def cmd_anomalies(args) -> int:
             print("\nLieber keine Aussage als eine geratene.", file=sys.stderr)
             return 1
 
+        gesamt = guard.anomaly.global_report(window=args.hours * 3600)
         berichte = guard.anomaly.scan(window=args.hours * 3600)
         if args.min_score is not None:
             berichte = [r for r in berichte if r.score >= args.min_score]
 
         if args.json:
-            print(json.dumps([r.as_dict() for r in berichte], indent=2,
-                             ensure_ascii=False))
+            print(json.dumps(
+                {"gesamt": gesamt.as_dict(),
+                 "adressen": [r.as_dict() for r in berichte]},
+                indent=2, ensure_ascii=False))
             return 0
 
         print(f"Abweichungen der letzten {args.hours:g} Stunden")
@@ -828,8 +831,20 @@ def cmd_anomalies(args) -> int:
         print(f"Grundlinie: {status['events']} Ereignisse von {status['addresses']} "
               f"Adressen, {status['age_hours']:.0f}h alt\n")
 
+        # Die Gesamtsicht zuerst: ein verteilter Angriff faellt bei keiner
+        # einzelnen Adresse auf, in der Summe aber sehr wohl.
+        if gesamt.signals:
+            print(f"  GESAMTLAGE   {gesamt.score:.0f}/100   [{gesamt.verdict}]")
+            for signal in gesamt.signals:
+                print(f"     - {signal.erklaerung}  (+{signal.punkte:.0f})")
+            print()
+
         if not berichte:
-            print("  Nichts Auffaelliges.")
+            if not gesamt.signals:
+                print("  Nichts Auffaelliges.")
+            else:
+                print("  Keine einzelne Adresse faellt auf - der Angriff ist "
+                      "auf viele verteilt.")
             return 0
 
         for report in berichte:

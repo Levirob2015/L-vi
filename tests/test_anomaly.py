@@ -366,3 +366,128 @@ def test_lernen_leert_den_zwischenspeicher(gelernt, clock):
     gelernt.anomaly.cached_scan(window=3600)
     gelernt.anomaly.learn_and_store(days=7)
     assert gelernt.anomaly._cache is None
+
+
+# -- Gesamtsicht: verteilte Angriffe ------------------------------------
+def test_verteilter_angriff_faellt_einzeln_nicht_auf(gelernt, clock):
+    """Der blinde Fleck jeder Einzelbewertung: 200 Adressen mit je fuenf
+    Fehlversuchen - keine davon ist auffaellig, die Summe sehr wohl."""
+    for index in range(200):
+        for versuch in range(5):
+            gelernt.store.record_attempt(
+                f"198.51.100.{index % 250}", Event.LOGIN_FAILURE,
+                identity="admin", route="/login", user_agent=BROWSER[0],
+                ts=clock.now - 1800 + index * 8 + versuch,
+            )
+
+    einzeln = gelernt.anomaly.scan(window=3600)
+    assert einzeln == [], "Einzelbewertung sollte hier nichts finden"
+
+    gesamt = gelernt.anomaly.global_report(window=3600)
+    assert gesamt.verdict == "kritisch"
+    namen = {s.name for s in gesamt.signals}
+    assert "verteilte_last" in namen
+    assert "gesamtlast" in namen
+
+
+def test_gesamtsicht_schweigt_im_normalbetrieb(gelernt):
+    gesamt = gelernt.anomaly.global_report(window=3600)
+    assert gesamt.signals == []
+    assert gesamt.score == 0
+
+
+def test_gesamtsicht_ohne_grundlinie(config, store, clock):
+    guard = Guard(config, store, clock=clock)
+    assert guard.anomaly.global_report().signals == []
+
+
+# -- Neue Einzelsignale -------------------------------------------------
+def test_erkennt_langsamen_aber_exakten_takt(gelernt, clock):
+    """Alle 30 Sekunden - viel zu langsam fuer die Geschwindigkeitspruefung,
+    aber unmenschlich gleichmaessig."""
+    for index in range(60):
+        gelernt.store.record_attempt(
+            "198.51.100.55", Event.LOGIN_SUCCESS, identity="anna", route="/",
+            user_agent=BROWSER[1], ts=clock.now - 1800 + index * 30,
+        )
+    treffer = [r for r in gelernt.anomaly.scan(window=3600)
+               if r.ip == "198.51.100.55"]
+    assert treffer
+    namen = {s.name for s in treffer[0].signals}
+    assert "regelmaessigkeit" in namen
+    # Die alte Geschwindigkeitspruefung haette hier nichts gesehen.
+    assert "takt" not in namen
+
+
+def test_regelmaessigkeit_verschont_menschliches_verhalten():
+    import random as _random
+
+    from loginshield.anomaly import regelmaessigkeit
+
+    rng = _random.Random(4)
+    # Ein Mensch: mal schnell, mal Pause.
+    menschlich = [0.0]
+    for _ in range(30):
+        menschlich.append(menschlich[-1] + rng.choice([1, 2, 3, 20, 45, 90]))
+    assert regelmaessigkeit(menschlich) > 0.5
+
+    # Ein Programm: exakt alle 30 Sekunden.
+    maschinell = [index * 30.0 for index in range(30)]
+    assert regelmaessigkeit(maschinell) < 0.05
+
+    assert regelmaessigkeit([1, 2]) is None       # zu wenig Daten
+
+
+def test_pfadstreuung_unterscheidet_scan_von_besuch(gelernt, clock):
+    # Scanner: 20 Pfade je einmal - gleichmaessig verteilt.
+    for index in range(20):
+        gelernt.store.record_attempt("198.51.100.61", Event.LOGIN_FAILURE,
+                                     route=f"/{SEITEN[index % len(SEITEN)]}{index}",
+                                     ts=clock.now - 600 + index * 20)
+    treffer = [r for r in gelernt.anomaly.scan(window=3600)
+               if r.ip == "198.51.100.61"]
+    assert treffer
+
+
+# -- Beweislast ----------------------------------------------------------
+def test_wenige_ereignisse_koennen_nicht_kritisch_sein(gelernt, clock):
+    """Drei sehr ungewoehnliche Zugriffe sind noch kein Angriff."""
+    for index in range(3):
+        gelernt.store.record_attempt(
+            "198.51.100.66", Event.LOGIN_FAILURE, route=f"/geheim{index}",
+            user_agent="Go-http-client/2.0", ts=clock.now - 100 + index,
+        )
+    treffer = [r for r in gelernt.anomaly.scan(window=3600)
+               if r.ip == "198.51.100.66"]
+    assert treffer == [], "Zu wenige Belege fuer eine Meldung"
+
+
+def test_beweislast_waechst_mit_den_belegen(gelernt, clock):
+    for index in range(60):
+        gelernt.store.record_attempt("198.51.100.77", Event.LOGIN_FAILURE,
+                                     route=f"/x{index}", ts=clock.now - 1000 + index)
+    treffer = [r for r in gelernt.anomaly.scan(window=3600)
+               if r.ip == "198.51.100.77"][0]
+    assert treffer.evidence == 60
+    assert treffer.confidence == 1.0
+
+
+# -- Sauberes Lernen -----------------------------------------------------
+def test_gesperrte_adressen_fliessen_nicht_in_die_grundlinie(config, store, clock):
+    """Sonst lernt die Grundlinie den Angriff als normal - und erkennt ihn
+    beim naechsten Mal nicht mehr."""
+    guard = Guard(config, store, clock=clock)
+    normalbetrieb(store, clock.now)
+
+    sauber = guard.anomaly.learn_and_store(days=7)
+
+    for index in range(300):
+        store.record_attempt("203.0.113.250", Event.LOGIN_FAILURE,
+                             route=f"/x{index}", ts=clock.now - 3 * 86400 + index * 10)
+    guard.block("203.0.113.250", seconds=3600)
+    danach = guard.anomaly.learn_and_store(days=7)
+
+    assert danach.ausgeschlossen == 1
+    # Der Angriff hat den Normalzustand nicht verschoben.
+    assert danach.ereignisse_je_ip_median == sauber.ereignisse_je_ip_median
+    assert "203.0.113.250" not in danach.bekannte_pfade

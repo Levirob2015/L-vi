@@ -203,9 +203,11 @@ def _handler_factory(guard: Guard, config: DashboardConfig):
                 return {"ready": False, "reason": status.get("reason", ""),
                         "reports": []}
             berichte = guard.anomaly.cached_scan(window=hours * 3600)
+            gesamt = guard.anomaly.global_report(window=hours * 3600)
             return {
                 "ready": True,
                 "baseline": status,
+                "global": gesamt.as_dict() if gesamt.signals else None,
                 "reports": [r.as_dict() for r in berichte],
             }
 
@@ -612,11 +614,14 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
         "Noch keine Grundlinie gelernt (loginshield learn).";
       return;
     }
+    var gesamt = data["global"];
     if (!data.reports.length) {
       table.hidden = true;
-      note.textContent = "Nichts Auffaelliges. Grundlinie: " +
-        data.baseline.events + " Ereignisse von " + data.baseline.addresses +
-        " Adressen.";
+      note.textContent = gesamt
+        ? "Gesamtlage " + gesamt.score + "/100: " + gesamt.summary +
+          " - keine einzelne Adresse faellt auf."
+        : "Nichts Auffaelliges. Grundlinie: " + data.baseline.events +
+          " Ereignisse von " + data.baseline.addresses + " Adressen.";
       return;
     }
     note.textContent = data.reports.length +

@@ -502,11 +502,17 @@ class Store:
             ).fetchone()
         return row["value"] if row else None
 
-    def profile_by_ip(self, since: float, until: Optional[float] = None) -> Dict[str, dict]:
+    #: Hoechstens so viele Zeitstempel je Adresse - begrenzt den Speicher
+    #: bei einem Ansturm, reicht fuer die Takt-Analyse voellig aus.
+    MAX_TIMESTAMPS = 500
+
+    def profile_by_ip(self, since: float, until: Optional[float] = None,
+                      exclude: Optional[set] = None) -> Dict[str, dict]:
         """Fasst je Adresse zusammen, was sie im Zeitraum getan hat.
 
         Grundlage sowohl fuer das Lernen des Normalzustands als auch fuer
-        die Bewertung einzelner Adressen.
+        die Bewertung einzelner Adressen. ``exclude`` laesst Adressen aus -
+        so lernt die Grundlinie nur aus sauberem Verkehr.
         """
         clauses = ["ts > ?"]
         params: List[object] = [since]
@@ -518,14 +524,26 @@ class Store:
         with self._lock:
             rows = self._conn.execute(sql, params).fetchall()
 
+        exclude = exclude or set()
         profile: Dict[str, dict] = {}
         for row in rows:
+            if row["ip"] in exclude:
+                continue
             entry = profile.setdefault(row["ip"], {
                 "events": 0, "failures": 0, "successes": 0,
                 "routes": set(), "agents": set(), "identities": set(),
                 "hours": set(), "first_ts": row["ts"], "last_ts": row["ts"],
+                # Zaehler je Pfad und Zeitstempel: Grundlage fuer die
+                # Streuungs- und Takt-Analyse.
+                "route_counts": {}, "timestamps": [],
             })
             entry["events"] += 1
+            if len(entry["timestamps"]) < self.MAX_TIMESTAMPS:
+                entry["timestamps"].append(row["ts"])
+            if row["route"]:
+                entry["route_counts"][row["route"]] = (
+                    entry["route_counts"].get(row["route"], 0) + 1
+                )
             if row["event"] == Event.LOGIN_FAILURE:
                 entry["failures"] += 1
             elif row["event"] == Event.LOGIN_SUCCESS:

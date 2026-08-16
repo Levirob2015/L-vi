@@ -67,6 +67,7 @@ dem richtigen Passwort.
 | **Netzsperre** | Mehrere gesperrte IPs aus demselben Adressblock | 4 IPs / 1 Std |
 | **Angriffsmuster** | SQL-Injection, Path Traversal, Log4Shell, Scanner | ab 8 Punkten |
 | **Anomalie** | Verhalten, das für *diesen* Server unüblich ist | ab 40/100 |
+| **Verteilter Angriff** | Viele Adressen, jede für sich unauffällig | Gesamtsicht |
 
 Spraying braucht eine eigene Regel: Wer pro Konto nur zwei Passwörter probiert,
 löst die klassische Fehlversuchs-Schwelle nie aus – über zwanzig Konten hinweg
@@ -539,18 +540,55 @@ er entstand, jeweils mit Beobachtung und Erwartung. Ein Test stellt sicher,
 dass der Punktwert genau die Summe der genannten Signale ist – nichts
 Verstecktes.
 
-### Acht Signale
+### Zehn Signale je Adresse
 
 | Signal | Erkennt |
 |---|---|
 | `volumen` | ungewöhnlich viele Zugriffe |
 | `pfadvielfalt` | Abklappern vieler Seiten |
+| `pfadstreuung` | jede Seite genau einmal – ein Besucher kehrt zurück |
 | `neue_pfade` | Pfade, die es hier noch nie gab |
 | `fehlerquote` | Fehlversuchsanteil weit über dem Normalen |
 | `kontenvielfalt` | viele verschiedene Konten |
 | `kennung` | unbekanntes Programm |
 | `uhrzeit` | Aktivität zu sonst stillen Zeiten |
-| `takt` | maschinell gleichmäßiger Rhythmus |
+| `takt` | maschinell hohe Geschwindigkeit |
+| `regelmäßigkeit` | unmenschlich gleichmäßiger **Rhythmus** |
+
+`regelmäßigkeit` ist dabei die schärfere Frage als `takt`: Ein Programm, das
+alle 30 Sekunden anfragt, ist langsam – aber es schwankt um 0 %, während ein
+Mensch um 90 % schwankt. Über die Geschwindigkeit allein wäre es nie
+aufgefallen.
+
+### Die Gesamtsicht: verteilte Angriffe
+
+Der blinde Fleck jeder Einzelbewertung: Verteilen 200 Adressen je fünf
+Fehlversuche unter sich auf, ist **keine davon** auffällig. In der Summe ist
+es trotzdem ein Angriff. Deshalb gibt es eine zweite Sicht auf den Server als
+Ganzes:
+
+```
+$ loginshield anomalies
+  GESAMTLAGE   100/100   [kritisch]
+     - 1000 Fehlversuche in 1.0h - üblich sind 2 pro Stunde     (+40)
+     - 200 verschiedene Adressen mit Fehlversuchen - üblich 1   (+35)
+     - 100% aller Anfragen sind Fehlversuche - üblich sind 14%  (+25)
+
+  Keine einzelne Adresse fällt auf - der Angriff ist auf viele verteilt.
+```
+
+### Und was sie *nicht* meldet
+
+Drei Vorkehrungen gegen Fehlalarme, die genauso wichtig sind wie die
+Erkennung:
+
+* **Beweislast.** Wer nur drei Zugriffe erzeugt hat, kann nicht „kritisch"
+  sein – der Punktwert wird anteilig gedämpft (`min_evidence`).
+* **Saubere Grundlinie.** Adressen, die im Lernzeitraum gesperrt wurden,
+  fließen nicht ein. Sonst lernt das System den Angriff als normal und
+  erkennt ihn beim nächsten Mal nicht mehr.
+* **Nur Stunden mit Betrieb** zählen für die Erwartung. Sonst zieht jede
+  stille Nacht den Vergleichswert auf null.
 
 Die Gewichtung jedes Signals lässt sich in der Konfiguration anpassen.
 
@@ -739,7 +777,7 @@ Was das System **nicht** leistet, damit die Erwartung stimmt:
 
 ```bash
 pip install pytest
-python -m pytest -q      # 344 Tests
+python -m pytest -q      # 353 Tests
 ```
 
 Abgedeckt sind unter anderem: Erkennungsregeln und Eskalation, Honeypot in
