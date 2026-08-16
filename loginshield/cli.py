@@ -57,6 +57,12 @@ rules:
   request_limit: 60              # Requests pro IP ...
   request_window: 60             # ... pro Minute
   rate_limit_strikes: 20         # so oft darf das Limit reissen, dann Sperre
+  subnet_enabled: true           # Netzsperre gegen Botnetze
+  subnet_threshold: 4            # so viele gesperrte IPs aus einem Block ...
+  subnet_window: 3600            # ... in diesem Zeitraum -> ganzes Netz sperren
+  subnet_prefix_v4: 24           # Groesse des gesperrten Blocks (IPv4)
+  subnet_prefix_v6: 64
+  subnet_block_seconds: 21600    # 6 Stunden
   block_base_seconds: 900        # erste Sperre: 15 Minuten
   block_max_seconds: 86400       # Obergrenze: 24 Stunden
   block_escalation_factor: 2.0   # jede weitere Sperre dauert doppelt so lang
@@ -177,8 +183,9 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("--json", action="store_true")
     status.set_defaults(handler=cmd_status)
 
-    block = subparsers.add_parser("block", help="IP sperren")
-    block.add_argument("ip")
+    block = subparsers.add_parser("block", help="IP oder ganzes Netz sperren")
+    block.add_argument("ip", metavar="IP-ODER-NETZ",
+                       help="Einzelne Adresse oder CIDR, z.B. 203.0.113.0/24")
     block.add_argument("--minutes", type=float, default=None,
                        help="Dauer (Standard: eskalierende Dauer aus der Konfiguration)")
     block.add_argument("--reason", default=Reason.MANUAL)
@@ -187,7 +194,7 @@ def build_parser() -> argparse.ArgumentParser:
     block.set_defaults(handler=cmd_block)
 
     unblock = subparsers.add_parser("unblock", help="Sperre aufheben")
-    unblock.add_argument("ip")
+    unblock.add_argument("ip", metavar="IP-ODER-NETZ")
     unblock.set_defaults(handler=cmd_unblock)
 
     check = subparsers.add_parser("check", help="Status einer IP abfragen")
@@ -232,6 +239,9 @@ def build_parser() -> argparse.ArgumentParser:
                                  help="Von der Firewall gesperrte IPs anzeigen")
     firewall_action.add_argument("--clear", action="store_true",
                                  help="Alle eigenen Firewall-Eintraege entfernen")
+    firewall_action.add_argument("--selftest", action="store_true",
+                                 help="Sperren, nachsehen, entsperren - prueft die "
+                                      "Anbindung an einer Testadresse")
     firewall.add_argument("--dry-run", action="store_true",
                           help="Nur anzeigen, was ausgefuehrt wuerde")
     firewall.add_argument("--yes", action="store_true",
@@ -440,10 +450,15 @@ def cmd_status(args) -> int:
             now = guard.clock()
             print("\nAktive Sperren")
             rows = [
-                [b.ip, b.reason, _fmt_duration(b.remaining(now)), b.strikes]
+                [
+                    b.ip + ("  (ganzes Netz)" if b.is_network else ""),
+                    b.reason,
+                    _fmt_duration(b.remaining(now)),
+                    b.strikes,
+                ]
                 for b in blocks
             ]
-            print(_table(rows, ["IP", "Grund", "Rest", "Stufe"]))
+            print(_table(rows, ["Ziel", "Grund", "Rest", "Stufe"]))
         return 0
     finally:
         guard.close()
@@ -652,6 +667,21 @@ def cmd_firewall(args) -> int:
             print(f"  {ip}")
         return 0
 
+    if args.selftest:
+        print("Selbsttest der Firewall-Anbindung")
+        print("=" * 46)
+        for hinweis in firewall.diagnose():
+            print(f"  ! {hinweis}")
+        ok, schritte = firewall.selftest()
+        for schritt in schritte:
+            print(f"  {'+' if ok else '-'} {schritt}")
+        print()
+        if ok:
+            print("Ergebnis: Die Firewall-Anbindung funktioniert.")
+            return 0
+        print("Ergebnis: Die Anbindung funktioniert NICHT.", file=sys.stderr)
+        return 1
+
     if args.clear:
         blocked = firewall.list_blocked()
         if not args.yes:
@@ -675,8 +705,14 @@ def cmd_firewall(args) -> int:
     if status.dry_run:
         print("  Trockenlauf       ja (es wird nichts wirklich gesperrt)")
     print(f"  Eintraege         {len(status.blocked)}")
-    if status.note:
+
+    hinweise = firewall.diagnose()
+    for hinweis in hinweise:
+        print(f"\n  ! {hinweis}")
+    if not hinweise and status.note:
         print(f"\n  Hinweis: {status.note}")
+    if status.ready:
+        print("\n  Pruefen mit: loginshield firewall --selftest")
     if not was_enabled:
         print("\n  Die Firewall ist in der Konfiguration nicht aktiv.")
         print("  Sperren gelten derzeit nur innerhalb der Anwendung.")

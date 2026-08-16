@@ -58,6 +58,16 @@ class RuleConfig:
     #: 0 = nie sperren, nur ausbremsen.
     rate_limit_strikes: int = 20
 
+    #: Netzsperre: Weicht ein Angreifer nach der Sperre auf die Nachbar-IP
+    #: aus, wird das ganze Netz gesperrt. Greift erst, wenn so viele
+    #: verschiedene IPs aus demselben Block gesperrt werden mussten.
+    subnet_enabled: bool = True
+    subnet_threshold: int = 4
+    subnet_window: int = 3600
+    subnet_prefix_v4: int = 24
+    subnet_prefix_v6: int = 64
+    subnet_block_seconds: int = 21600  # 6 Stunden
+
     #: Sperrdauer: base * factor**(fruehere Sperren), gedeckelt auf max.
     block_base_seconds: int = 900
     block_max_seconds: int = 86400
@@ -86,6 +96,17 @@ class RuleConfig:
             raise ConfigError("rules.block_escalation_factor muss >= 1 sein")
         if self.identity_action not in ("throttle", "lock", "off"):
             raise ConfigError("rules.identity_action muss throttle, lock oder off sein")
+        if self.subnet_threshold < 2:
+            raise ConfigError(
+                "rules.subnet_threshold muss mindestens 2 sein - bei 1 wuerde "
+                "schon eine einzelne IP ein ganzes Netz sperren"
+            )
+        if not 8 <= self.subnet_prefix_v4 <= 32:
+            raise ConfigError("rules.subnet_prefix_v4 muss zwischen 8 und 32 liegen")
+        if not 16 <= self.subnet_prefix_v6 <= 128:
+            raise ConfigError("rules.subnet_prefix_v6 muss zwischen 16 und 128 liegen")
+        if self.subnet_window <= 0 or self.subnet_block_seconds <= 0:
+            raise ConfigError("rules.subnet_window/-block_seconds muessen > 0 sein")
 
 
 @dataclass

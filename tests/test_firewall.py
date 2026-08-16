@@ -400,3 +400,85 @@ def test_echtes_nftables_end_to_end():
         assert "203.0.113.5" not in firewall.list_blocked()
     finally:
         firewall.clear()
+
+
+# -- Diagnose und Selbsttest --------------------------------------------
+def test_diagnose_ohne_backend(monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda binary: None)
+    firewall, _ = make(backend="auto")
+    hinweise = " ".join(firewall.diagnose())
+    assert "Kein Firewall-Backend" in hinweise
+
+
+def test_diagnose_meldet_fehlendes_werkzeug(monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda binary: None)
+    firewall, _ = make("nftables")
+    assert "nicht installiert" in " ".join(firewall.diagnose())
+
+
+def test_diagnose_meldet_fehlende_rechte(monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda binary: "/usr/sbin/nft")
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)
+    firewall, _ = make("nftables")
+    assert "nicht als root" in " ".join(firewall.diagnose())
+
+
+def test_diagnose_meldet_trockenlauf(monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda binary: "/usr/sbin/nft")
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    firewall, _ = make("nftables", dry_run=True)
+    assert "Trockenlauf" in " ".join(firewall.diagnose())
+
+
+def test_diagnose_warnt_bei_fehlendem_ablauf(monkeypatch):
+    # iptables kennt keine ablaufenden Regeln - darauf muss hingewiesen werden.
+    monkeypatch.setattr(shutil, "which", lambda binary: "/sbin/iptables")
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    firewall, _ = make("iptables")
+    assert "nicht selbst ablaufen" in " ".join(firewall.diagnose())
+
+
+def test_selftest_erfolgreich():
+    zustand = {"gesperrt": []}
+
+    def runner(argv, timeout=10):
+        text = " ".join(argv)
+        if "add element" in text:
+            zustand["gesperrt"].append("192.0.2.201")
+        elif "delete element" in text:
+            zustand["gesperrt"] = []
+        elif "list set" in text and "blocked4" in text:
+            inhalt = ("elements = { 192.0.2.201 timeout 1m }"
+                      if zustand["gesperrt"] else "")
+            return CommandResult(argv, 0, inhalt, "")
+        return CommandResult(argv, 0, "", "")
+
+    firewall = Firewall(FirewallConfig(enabled=True, backend="nftables"), runner)
+    ok, schritte = firewall.selftest()
+    assert ok is True
+    assert "funktioniert" in schritte[-1]
+
+
+def test_selftest_erkennt_wirkungsloses_kommando():
+    # Kommando meldet Erfolg, die Sperre taucht aber nirgends auf -
+    # genau der Fall, den man sonst erst beim echten Angriff bemerkt.
+    firewall = Firewall(FirewallConfig(enabled=True, backend="nftables"), FakeRunner())
+    ok, schritte = firewall.selftest()
+    assert ok is False
+    assert "taucht nicht in der Firewall auf" in " ".join(schritte)
+
+
+def test_selftest_verweigert_trockenlauf():
+    firewall, _ = make("nftables", dry_run=True)
+    ok, schritte = firewall.selftest()
+    assert ok is False
+    assert "Trockenlauf" in schritte[0]
+
+
+def test_selftest_fasst_echte_sperre_nicht_an():
+    output = "elements = { 192.0.2.201 timeout 15m }"
+    runner = FakeRunner({"list set": CommandResult([], 0, output, "")})
+    firewall = Firewall(FirewallConfig(enabled=True, backend="nftables"), runner)
+    ok, schritte = firewall.selftest()
+    assert ok is False
+    assert "bereits gesperrt" in schritte[0]

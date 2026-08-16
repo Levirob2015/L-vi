@@ -57,10 +57,19 @@ dem richtigen Passwort.
 | **Gezielter Kontoangriff** | Viele Fehlversuche gegen *ein* Konto, verteilt über viele IPs | 10 Versuche / 15 Min |
 | **Request-Flut** | Zu viele Anfragen pro IP (unabhängig vom Login) | 60 / Min |
 | **Honeypot** | Zugriff auf eine vorgetäuschte Schwachstelle | **1 Treffer** |
+| **Netzsperre** | Mehrere gesperrte IPs aus demselben Adressblock | 4 IPs / 1 Std |
 
 Spraying braucht eine eigene Regel: Wer pro Konto nur zwei Passwörter probiert,
 löst die klassische Fehlversuchs-Schwelle nie aus – über zwanzig Konten hinweg
 ist es trotzdem ein Angriff.
+
+**Die Netzsperre** ist die Antwort auf Botnetze: Wird eine IP gesperrt, kommt
+die nächste Anfrage oft vom Nachbarn im selben Adressblock. Häufen sich die
+Sperren dort, wird der ganze Block gesperrt (`/24` bei IPv4, `/64` bei IPv6) –
+inklusive Adressen, die noch gar nicht aufgefallen sind.
+
+Ein Netz, das eine Adresse deiner Allowlist enthält, wird dabei **nie**
+gesperrt. Sonst sperrt ein einziges `/24` das eigene Büro mit aus.
 
 **Sperrdauer steigt an:** erste Sperre 15 Minuten, dann 30, 60, 120 … bis
 maximal 24 Stunden. Frühere Sperren zählen 7 Tage lang mit. Ein hartnäckiger
@@ -328,11 +337,30 @@ ausgesperrt, dessen Sperre längst abgelaufen ist.
 
 ```
 loginshield firewall --status       Backend und Zustand anzeigen
+loginshield firewall --selftest     Anbindung an einer Testadresse prüfen
 loginshield firewall --setup        Tabelle/Kette anlegen
 loginshield firewall --sync         aktive Sperren übertragen
 loginshield firewall --list         gesperrte IPs in der Firewall
 loginshield firewall --clear --yes  nur die eigenen Einträge entfernen
 ```
+
+### Funktioniert es wirklich?
+
+Das ist die Frage, die man sonst erst beim ersten echten Angriff beantwortet
+bekommt. `--selftest` sperrt eine Testadresse aus dem Dokumentationsbereich,
+sieht in der Firewall nach, ob sie angekommen ist, und entfernt sie wieder:
+
+```
+$ loginshield firewall --selftest
+  + 192.0.2.201 gesperrt
+  + in der Firewall wiedergefunden
+  + wieder entsperrt
+  + Rückstandsfrei – die Anbindung funktioniert.
+```
+
+Schlägt ein Schritt fehl, steht dort warum. `--status` weist außerdem von
+sich aus auf die häufigen Stolpersteine hin: fehlendes Werkzeug, fehlende
+Root-Rechte, nicht eingerichtete Tabelle, aktiver Trockenlauf.
 
 Jeder Befehl versteht `--dry-run`: Dann werden die Kommandos nur angezeigt,
 das System bleibt unverändert.
@@ -370,9 +398,10 @@ loginshield honeypot --credentials     untergeschobene Zugangsdaten zeigen
 loginshield firewall --status          Firewall-Anbindung pruefen
 loginshield firewall --setup           Firewall einrichten
 loginshield firewall --sync            Sperren in die Firewall schreiben
+loginshield firewall --selftest        prueft die Anbindung an einer Testadresse
 loginshield status [--hours 24]        Lage-Überblick im Terminal
 loginshield check IP                   Status einer IP abfragen
-loginshield block IP [--minutes 60]    IP manuell sperren
+loginshield block IP|CIDR [--minutes]  IP oder ganzes Netz sperren
 loginshield unblock IP                 Sperre aufheben
 loginshield allow add|remove|list      Allowlist verwalten
 loginshield export --format csv        Ereignisse exportieren
@@ -410,6 +439,8 @@ rules:
   block_base_seconds: 900
   block_escalation_factor: 2.0
   identity_action: throttle   # throttle | lock | off
+  subnet_enabled: true        # Netzsperre gegen Botnetze
+  subnet_threshold: 4         # so viele gesperrte IPs -> ganzes /24 sperren
 
 honeypot:
   enabled: true
@@ -509,7 +540,7 @@ zuerst mit `loginshield demo` oder der Beispiel-App.
 
 ```bash
 pip install pytest
-python -m pytest -q      # 221 Tests
+python -m pytest -q      # 255 Tests
 ```
 
 Abgedeckt sind unter anderem: Erkennungsregeln und Eskalation, Honeypot in

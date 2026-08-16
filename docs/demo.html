@@ -220,8 +220,19 @@ button {
   border-radius: 7px;
   padding: 7px 13px;
   cursor: pointer;
+  /* Verhindert die 300ms-Verzoegerung beim Antippen auf Touchgeraeten. */
+  touch-action: manipulation;
   transition: border-color .15s, color .15s, background .15s;
 }
+
+/* Auf Touchgeraeten brauchen die Flaechen mehr Hoehe, sonst geht ein
+   Tippen leicht daneben. */
+@media (pointer: coarse) {
+  button { min-height: 46px; padding: 11px 16px; font-size: 13.5px; }
+  button.tiny { min-height: 38px; }
+}
+
+button:active { transform: translateY(1px); }
 
 button:hover:not(:disabled) {
   border-color: var(--accent);
@@ -948,24 +959,33 @@ window.onerror = function (message) {
   }
 
   // ---------- Angriffsabläufe ----------
+  // Die Knoepfe werden bewusst NIE gesperrt. Frueher setzte ein laufender
+  // Ablauf sie auf disabled - brach er ab, blieben sie es fuer immer und
+  // es liess sich gar nichts mehr starten. Jetzt bricht ein Klick den
+  // laufenden Ablauf ab und beginnt neu.
+  function beginn(label) {
+    clearTimers();
+    running = true;
+    document.getElementById("hint").textContent = label;
+  }
+
   function busy(on, label) {
     running = on;
-    ["run-brute", "run-spray", "run-trap"].forEach(function (id) {
-      document.getElementById(id).disabled = on;
-    });
     if (label) { document.getElementById("hint").textContent = label; }
   }
 
   function bruteForce() {
-    if (running) { return; }
-    busy(true, "Ein Angreifer probiert Passwörter für dasselbe Konto durch …");
+    beginn("Ein Angreifer probiert Passwörter für dasselbe Konto durch …");
     var step = reduce ? 240 : 720;
 
-    for (var i = 1; i <= 4; i++) {
+    // Der erste Versuch sofort: ein Klick muss immer sichtbar etwas tun.
+    addEvent("fail", ATTACKER, "admin", "Fehlversuch 1 von 5");
+
+    for (var i = 2; i <= 4; i++) {
       (function (n) {
         later(function () {
           addEvent("fail", ATTACKER, "admin", "Fehlversuch " + n + " von 5");
-        }, step * n);
+        }, step * (n - 1));
       })(i);
     }
 
@@ -974,28 +994,29 @@ window.onerror = function (message) {
       addBlock(ATTACKER, "brute_force_ip", 900, 0);
       document.getElementById("hint").textContent =
         "Gesperrt. Weitere Versuche kommen jetzt gar nicht mehr bis zur Passwortprüfung.";
-    }, step * 5);
+    }, step * 4);
 
     later(function () {
       addEvent("deny", ATTACKER, "admin", "Abgewiesen – IP gesperrt (HTTP 403)");
-    }, step * 6.4);
+    }, step * 5.4);
 
     later(function () {
       addEvent("deny", ATTACKER, "admin", "Abgewiesen – auch mit richtigem Passwort");
       busy(false);
-    }, step * 7.6);
+    }, step * 6.6);
   }
 
   function spraying() {
-    if (running) { return; }
-    busy(true, "Eine IP probiert je zwei Passwörter für viele verschiedene Konten …");
+    beginn("Eine IP probiert je zwei Passwörter für viele verschiedene Konten …");
     var step = reduce ? 220 : 640;
 
-    for (var i = 0; i < 4; i++) {
+    addEvent("fail", SPRAYER, USERS[0], "Fehlversuch – Konto 1 von vielen");
+
+    for (var i = 1; i < 4; i++) {
       (function (n) {
         later(function () {
           addEvent("fail", SPRAYER, USERS[n], "Fehlversuch – Konto " + (n + 1) + " von vielen");
-        }, step * (n + 1));
+        }, step * n);
       })(i);
     }
 
@@ -1005,18 +1026,15 @@ window.onerror = function (message) {
       document.getElementById("hint").textContent =
         "Erkannt. Pro Konto waren es nur zwei Versuche – die normale Schwelle hätte das nie ausgelöst.";
       busy(false);
-    }, step * 5);
+    }, step * 4);
   }
 
   function honeypot() {
-    if (running) { return; }
-    busy(true, "Ein Scanner sucht nach bekannten Schwachstellen …");
+    beginn("Ein Scanner sucht nach bekannten Schwachstellen …");
     var step = reduce ? 260 : 780;
 
-    later(function () {
-      addEvent("trap", SCANNER, "–", "GET /.env – Köderdatei ausgeliefert (HTTP 200)");
-      addBlock(SCANNER, "honeypot_path", 86400, 0);
-    }, step);
+    addEvent("trap", SCANNER, "–", "GET /.env – Köderdatei ausgeliefert (HTTP 200)");
+    addBlock(SCANNER, "honeypot_path", 86400, 0);
 
     later(function () {
       addEvent("trap", SCANNER, "svc_backup",
@@ -1024,7 +1042,7 @@ window.onerror = function (message) {
       document.getElementById("hint").textContent =
         "Ein einziger Treffer genügt: 24 Stunden Sperre, ohne dass je ein Passwort geraten wurde.";
       busy(false);
-    }, step * 2.4);
+    }, step * 1.4);
   }
 
   // ---------- Darstellung ----------

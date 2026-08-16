@@ -30,6 +30,7 @@ class Reason:
     BRUTE_FORCE_IP = "brute_force_ip"
     CREDENTIAL_SPRAY = "credential_spray"
     RATE_LIMIT_ABUSE = "rate_limit_abuse"
+    SUBNET_ABUSE = "subnet_abuse"      # ganzes Netz statt Einzel-IP
     MANUAL = "manual"
 
     # Honeypot: kein Schwellwert noetig, ein einziger Treffer genuegt
@@ -123,6 +124,8 @@ class Block:
     strikes: int = 0
     active: bool = True
     detail: str = ""
+    #: True = die Sperre gilt fuer ein ganzes Netz (CIDR), nicht eine Adresse.
+    is_network: bool = False
     meta: dict = field(default_factory=dict)
 
     def remaining(self, now: float) -> int:
@@ -138,6 +141,7 @@ class Block:
             "strikes": self.strikes,
             "active": self.active,
             "detail": self.detail,
+            "is_network": self.is_network,
         }
         if now is not None:
             data["remaining"] = self.remaining(now)

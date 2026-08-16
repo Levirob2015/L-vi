@@ -31,14 +31,15 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+import os
 import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Sequence
+from typing import Callable, List, Optional, Sequence, Tuple
 
 from .config import FirewallConfig
-from .netutils import parse_ip
+from .netutils import is_network, parse_ip, parse_target
 
 log = logging.getLogger("loginshield.firewall")
 
@@ -185,11 +186,19 @@ class NftablesBackend(Backend):
     def table(self) -> str:
         return self.config.table
 
-    def _set_for(self, ip: str) -> Optional[str]:
-        address = parse_ip(ip)
+    def _set_for(self, target: str) -> Optional[str]:
+        """Waehlt das passende Set: je Adressfamilie und Einzel-IP vs. Netz.
+
+        Netze brauchen ein Set mit ``flags interval`` - ein normales Set
+        nimmt nur einzelne Adressen auf.
+        """
+        network = is_network(target)
+        address = parse_ip(target.split("/")[0])
         if address is None:
             return None
-        return "blocked4" if address.version == 4 else "blocked6"
+        if address.version == 4:
+            return "netzwerk4" if network else "blocked4"
+        return "netzwerk6" if network else "blocked6"
 
     def setup_commands(self) -> List[List[str]]:
         table = self.table
@@ -199,6 +208,11 @@ class NftablesBackend(Backend):
              "{ type ipv4_addr; flags timeout; }"],
             ["nft", "add", "set", "inet", table, "blocked6",
              "{ type ipv6_addr; flags timeout; }"],
+            # Eigene Sets fuer ganze Netze - 'interval' erlaubt CIDR-Eintraege.
+            ["nft", "add", "set", "inet", table, "netzwerk4",
+             "{ type ipv4_addr; flags interval, timeout; }"],
+            ["nft", "add", "set", "inet", table, "netzwerk6",
+             "{ type ipv6_addr; flags interval, timeout; }"],
             # Eigene Kette mit Prioritaet -10: greift vor den ueblichen
             # filter-Regeln (Prioritaet 0), aendert diese aber nicht.
             ["nft", "add", "chain", "inet", table, "input",
@@ -207,6 +221,10 @@ class NftablesBackend(Backend):
              "ip", "saddr", "@blocked4", "drop"],
             ["nft", "add", "rule", "inet", table, "input",
              "ip6", "saddr", "@blocked6", "drop"],
+            ["nft", "add", "rule", "inet", table, "input",
+             "ip", "saddr", "@netzwerk4", "drop"],
+            ["nft", "add", "rule", "inet", table, "input",
+             "ip6", "saddr", "@netzwerk6", "drop"],
         ]
 
     def is_ready(self) -> bool:
@@ -234,7 +252,7 @@ class NftablesBackend(Backend):
 
     def list_blocked(self) -> List[str]:
         found: List[str] = []
-        for set_name in ("blocked4", "blocked6"):
+        for set_name in ("blocked4", "blocked6", "netzwerk4", "netzwerk6"):
             result = self._run(
                 self._argv("nft", "list", "set", "inet", self.table, set_name),
                 self.config.timeout,
@@ -248,9 +266,9 @@ class NftablesBackend(Backend):
                 entry = entry.strip()
                 if not entry:
                     continue
-                address = parse_ip(entry.split()[0])
-                if address is not None:
-                    found.append(str(address))
+                target = parse_target(entry.split()[0])
+                if target is not None:
+                    found.append(target)
         return found
 
     def clear(self) -> bool:
@@ -272,8 +290,10 @@ class IptablesBackend(Backend):
     def chain(self) -> str:
         return self.config.table.upper()
 
-    def _binary_for(self, ip: str) -> Optional[str]:
-        address = parse_ip(ip)
+    def _binary_for(self, target: str) -> Optional[str]:
+        # Auch eine CIDR-Angabe muss die richtige Adressfamilie treffen -
+        # deshalb vor dem Parsen die Praefixlaenge abschneiden.
+        address = parse_ip(str(target).split("/")[0])
         if address is None:
             return None
         return "iptables" if address.version == 4 else "ip6tables"
@@ -479,18 +499,35 @@ class Firewall:
         return self.backend.name
 
     def _safe_ip(self, ip: str) -> Optional[str]:
-        address = parse_ip(ip)
-        if address is None:
-            log.warning("Firewall-Kommando uebersprungen, ungueltige IP: %r", ip)
+        """Prueft eine IP oder ein Netz, bevor es an die Firewall geht."""
+        target = parse_target(ip)
+        if target is None:
+            log.warning("Firewall-Kommando uebersprungen, ungueltige Angabe: %r", ip)
             return None
+
+        address = parse_ip(target.split("/")[0])
+        if address is None:  # pragma: no cover - von parse_target abgedeckt
+            return None
+
+        # Weder die Loopback-Adresse selbst noch ein Netz, das sie enthaelt.
         for network in NEVER_BLOCK:
-            if address.version == network.version and address in network:
+            if address.version != network.version:
+                continue
+            if address in network:
                 log.warning(
                     "Firewall-Sperre fuer %s abgelehnt: eigene Adresse des Servers",
-                    address,
+                    target,
                 )
                 return None
-        return str(address)
+            if is_network(target):
+                import ipaddress as _ip
+                if _ip.ip_network(target, strict=False).overlaps(network):
+                    log.warning(
+                        "Firewall-Sperre fuer %s abgelehnt: enthaelt die eigene "
+                        "Adresse des Servers", target,
+                    )
+                    return None
+        return target
 
     def block(self, ip: str, seconds: int) -> bool:
         if not self.enabled:
@@ -536,6 +573,109 @@ class Firewall:
             blocked=self.list_blocked() if ready else [],
             note=note,
         )
+
+    def diagnose(self) -> List[str]:
+        """Sucht die haeufigen Stolpersteine und benennt sie konkret.
+
+        Ohne das bekommt man im Fehlerfall nur ein stilles 'hat nicht
+        geklappt' im Log - und sucht an der falschen Stelle.
+        """
+        hinweise: List[str] = []
+
+        if isinstance(self.backend, NullBackend):
+            hinweise.append(
+                "Kein Firewall-Backend gefunden. Installiere nftables, iptables "
+                "oder ufw - oder setze firewall.backend auf 'command'."
+            )
+            return hinweise
+
+        if not self.backend.available():
+            hinweise.append(
+                f"'{self.backend.binary}' ist nicht installiert oder nicht im PATH."
+            )
+            return hinweise
+
+        # Rechte pruefen: nft/iptables brauchen root oder CAP_NET_ADMIN.
+        if hasattr(os, "geteuid") and os.geteuid() != 0 and not self.config.sudo:
+            hinweise.append(
+                "Der Dienst laeuft nicht als root und firewall.sudo ist aus. "
+                "Firewall-Kommandos werden vermutlich an fehlenden Rechten "
+                "scheitern - entweder als root starten oder sudo: true setzen "
+                "und 'nft' in /etc/sudoers.d/ gezielt freigeben."
+            )
+
+        if not self.backend.is_ready():
+            hinweise.append(
+                "Die eigene Tabelle bzw. Kette fehlt noch: "
+                "'loginshield firewall --setup' ausfuehren."
+            )
+
+        if self.config.dry_run:
+            hinweise.append(
+                "Trockenlauf ist aktiv (firewall.dry_run) - es wird nichts "
+                "wirklich gesperrt."
+            )
+
+        if not self.backend.supports_timeout:
+            hinweise.append(
+                f"{self.backend.name} laesst Sperren nicht selbst ablaufen. "
+                "LoginShield muss dafuer laufen - sonst bleiben Eintraege "
+                "haengen. 'loginshield prune' per Cron hilft."
+            )
+
+        return hinweise
+
+    def selftest(self, probe: str = "192.0.2.201") -> Tuple[bool, List[str]]:
+        """Prueft die gesamte Kette an einer Testadresse.
+
+        Sperren, nachsehen, wieder entsperren - damit steht fest, ob die
+        Anbindung auf diesem Rechner wirklich funktioniert, statt es erst
+        beim ersten echten Angriff zu merken.
+
+        ``probe`` liegt standardmaessig in 192.0.2.0/24 (RFC 5737): eine
+        Adresse, die nirgendwohin fuehrt und niemandem gehoert.
+        """
+        schritte: List[str] = []
+
+        if self.config.dry_run:
+            return False, ["Trockenlauf ist aktiv - ein Selbsttest waere ohne Aussage."]
+        if isinstance(self.backend, NullBackend):
+            return False, ["Kein Backend aktiv."]
+        if not self.backend.available():
+            return False, [f"'{self.backend.binary}' ist nicht verfuegbar."]
+
+        war_schon_da = probe in self.backend.list_blocked()
+        if war_schon_da:
+            return False, [f"{probe} ist bereits gesperrt - Test abgebrochen, "
+                           f"um eine echte Sperre nicht zu beschaedigen."]
+
+        if not self.backend.is_ready():
+            schritte.append("Struktur fehlte, wird angelegt ...")
+            if not self.backend.setup():
+                return False, schritte + ["Einrichtung fehlgeschlagen (Rechte?)."]
+
+        if not self.backend.block(probe, 60):
+            return False, schritte + [f"Sperren von {probe} fehlgeschlagen."]
+        schritte.append(f"{probe} gesperrt")
+
+        gefunden = probe in self.backend.list_blocked()
+        if not gefunden:
+            self.backend.unblock(probe)
+            return False, schritte + [
+                "Die Sperre taucht nicht in der Firewall auf - das Kommando "
+                "lief durch, hat aber nicht gewirkt."
+            ]
+        schritte.append("in der Firewall wiedergefunden")
+
+        if not self.backend.unblock(probe):
+            return False, schritte + [f"Entsperren von {probe} fehlgeschlagen - "
+                                      f"bitte von Hand entfernen."]
+        schritte.append("wieder entsperrt")
+
+        if probe in self.backend.list_blocked():
+            return False, schritte + [f"{probe} ist noch immer gesperrt."]
+        schritte.append("Rueckstandsfrei - die Anbindung funktioniert.")
+        return True, schritte
 
     def sync(self, active: Sequence, now: float) -> dict:
         """Gleicht die Firewall mit den aktiven Sperren ab.

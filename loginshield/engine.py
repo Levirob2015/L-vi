@@ -28,7 +28,16 @@ from .config import Config
 from .firewall import Firewall
 from .honeypot import Honeypot
 from .models import Block, Decision, Event, Reason
-from .netutils import client_ip, ip_in_networks, normalize_ip, parse_networks
+from .netutils import (
+    client_ip,
+    ip_in_networks,
+    is_network,
+    networks_overlap,
+    normalize_ip,
+    parse_networks,
+    parse_target,
+    subnet_of,
+)
 from .ratelimit import SlidingWindow
 from .store import Store
 
@@ -74,6 +83,8 @@ class Guard:
         self._rate_strikes: Dict[str, int] = {}
         self._allow_cache: List = []
         self._allow_cache_at = 0.0
+        self._net_cache: List = []
+        self._net_cache_at = 0.0
 
         if self.firewall.enabled and self.config.firewall.sync_on_start:
             # Nach einem Neustart sind die Firewall-Regeln weg, die Sperren
@@ -150,6 +161,10 @@ class Guard:
         now = self.clock()
 
         block = self.store.active_block(ip, now=now)
+        if block is None:
+            # Keine Sperre auf die Adresse selbst - liegt sie in einem
+            # gesperrten Netz?
+            block = self._matching_network_block(ip, now)
         if block is not None:
             remaining = block.remaining(now)
             self._log_denied(ip, Reason.IP_BLOCKED, route, now, detail=block.reason)
@@ -389,14 +404,27 @@ class Guard:
         detail: str = "",
         force: bool = False,
     ) -> Block:
-        """Sperrt eine IP. Ohne ``seconds`` greift die eskalierende Dauer."""
-        normalized = normalize_ip(ip)
+        """Sperrt eine IP oder ein ganzes Netz (CIDR).
+
+        Ohne ``seconds`` greift die eskalierende Dauer.
+        """
+        normalized = parse_target(ip)
         if normalized is None:
-            raise ValueError(f"Keine gueltige IP: {ip!r}")
-        if not force and self.is_allowlisted(normalized):
-            raise ValueError(
-                f"{normalized} steht auf der Allowlist und wird nicht gesperrt"
-            )
+            raise ValueError(f"Keine gueltige IP oder CIDR: {ip!r}")
+
+        network = is_network(normalized)
+        if not force:
+            if network:
+                allow = self._static_allow + self._dynamic_allow()
+                if networks_overlap(normalized, allow):
+                    raise ValueError(
+                        f"{normalized} enthaelt Adressen der Allowlist und wird "
+                        f"nicht gesperrt"
+                    )
+            elif self.is_allowlisted(normalized):
+                raise ValueError(
+                    f"{normalized} steht auf der Allowlist und wird nicht gesperrt"
+                )
 
         now = self.clock()
         rules = self.config.rules
@@ -414,26 +442,107 @@ class Guard:
             strikes=strikes,
             detail=detail,
             now=now,
+            is_network=network,
         )
         log.warning(
-            "IP %s gesperrt fuer %ss (%s: %s)",
+            "%s %s gesperrt fuer %ss (%s: %s)",
+            "Netz" if network else "IP",
             normalized, int(seconds), reason, detail or "-",
         )
+        if network:
+            self._invalidate_network_cache()
         if self.firewall.enabled:
             self.firewall.block(normalized, int(seconds))
+        if not network:
+            self._maybe_block_subnet(normalized, now)
         return block
 
     def unblock(self, ip: str) -> bool:
-        normalized = normalize_ip(ip)
+        """Hebt die Sperre einer IP oder eines Netzes auf."""
+        normalized = parse_target(ip)
         if normalized is None:
             return False
         removed = self.store.unblock(normalized) > 0
         with self._lock:
             self._rate_strikes.pop(normalized, None)
         self._limiter.reset(normalized)
+        self._invalidate_network_cache()
         if removed and self.firewall.enabled:
             self.firewall.unblock(normalized)
         return removed
+
+    # ------------------------------------------------------------------
+    # Netzsperre
+    # ------------------------------------------------------------------
+    def _network_blocks(self, now: float) -> List[Block]:
+        """Aktive Netzsperren, kurz zwischengespeichert.
+
+        Wird bei jeder Anfrage gebraucht - ohne Cache waere das eine
+        Datenbankabfrage pro Request.
+        """
+        with self._lock:
+            if now - self._net_cache_at < _ALLOWLIST_TTL:
+                return self._net_cache
+        blocks = self.store.active_network_blocks(now)
+        with self._lock:
+            self._net_cache = blocks
+            self._net_cache_at = now
+        return blocks
+
+    def _invalidate_network_cache(self) -> None:
+        with self._lock:
+            self._net_cache_at = 0.0
+
+    def _matching_network_block(self, ip: str, now: float) -> Optional[Block]:
+        for block in self._network_blocks(now):
+            if ip_in_networks(ip, parse_networks([block.ip])):
+                return block
+        return None
+
+    def _maybe_block_subnet(self, ip: str, now: float) -> Optional[Block]:
+        """Prueft nach jeder Einzelsperre, ob das ganze Netz dran ist.
+
+        Ein Botnetz weicht nach einer Sperre einfach auf die Nachbar-IP aus.
+        Haeufen sich Sperren im selben Adressblock, wird der Block als
+        Ganzes gesperrt.
+        """
+        rules = self.config.rules
+        if not rules.subnet_enabled:
+            return None
+
+        subnet = subnet_of(ip, rules.subnet_prefix_v4, rules.subnet_prefix_v6)
+        if subnet is None:
+            return None
+
+        # Schon gesperrt? Dann nichts weiter tun.
+        if self._matching_network_block(ip, now) is not None:
+            return None
+
+        # Ein Netz, das eine Adresse der Allowlist enthaelt, wird nie
+        # gesperrt - sonst sperrt ein /24 das eigene Buero mit aus.
+        allow = self._static_allow + self._dynamic_allow()
+        if networks_overlap(subnet, allow):
+            log.info(
+                "Netzsperre fuer %s abgelehnt: enthaelt Adressen der Allowlist", subnet
+            )
+            return None
+
+        candidates = self.store.blocked_ips_since(now - rules.subnet_window)
+        networks = parse_networks([subnet])
+        members = {item for item in candidates if ip_in_networks(item, networks)}
+        if len(members) < rules.subnet_threshold:
+            return None
+
+        log.warning(
+            "Netzsperre: %s Adressen aus %s gesperrt - sperre das ganze Netz",
+            len(members), subnet,
+        )
+        return self.block(
+            subnet,
+            seconds=rules.subnet_block_seconds,
+            reason=Reason.SUBNET_ABUSE,
+            detail=f"{len(members)} gesperrte Adressen in {rules.subnet_window}s",
+        )
 
     def _blocked_decision(self, block: Block, now: float) -> Decision:
         return Decision(
@@ -471,6 +580,8 @@ class Guard:
         """Abgelaufene Sperren aufheben und alte Daten loeschen."""
         now = self.clock()
         expired = self.store.expire_blocks(now)
+        if expired:
+            self._invalidate_network_cache()
         for ip in expired:
             self._limiter.reset(ip)
             if self.firewall.enabled:

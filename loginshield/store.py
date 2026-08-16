@@ -17,7 +17,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .models import Attempt, Block, Event
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS attempts (
@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS blocks (
     reason     TEXT NOT NULL DEFAULT '',
     strikes    INTEGER NOT NULL DEFAULT 0,
     active     INTEGER NOT NULL DEFAULT 1,
-    detail     TEXT NOT NULL DEFAULT ''
+    detail     TEXT NOT NULL DEFAULT '',
+    is_network INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_blocks_ip_active ON blocks(ip, active);
 CREATE INDEX IF NOT EXISTS idx_blocks_created   ON blocks(created_ts);
@@ -84,6 +85,7 @@ class Store:
             self._conn.execute("PRAGMA synchronous=NORMAL")
             self._conn.execute("PRAGMA busy_timeout=5000")
             self._conn.executescript(_SCHEMA)
+            self._migrate()
             self._conn.execute(
                 "INSERT OR REPLACE INTO meta(key, value) VALUES('schema_version', ?)",
                 (str(SCHEMA_VERSION),),
@@ -94,6 +96,22 @@ class Store:
                 os.chmod(path, 0o600)  # enthaelt Angriffsdaten - nicht world-readable
             except OSError:  # pragma: no cover - plattformabhaengig
                 pass
+
+    def _migrate(self) -> None:
+        """Ergaenzt Spalten, die in aelteren Datenbanken fehlen.
+
+        Ein bestehendes loginshield.db soll nach einem Update einfach
+        weiterlaufen, ohne dass jemand es von Hand anfassen muss.
+        """
+        columns = {
+            row["name"]
+            for row in self._conn.execute("PRAGMA table_info(blocks)").fetchall()
+        }
+        if "is_network" not in columns:
+            self._conn.execute(
+                "ALTER TABLE blocks ADD COLUMN is_network INTEGER NOT NULL DEFAULT 0"
+            )
+            self._conn.commit()
 
     # -- Lebenszyklus --------------------------------------------------
     def close(self) -> None:
@@ -239,6 +257,7 @@ class Store:
         strikes: int = 0,
         detail: str = "",
         now: Optional[float] = None,
+        is_network: bool = False,
     ) -> Block:
         now = time.time() if now is None else now
         expires = now + float(seconds)
@@ -253,9 +272,10 @@ class Store:
                 if expires <= float(existing["expires_ts"]):
                     return _row_to_block(existing)
                 self._conn.execute(
-                    "UPDATE blocks SET expires_ts = ?, reason = ?, strikes = ?, detail = ?"
-                    " WHERE id = ?",
-                    (expires, reason, strikes, detail[:500], existing["id"]),
+                    "UPDATE blocks SET expires_ts = ?, reason = ?, strikes = ?, detail = ?,"
+                    " is_network = ? WHERE id = ?",
+                    (expires, reason, strikes, detail[:500],
+                     1 if is_network else 0, existing["id"]),
                 )
                 self._conn.commit()
                 row = self._conn.execute(
@@ -264,9 +284,10 @@ class Store:
                 return _row_to_block(row)
 
             cursor = self._conn.execute(
-                "INSERT INTO blocks(ip, created_ts, expires_ts, reason, strikes, active, detail)"
-                " VALUES(?,?,?,?,?,1,?)",
-                (ip, now, expires, reason, strikes, detail[:500]),
+                "INSERT INTO blocks(ip, created_ts, expires_ts, reason, strikes, active,"
+                " detail, is_network) VALUES(?,?,?,?,?,1,?,?)",
+                (ip, now, expires, reason, strikes, detail[:500],
+                 1 if is_network else 0),
             )
             self._conn.commit()
             row = self._conn.execute(
@@ -297,6 +318,29 @@ class Store:
                     (now,),
                 )
                 self._conn.commit()
+        return [row["ip"] for row in rows]
+
+    def active_network_blocks(self, now: Optional[float] = None) -> List[Block]:
+        """Alle aktiven Netzsperren. Wird gegen jede Anfrage geprueft und
+        deshalb im Guard kurz zwischengespeichert."""
+        now = time.time() if now is None else now
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM blocks WHERE active = 1 AND is_network = 1"
+                " AND expires_ts > ? ORDER BY created_ts DESC",
+                (now,),
+            ).fetchall()
+        return [_row_to_block(row) for row in rows]
+
+    def blocked_ips_since(self, since: float,
+                          include_networks: bool = False) -> List[str]:
+        """Adressen, die seit ``since`` gesperrt wurden - Grundlage der
+        Netzsperre."""
+        sql = "SELECT DISTINCT ip FROM blocks WHERE created_ts > ?"
+        if not include_networks:
+            sql += " AND is_network = 0"
+        with self._lock:
+            rows = self._conn.execute(sql, (since,)).fetchall()
         return [row["ip"] for row in rows]
 
     def prior_block_count(self, ip: str, since: float) -> int:
@@ -493,4 +537,5 @@ def _row_to_block(row: sqlite3.Row) -> Block:
         strikes=int(row["strikes"]),
         active=bool(row["active"]),
         detail=row["detail"],
+        is_network=bool(row["is_network"]) if "is_network" in row.keys() else False,
     )

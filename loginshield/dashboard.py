@@ -312,6 +312,7 @@ tr:last-child td { border-bottom:none; }
 .tag.ok { color:var(--ok); border-color:var(--ok); }
 .tag.deny { color:var(--warn); border-color:var(--warn); }
 .tag.trap { color:#fff; background:var(--warn); border-color:var(--warn); }
+.tag.net { color:#fff; background:var(--danger); border-color:var(--danger); }
 button { font:inherit; font-size:13px; padding:4px 11px; border-radius:6px; cursor:pointer;
   border:1px solid var(--line); background:transparent; color:var(--text); }
 button:hover { border-color:var(--accent); color:var(--accent); }
@@ -515,7 +516,13 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
 
     fill("blocks", "blocks-empty", data.blocks, function (block) {
       var row = el("tr");
-      row.appendChild(el("td", block.ip, "mono"));
+      var target = el("td", null, "mono");
+      target.appendChild(document.createTextNode(block.ip));
+      if (block.is_network) {
+        target.appendChild(document.createTextNode(" "));
+        target.appendChild(el("span", "ganzes Netz", "tag net"));
+      }
+      row.appendChild(target);
       row.appendChild(el("td", block.reason));
       row.appendChild(el("td", fmtDuration(block.remaining)));
       row.appendChild(el("td", block.strikes));
