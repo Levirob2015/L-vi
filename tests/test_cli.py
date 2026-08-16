@@ -172,3 +172,44 @@ def test_config_fehler_wird_gemeldet(tmp_path, capsys):
     path.write_text('{"rules": {"ip_failure_threshold": 0}}')
     assert main(["--config", str(path), "status"]) == 2
     assert "Konfigurationsfehler" in capsys.readouterr().err
+
+
+def test_learn_und_anomalies(db, capsys):
+    import random
+    import sys
+    sys.path.insert(0, "/home/user/L-vi")
+    from loginshield import Config, Guard
+    from loginshield.models import Event
+    from tests.test_anomaly import normalbetrieb
+
+    config = Config()
+    config.db_path = db
+    guard = Guard(config)
+    jetzt = guard.clock()
+    normalbetrieb(guard.store, jetzt, rng=random.Random(3))
+    for index in range(60):
+        guard.store.record_attempt("198.51.100.77", Event.LOGIN_FAILURE,
+                                   route=f"/admin/x{index}", ts=jetzt - 100)
+    guard.close()
+
+    assert run(["learn"], db) == 0
+    ausgabe = capsys.readouterr().out
+    assert "Normalzustand aus" in ausgabe
+    assert "Die Datengrundlage reicht" in ausgabe
+
+    assert run(["anomalies"], db) == 0
+    ausgabe = capsys.readouterr().out
+    assert "198.51.100.77" in ausgabe
+    assert "/100" in ausgabe          # Punktwert
+    assert "ueblich sind" in ausgabe  # Begruendung
+
+    assert run(["anomalies", "--json"], db) == 0
+    daten = json.loads(capsys.readouterr().out)
+    assert daten[0]["signals"]
+
+
+def test_anomalies_ohne_grundlinie(db, capsys):
+    assert run(["anomalies"], db) == 1
+    fehler = capsys.readouterr().err
+    assert "Noch keine Grundlinie" in fehler
+    assert "Lieber keine Aussage als eine geratene" in fehler

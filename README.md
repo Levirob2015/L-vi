@@ -2,7 +2,9 @@
 
 Schutz gegen Brute-Force- und automatisierte Angriffe auf Logins und Server.
 Erkennt Angriffsmuster, sperrt die IP automatisch mit ansteigender Dauer und
-zeigt die Lage in einem Web-Dashboard.
+zeigt die Lage in einem Web-Dashboard. Vier Schichten: Erkennungsregeln,
+Honeypot, Anfrage-Firewall und eine Anomalie-Erkennung, die den
+Normalzustand deines Servers lernt.
 
 **Ohne externe Abhängigkeiten** – nur Python 3.9+ und die Standardbibliothek.
 Nutzbar als Bibliothek, als Middleware, als Log-Wächter und über die
@@ -64,6 +66,7 @@ dem richtigen Passwort.
 | **Honeypot** | Zugriff auf eine vorgetäuschte Schwachstelle | **1 Treffer** |
 | **Netzsperre** | Mehrere gesperrte IPs aus demselben Adressblock | 4 IPs / 1 Std |
 | **Angriffsmuster** | SQL-Injection, Path Traversal, Log4Shell, Scanner | ab 8 Punkten |
+| **Anomalie** | Verhalten, das für *diesen* Server unüblich ist | ab 40/100 |
 
 Spraying braucht eine eigene Regel: Wer pro Konto nur zwei Passwörter probiert,
 löst die klassische Fehlversuchs-Schwelle nie aus – über zwanzig Konten hinweg
@@ -464,6 +467,92 @@ protokolliert.
 
 ---
 
+## Anomalie-Erkennung: was keine Regel kennt
+
+Feste Regeln erkennen, was jemand vorher als Angriff beschrieben hat. Sie
+sehen nicht, wenn etwas einfach **unüblich** ist.
+
+Zwei Beispiele, die durch jede Regel fallen:
+
+* Eine Adresse ruft 60 Pfade in 25 Minuten ab – unter jeder Schwelle, kein
+  einziges verdächtiges Muster in der URL.
+* Ein Programm meldet sich **erfolgreich** an, 40-mal, im Sekundentakt.
+  Keine Fehlversuchsregel greift bei erfolgreichen Logins.
+
+Diese Ebene lernt aus den eigenen Aufzeichnungen deines Servers, wie normaler
+Verkehr dort aussieht, und meldet Abweichungen:
+
+```
+$ loginshield learn
+Normalzustand aus 7 Tagen gelernt:
+  Ereignisse            978
+  Adressen              89
+  Bekannte Pfade        6
+  Fehlerquote           12.1%
+  Aktive Stunden (UTC)  8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19
+
+$ loginshield anomalies
+  198.51.100.77   100/100   [kritisch]
+     - 60 Ereignisse - üblich sind 11             (+25)
+     - 60 verschiedene Pfade - üblich sind 5      (+25)
+     - 60 nie zuvor angefragte Pfade (100%)       (+20)
+     - 100% Fehlversuche - üblich sind 12%        (+20)
+     - aktiv zu einer sonst stillen Zeit          (+10)
+```
+
+### Was es *nicht* ist
+
+**Kein neuronales Netz und kein Sprachmodell.** Beides wäre hier die falsche
+Wahl: Verzögerung bei jeder Anfrage, keine Trainingsdaten, schwere
+Abhängigkeiten – und vor allem Sperren, die niemand erklären kann.
+
+Stattdessen lernt es unbeaufsichtigt aus den vorhandenen Daten: robuste
+Statistik (Median und mittlere absolute Abweichung), Entropie, Neuheitsmaße.
+Der Median statt des Mittelwerts ist dabei kein Detail – ein einzelner
+Angriff im Lernzeitraum darf die Grundlinie nicht verschieben, sonst gilt er
+hinterher als normal.
+
+### Drei Grundsätze
+
+**1. Ohne genug Daten wird nicht geurteilt.** Unter 200 Ereignissen von 20
+Adressen sagt es offen, dass die Grundlage zu dünn ist – statt zu raten:
+
+```
+$ loginshield anomalies
+Datengrundlage zu dünn: 20 Ereignisse von 8 Adressen (nötig: 200 von 20).
+Es wird noch nicht geurteilt.
+
+Lieber keine Aussage als eine geratene.
+```
+
+**2. Standardmäßig wird nur gemeldet, nicht gesperrt.** Eine statistische
+Abweichung ist ein Verdacht, kein Beweis – ein Werbeschub sieht einem Angriff
+zunächst ähnlich. Mit `action: block` lässt sich das ändern, dann greift es
+ab 70 von 100 Punkten.
+
+**3. Jedes Urteil ist begründet.** Kein Punktwert ohne die Signale, aus denen
+er entstand, jeweils mit Beobachtung und Erwartung. Ein Test stellt sicher,
+dass der Punktwert genau die Summe der genannten Signale ist – nichts
+Verstecktes.
+
+### Acht Signale
+
+| Signal | Erkennt |
+|---|---|
+| `volumen` | ungewöhnlich viele Zugriffe |
+| `pfadvielfalt` | Abklappern vieler Seiten |
+| `neue_pfade` | Pfade, die es hier noch nie gab |
+| `fehlerquote` | Fehlversuchsanteil weit über dem Normalen |
+| `kontenvielfalt` | viele verschiedene Konten |
+| `kennung` | unbekanntes Programm |
+| `uhrzeit` | Aktivität zu sonst stillen Zeiten |
+| `takt` | maschinell gleichmäßiger Rhythmus |
+
+Die Gewichtung jedes Signals lässt sich in der Konfiguration anpassen.
+
+
+---
+
 ## Kommandozeile
 
 ```
@@ -479,6 +568,8 @@ loginshield firewall --sync            Sperren in die Firewall schreiben
 loginshield firewall --selftest        prueft die Anbindung an einer Testadresse
 loginshield filter --list              Regeln der Anfrage-Firewall anzeigen
 loginshield filter --test URL          eine URL gegen die Regeln pruefen
+loginshield learn                      Normalzustand lernen
+loginshield anomalies                  Abweichungen anzeigen
 loginshield status [--hours 24]        Lage-Überblick im Terminal
 loginshield check IP                   Status einer IP abfragen
 loginshield block IP|CIDR [--minutes]  IP oder ganzes Netz sperren
@@ -620,7 +711,7 @@ zuerst mit `loginshield demo` oder der Beispiel-App.
 
 ```bash
 pip install pytest
-python -m pytest -q      # 312 Tests
+python -m pytest -q      # 334 Tests
 ```
 
 Abgedeckt sind unter anderem: Erkennungsregeln und Eskalation, Honeypot in
@@ -648,6 +739,7 @@ loginshield/
   dashboard.py   Web-Oberfläche
   firewall.py    System-Firewall (nftables, iptables, ufw, mehrere zugleich)
   requestfilter.py  Anfrage-Firewall: prüft den Inhalt der Anfragen
+  anomaly.py     lernt den Normalzustand, meldet Abweichungen
   cli.py         Kommandozeile
 examples/        lauffähige Beispielanwendung
 tests/           Testsuite

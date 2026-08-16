@@ -1,0 +1,466 @@
+"""Anomalie-Erkennung: lernt den Normalzustand und meldet Abweichungen.
+
+Feste Regeln erkennen, was jemand vorher als Angriff beschrieben hat. Sie
+sehen nicht, wenn etwas einfach **unueblich** ist: eine Adresse, die 200
+verschiedene Pfade abklappert, obwohl Besucher sonst drei aufrufen. Ein
+Ansturm um vier Uhr morgens auf einem Server, der nachts still ist. Ein
+Programm, das sich als Browser ausgibt, aber schneller klickt als ein Mensch.
+
+Dieses Modul lernt aus den eigenen Aufzeichnungen des Servers, wie normaler
+Verkehr dort aussieht, und bewertet Abweichungen davon.
+
+Was es **nicht** ist
+--------------------
+Kein neuronales Netz und kein Sprachmodell. Beides waere hier die falsche
+Wahl: Verzoegerung bei jeder Anfrage, keine Trainingsdaten, schwere
+Abhaengigkeiten - und vor allem Sperren, die niemand erklaeren kann.
+
+Stattdessen lernt es unbeaufsichtigt aus den vorhandenen Daten (robuste
+Statistik: Median und mittlere absolute Abweichung, dazu Entropie und
+Neuheitsmasse). Jede Bewertung zerfaellt in **benannte Einzelsignale** mit
+Beobachtung und Erwartung - man kann also immer nachlesen, warum eine
+Adresse auffaellt.
+
+Drei Grundsaetze
+----------------
+1. **Ohne genug Daten wird nicht geurteilt.** Solange die Grundlinie zu duenn
+   ist, meldet das Modul das offen, statt zu raten.
+2. **Standardmaessig wird nur gemeldet, nicht gesperrt.** Eine statistische
+   Abweichung ist ein Verdacht, kein Beweis - ein Werbeschub sieht einem
+   Angriff zunaechst aehnlich.
+3. **Jedes Urteil ist begruendet.** Kein Punktwert ohne die Signale, aus
+   denen er entstand.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import math
+import time
+from dataclasses import asdict, dataclass, field
+from typing import Dict, List, Optional, Sequence
+
+from .config import AnomalyConfig
+from .models import Event
+
+log = logging.getLogger("loginshield.anomaly")
+
+BASELINE_KEY = "anomaly_baseline"
+
+
+# ----------------------------------------------------------------------
+# Robuste Statistik
+# ----------------------------------------------------------------------
+def median(values: Sequence[float]) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    mitte = len(ordered) // 2
+    if len(ordered) % 2:
+        return float(ordered[mitte])
+    return (ordered[mitte - 1] + ordered[mitte]) / 2.0
+
+
+def mad(values: Sequence[float], center: Optional[float] = None) -> float:
+    """Mittlere absolute Abweichung vom Median.
+
+    Robuster als die Standardabweichung: einzelne Ausreisser - also genau
+    die Angriffe, die man sucht - verzerren die Grundlinie nicht.
+    """
+    if not values:
+        return 0.0
+    mitte = median(values) if center is None else center
+    return median([abs(value - mitte) for value in values])
+
+
+def robust_z(value: float, center: float, streuung: float) -> float:
+    """Wie viele typische Abweichungen liegt der Wert vom Normalen entfernt?"""
+    if streuung <= 0:
+        # Ohne Streuung ist jede Abweichung nach oben bemerkenswert, aber
+        # nicht unendlich - sonst kippt ein einziger Wert die Bewertung.
+        if center <= 0:
+            return 3.0 if value > 0 else 0.0
+        return min(10.0, max(0.0, (value - center) / max(center, 1.0)) * 3.0)
+    return 0.6745 * (value - center) / streuung
+
+
+def entropy(counts: Sequence[float]) -> float:
+    """Shannon-Entropie - wie breit streut das Verhalten?"""
+    gesamt = float(sum(counts))
+    if gesamt <= 0:
+        return 0.0
+    wert = 0.0
+    for count in counts:
+        if count > 0:
+            anteil = count / gesamt
+            wert -= anteil * math.log2(anteil)
+    return wert
+
+
+# ----------------------------------------------------------------------
+# Grundlinie
+# ----------------------------------------------------------------------
+@dataclass
+class Baseline:
+    """Der gelernte Normalzustand dieses Servers."""
+
+    created_ts: float = 0.0
+    von_ts: float = 0.0
+    bis_ts: float = 0.0
+    ereignisse: int = 0
+    adressen: int = 0
+
+    ereignisse_je_ip_median: float = 0.0
+    ereignisse_je_ip_streuung: float = 0.0
+    pfade_je_ip_median: float = 0.0
+    pfade_je_ip_streuung: float = 0.0
+    konten_je_ip_median: float = 0.0
+    konten_je_ip_streuung: float = 0.0
+
+    fehlerquote: float = 0.0
+    fehler_je_stunde_median: float = 0.0
+    fehler_je_stunde_streuung: float = 0.0
+
+    #: Pfade und Programmkennungen, die im Lernzeitraum vorkamen.
+    bekannte_pfade: Dict[str, int] = field(default_factory=dict)
+    bekannte_kennungen: Dict[str, int] = field(default_factory=dict)
+    #: Stunden (UTC), in denen nennenswert Verkehr herrscht.
+    aktive_stunden: List[int] = field(default_factory=list)
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Baseline":
+        bekannt = {f for f in cls.__dataclass_fields__}  # type: ignore[attr-defined]
+        return cls(**{k: v for k, v in (data or {}).items() if k in bekannt})
+
+    def usable(self, min_events: int, min_ips: int) -> bool:
+        return self.ereignisse >= min_events and self.adressen >= min_ips
+
+    @property
+    def alter_stunden(self) -> float:
+        return max(0.0, (time.time() - self.created_ts) / 3600.0)
+
+
+def learn(store, *, days: float = 7.0, now: Optional[float] = None) -> Baseline:
+    """Lernt den Normalzustand aus den vorhandenen Aufzeichnungen.
+
+    Bewusst aus den eigenen Daten des Servers: was auf einem Firmenportal
+    normal ist, waere auf einem Blog voellig unueblich.
+    """
+    now = time.time() if now is None else now
+    since = now - days * 86400.0
+
+    profile = store.profile_by_ip(since)
+    ereignisse_je_ip = [entry["events"] for entry in profile.values()]
+    pfade_je_ip = [len(entry["routes"]) for entry in profile.values()]
+    konten_je_ip = [len(entry["identities"]) for entry in profile.values()]
+
+    gesamt = sum(ereignisse_je_ip)
+    fehler = sum(entry["failures"] for entry in profile.values())
+    stundenwerte = store.hourly_counts(since, Event.LOGIN_FAILURE, now=now)
+
+    stunden_last: Dict[int, int] = {}
+    for entry in profile.values():
+        for stunde in entry["hours"]:
+            stunden_last[stunde] = stunden_last.get(stunde, 0) + entry["events"]
+    schwelle = (max(stunden_last.values()) * 0.1) if stunden_last else 0
+    aktive = sorted(s for s, last in stunden_last.items() if last >= schwelle)
+
+    baseline = Baseline(
+        created_ts=now,
+        von_ts=since,
+        bis_ts=now,
+        ereignisse=gesamt,
+        adressen=len(profile),
+        ereignisse_je_ip_median=median(ereignisse_je_ip),
+        ereignisse_je_ip_streuung=mad(ereignisse_je_ip),
+        pfade_je_ip_median=median(pfade_je_ip),
+        pfade_je_ip_streuung=mad(pfade_je_ip),
+        konten_je_ip_median=median(konten_je_ip),
+        konten_je_ip_streuung=mad(konten_je_ip),
+        fehlerquote=(fehler / gesamt) if gesamt else 0.0,
+        fehler_je_stunde_median=median(stundenwerte),
+        fehler_je_stunde_streuung=mad(stundenwerte),
+        bekannte_pfade=store.route_counts(since),
+        bekannte_kennungen=store.agent_counts(since),
+        aktive_stunden=aktive,
+    )
+    log.info(
+        "Grundlinie gelernt: %s Ereignisse von %s Adressen ueber %.1f Tage",
+        baseline.ereignisse, baseline.adressen, days,
+    )
+    return baseline
+
+
+# ----------------------------------------------------------------------
+# Bewertung
+# ----------------------------------------------------------------------
+@dataclass
+class Signal:
+    """Ein einzelner Hinweis mit Beobachtung und Erwartung."""
+
+    name: str
+    beobachtet: float
+    erwartet: float
+    punkte: float
+    erklaerung: str
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class AnomalyReport:
+    ip: str
+    score: float = 0.0
+    signals: List[Signal] = field(default_factory=list)
+
+    @property
+    def verdict(self) -> str:
+        if self.score >= 70:
+            return "kritisch"
+        if self.score >= 40:
+            return "auffaellig"
+        return "normal"
+
+    @property
+    def summary(self) -> str:
+        return "; ".join(signal.erklaerung for signal in self.signals[:3]) or "unauffaellig"
+
+    def as_dict(self) -> dict:
+        return {
+            "ip": self.ip,
+            "score": round(self.score, 1),
+            "verdict": self.verdict,
+            "summary": self.summary,
+            "signals": [signal.as_dict() for signal in self.signals],
+        }
+
+
+class AnomalyDetector:
+    """Bewertet Adressen gegen die gelernte Grundlinie."""
+
+    def __init__(self, config: Optional[AnomalyConfig] = None, guard=None) -> None:
+        self.config = config or AnomalyConfig()
+        self.guard = guard
+        self._baseline: Optional[Baseline] = None
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.config.enabled)
+
+    # -- Grundlinie ----------------------------------------------------
+    def baseline(self, store=None) -> Optional[Baseline]:
+        if self._baseline is not None:
+            return self._baseline
+        store = store or (self.guard.store if self.guard else None)
+        if store is None:
+            return None
+        raw = store.get_meta(BASELINE_KEY)
+        if not raw:
+            return None
+        try:
+            self._baseline = Baseline.from_dict(json.loads(raw))
+        except (ValueError, TypeError):
+            log.warning("Gespeicherte Grundlinie ist unlesbar - bitte neu lernen")
+            return None
+        return self._baseline
+
+    def learn_and_store(self, store=None, *, days: Optional[float] = None,
+                        now: Optional[float] = None) -> Baseline:
+        store = store or (self.guard.store if self.guard else None)
+        if store is None:
+            raise ValueError("Kein Speicher verfuegbar")
+        if now is None and self.guard is not None:
+            now = self.guard.clock()
+        baseline = learn(store, days=days or self.config.learn_days, now=now)
+        store.set_meta(BASELINE_KEY, json.dumps(baseline.as_dict()))
+        self._baseline = baseline
+        return baseline
+
+    def ready(self, store=None) -> bool:
+        """Reicht die Datengrundlage fuer ein Urteil?"""
+        baseline = self.baseline(store)
+        return bool(baseline and baseline.usable(
+            self.config.min_events, self.config.min_addresses
+        ))
+
+    def status(self, store=None) -> dict:
+        baseline = self.baseline(store)
+        if baseline is None:
+            return {"ready": False, "reason": "Noch keine Grundlinie gelernt "
+                                              "('loginshield learn')"}
+        if not baseline.usable(self.config.min_events, self.config.min_addresses):
+            return {
+                "ready": False,
+                "reason": (
+                    f"Datengrundlage zu duenn: {baseline.ereignisse} Ereignisse von "
+                    f"{baseline.adressen} Adressen (noetig: {self.config.min_events} "
+                    f"von {self.config.min_addresses}). Es wird noch nicht geurteilt."
+                ),
+                "events": baseline.ereignisse,
+                "addresses": baseline.adressen,
+            }
+        return {
+            "ready": True,
+            "events": baseline.ereignisse,
+            "addresses": baseline.adressen,
+            "age_hours": round(baseline.alter_stunden, 1),
+            "failure_ratio": round(baseline.fehlerquote, 3),
+            "known_routes": len(baseline.bekannte_pfade),
+        }
+
+    # -- Einzelne Adresse ----------------------------------------------
+    def score_profile(self, ip: str, entry: dict,
+                      baseline: Baseline) -> AnomalyReport:
+        """Bewertet ein fertiges Verhaltensprofil gegen die Grundlinie."""
+        report = AnomalyReport(ip=ip)
+        gewichte = self.config.weights
+
+        # 1. Ungewoehnlich viele Ereignisse
+        z = robust_z(entry["events"], baseline.ereignisse_je_ip_median,
+                     baseline.ereignisse_je_ip_streuung)
+        if z > 2:
+            punkte = min(gewichte.get("volumen", 25), z * 4)
+            report.signals.append(Signal(
+                "volumen", entry["events"], baseline.ereignisse_je_ip_median, punkte,
+                f"{entry['events']} Ereignisse - ueblich sind "
+                f"{baseline.ereignisse_je_ip_median:.0f}",
+            ))
+
+        # 2. Ungewoehnlich viele verschiedene Pfade (Abklappern)
+        pfade = len(entry["routes"])
+        z = robust_z(pfade, baseline.pfade_je_ip_median, baseline.pfade_je_ip_streuung)
+        if z > 2:
+            punkte = min(gewichte.get("pfadvielfalt", 25), z * 5)
+            report.signals.append(Signal(
+                "pfadvielfalt", pfade, baseline.pfade_je_ip_median, punkte,
+                f"{pfade} verschiedene Pfade - ueblich sind "
+                f"{baseline.pfade_je_ip_median:.0f}",
+            ))
+
+        # 3. Pfade, die es hier noch nie gab
+        if entry["routes"] and baseline.bekannte_pfade:
+            unbekannt = [r for r in entry["routes"] if r not in baseline.bekannte_pfade]
+            anteil = len(unbekannt) / len(entry["routes"])
+            if anteil > 0.5 and len(unbekannt) >= 3:
+                punkte = min(gewichte.get("neue_pfade", 20), anteil * 20)
+                report.signals.append(Signal(
+                    "neue_pfade", len(unbekannt), 0, punkte,
+                    f"{len(unbekannt)} nie zuvor angefragte Pfade "
+                    f"({anteil * 100:.0f}% der Zugriffe)",
+                ))
+
+        # 4. Fehlerquote weit ueber dem Normalen
+        if entry["events"] >= 5:
+            quote = entry["failures"] / entry["events"]
+            if quote > max(0.5, baseline.fehlerquote * 3):
+                punkte = min(gewichte.get("fehlerquote", 20), quote * 20)
+                report.signals.append(Signal(
+                    "fehlerquote", round(quote, 2), round(baseline.fehlerquote, 2),
+                    punkte,
+                    f"{quote * 100:.0f}% Fehlversuche - ueblich sind "
+                    f"{baseline.fehlerquote * 100:.0f}%",
+                ))
+
+        # 5. Viele verschiedene Konten
+        konten = len(entry["identities"])
+        z = robust_z(konten, baseline.konten_je_ip_median, baseline.konten_je_ip_streuung)
+        if konten >= 3 and z > 2:
+            punkte = min(gewichte.get("kontenvielfalt", 20), z * 5)
+            report.signals.append(Signal(
+                "kontenvielfalt", konten, baseline.konten_je_ip_median, punkte,
+                f"{konten} verschiedene Konten - ueblich sind "
+                f"{baseline.konten_je_ip_median:.0f}",
+            ))
+
+        # 6. Unbekannte Programmkennung
+        if entry["agents"] and baseline.bekannte_kennungen:
+            neu = [a for a in entry["agents"] if a not in baseline.bekannte_kennungen]
+            if neu and len(neu) == len(entry["agents"]):
+                punkte = gewichte.get("kennung", 10)
+                report.signals.append(Signal(
+                    "kennung", len(neu), 0, punkte,
+                    f"unbekannte Programmkennung ({neu[0][:40]})",
+                ))
+
+        # 7. Aktivitaet zu sonst stillen Zeiten
+        if baseline.aktive_stunden and entry["hours"]:
+            still = [h for h in entry["hours"] if h not in baseline.aktive_stunden]
+            if still and len(still) == len(entry["hours"]):
+                punkte = gewichte.get("uhrzeit", 10)
+                report.signals.append(Signal(
+                    "uhrzeit", still[0], 0, punkte,
+                    f"aktiv zu einer Zeit, zu der hier sonst nichts passiert "
+                    f"({still[0]:02d} Uhr UTC)",
+                ))
+
+        # 8. Gleichmaessiger Takt: Maschinen tippen im Sekundentakt, Menschen nicht
+        dauer = entry["last_ts"] - entry["first_ts"]
+        if entry["events"] >= 10 and dauer > 0:
+            takt = dauer / entry["events"]
+            if takt < 2.0:
+                punkte = gewichte.get("takt", 15)
+                report.signals.append(Signal(
+                    "takt", round(takt, 2), 0, punkte,
+                    f"ein Zugriff alle {takt:.1f}s ueber {dauer:.0f}s - "
+                    f"maschinell getaktet",
+                ))
+
+        report.score = min(100.0, sum(signal.punkte for signal in report.signals))
+        return report
+
+    def scan(self, *, window: Optional[float] = None,
+             now: Optional[float] = None, store=None) -> List[AnomalyReport]:
+        """Bewertet alle Adressen des letzten Zeitfensters."""
+        store = store or (self.guard.store if self.guard else None)
+        if store is None or not self.enabled:
+            return []
+        baseline = self.baseline(store)
+        if baseline is None or not baseline.usable(
+            self.config.min_events, self.config.min_addresses
+        ):
+            return []
+
+        if now is None:
+            now = self.guard.clock() if self.guard else time.time()
+        window = window or self.config.window
+        profile = store.profile_by_ip(now - window)
+
+        berichte = []
+        for ip, entry in profile.items():
+            if self.guard is not None and self.guard.is_allowlisted(ip):
+                continue
+            report = self.score_profile(ip, entry, baseline)
+            if report.score >= self.config.report_score:
+                berichte.append(report)
+        berichte.sort(key=lambda r: r.score, reverse=True)
+        return berichte
+
+    def evaluate(self, *, now: Optional[float] = None) -> List[AnomalyReport]:
+        """Bewertet und handelt - je nach ``action``.
+
+        Standard ist ``report``: nur vermerken. Eine statistische Abweichung
+        ist ein Verdacht, kein Beweis - ein Werbeschub sieht einem Angriff
+        zunaechst aehnlich.
+        """
+        berichte = self.scan(now=now)
+        if self.guard is None:
+            return berichte
+
+        for report in berichte:
+            detail = f"Anomalie {report.score:.0f}/100: {report.summary}"
+            if self.config.action == "block" and report.score >= self.config.block_score:
+                self.guard.record_honeypot(
+                    report.ip, route="", reason="anomaly",
+                    source="anomaly", detail=detail,
+                    seconds=self.config.block_seconds,
+                )
+            else:
+                self.guard.record_suspicious(
+                    report.ip, source="anomaly", detail=detail
+                )
+        return berichte

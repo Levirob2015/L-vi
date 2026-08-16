@@ -130,6 +130,8 @@ def _handler_factory(guard: Guard, config: DashboardConfig):
                     "blocks": [b.as_dict(now) for b in guard.store.list_blocks(limit=200)],
                     "now": now,
                 })
+            elif route == "/api/anomalies":
+                self._json(200, self._anomalies(params))
             elif route == "/api/allowlist":
                 self._json(200, {"allowlist": guard.store.allow_list()})
             else:
@@ -191,6 +193,20 @@ def _handler_factory(guard: Guard, config: DashboardConfig):
                     b.as_dict(now) for b in guard.store.list_blocks(limit=50, now=now)
                 ],
                 "allowlist": guard.store.allow_list(),
+                "anomaly": self._anomalies({"hours": ["1"]}),
+            }
+
+        def _anomalies(self, params) -> dict:
+            hours = _float(params.get("hours", ["1"])[0], 1.0, 0.1, 168)
+            status = guard.anomaly.status()
+            if not status.get("ready"):
+                return {"ready": False, "reason": status.get("reason", ""),
+                        "reports": []}
+            berichte = guard.anomaly.scan(window=hours * 3600)
+            return {
+                "ready": True,
+                "baseline": status,
+                "reports": [r.as_dict() for r in berichte],
             }
 
         def _attempts(self, params) -> dict:
@@ -378,6 +394,16 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
   </section>
 
   <section>
+    <h2>Abweichungen vom Normalzustand</h2>
+    <div class="body">
+      <div class="muted" id="anomaly-note" style="font-size:13px"></div>
+      <table id="anomalies" hidden><thead><tr>
+        <th>IP</th><th>Bewertung</th><th>Begruendung</th><th></th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <section>
     <h2>Letzte Ereignisse</h2>
     <div class="body scroll">
       <div class="row" style="margin-bottom:10px">
@@ -559,6 +585,8 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
       return row;
     });
 
+    renderAnomalies(data.anomaly);
+
     fill("allowlist", "allowlist-empty", data.allowlist, function (entry) {
       var row = el("tr");
       row.appendChild(el("td", entry.cidr, "mono"));
@@ -573,6 +601,47 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
       }));
       return row;
     });
+  }
+
+  function renderAnomalies(data) {
+    var note = document.getElementById("anomaly-note");
+    var table = document.getElementById("anomalies");
+    if (!data || !data.ready) {
+      table.hidden = true;
+      note.textContent = (data && data.reason) ||
+        "Noch keine Grundlinie gelernt (loginshield learn).";
+      return;
+    }
+    if (!data.reports.length) {
+      table.hidden = true;
+      note.textContent = "Nichts Auffaelliges. Grundlinie: " +
+        data.baseline.events + " Ereignisse von " + data.baseline.addresses +
+        " Adressen.";
+      return;
+    }
+    note.textContent = data.reports.length +
+      " Adresse(n) weichen vom Normalzustand ab.";
+    fill("anomalies", "anomaly-note", data.reports, function (item) {
+      var row = el("tr");
+      row.appendChild(el("td", item.ip, "mono"));
+      var cell = el("td");
+      cell.appendChild(el("span", item.score + "/100",
+        "tag " + (item.verdict === "kritisch" ? "fail" : "deny")));
+      row.appendChild(cell);
+      row.appendChild(el("td", item.summary, "muted"));
+      row.appendChild(actionButton("Sperren", "", function () {
+        api("/api/block", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ip: item.ip, minutes: 60, reason: "anomaly"})
+        }).then(function () { toast(item.ip + " gesperrt."); load(); })
+          .catch(function (error) { toast(error.message, true); });
+      }));
+      return row;
+    });
+    table.hidden = false;
+    note.textContent = data.reports.length +
+      " Adresse(n) weichen vom Normalzustand ab.";
   }
 
   var TAGS = {

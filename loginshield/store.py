@@ -487,6 +487,98 @@ class Store:
             result[index][key] += 1
         return result
 
+    # -- Merkmale fuer die Anomalie-Erkennung --------------------------
+    def set_meta(self, key: str, value: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)", (key, value)
+            )
+            self._conn.commit()
+
+    def get_meta(self, key: str) -> Optional[str]:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT value FROM meta WHERE key = ?", (key,)
+            ).fetchone()
+        return row["value"] if row else None
+
+    def profile_by_ip(self, since: float, until: Optional[float] = None) -> Dict[str, dict]:
+        """Fasst je Adresse zusammen, was sie im Zeitraum getan hat.
+
+        Grundlage sowohl fuer das Lernen des Normalzustands als auch fuer
+        die Bewertung einzelner Adressen.
+        """
+        clauses = ["ts > ?"]
+        params: List[object] = [since]
+        if until is not None:
+            clauses.append("ts <= ?")
+            params.append(until)
+        sql = ("SELECT ip, event, route, user_agent, identity, ts FROM attempts"
+               " WHERE " + " AND ".join(clauses))
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+
+        profile: Dict[str, dict] = {}
+        for row in rows:
+            entry = profile.setdefault(row["ip"], {
+                "events": 0, "failures": 0, "successes": 0,
+                "routes": set(), "agents": set(), "identities": set(),
+                "hours": set(), "first_ts": row["ts"], "last_ts": row["ts"],
+            })
+            entry["events"] += 1
+            if row["event"] == Event.LOGIN_FAILURE:
+                entry["failures"] += 1
+            elif row["event"] == Event.LOGIN_SUCCESS:
+                entry["successes"] += 1
+            if row["route"]:
+                entry["routes"].add(row["route"])
+            if row["user_agent"]:
+                entry["agents"].add(row["user_agent"][:120])
+            if row["identity"]:
+                entry["identities"].add(row["identity"])
+            entry["hours"].add(time.gmtime(row["ts"]).tm_hour)
+            entry["first_ts"] = min(entry["first_ts"], row["ts"])
+            entry["last_ts"] = max(entry["last_ts"], row["ts"])
+        return profile
+
+    def hourly_counts(self, since: float, event: Optional[str] = None,
+                      now: Optional[float] = None) -> List[int]:
+        """Ereignisse je voller Stunde - fuer die Erkennung von Lastspitzen."""
+        now = time.time() if now is None else now
+        sql = "SELECT ts FROM attempts WHERE ts > ?"
+        params: List[object] = [since]
+        if event:
+            sql += " AND event = ?"
+            params.append(event)
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+
+        buckets = max(1, int((now - since) // 3600))
+        counts = [0] * buckets
+        for row in rows:
+            index = int((row["ts"] - since) // 3600)
+            if 0 <= index < buckets:
+                counts[index] += 1
+        return counts
+
+    def route_counts(self, since: float) -> Dict[str, int]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT route, COUNT(*) AS n FROM attempts"
+                " WHERE ts > ? AND route <> '' GROUP BY route",
+                (since,),
+            ).fetchall()
+        return {row["route"]: int(row["n"]) for row in rows}
+
+    def agent_counts(self, since: float) -> Dict[str, int]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT user_agent, COUNT(*) AS n FROM attempts"
+                " WHERE ts > ? AND user_agent <> '' GROUP BY user_agent",
+                (since,),
+            ).fetchall()
+        return {row["user_agent"][:120]: int(row["n"]) for row in rows}
+
     # -- Pflege --------------------------------------------------------
     def prune(self, before: float) -> Tuple[int, int]:
         """Loescht alte Ereignisse und abgelaufene Sperren."""

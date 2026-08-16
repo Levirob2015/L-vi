@@ -122,6 +122,21 @@ requestfilter:
   disabled_rules: []      # einzelne Regeln abschalten
   extra_rules: []         # eigene Muster ergaenzen
 
+# Anomalie-Erkennung: lernt aus den eigenen Aufzeichnungen, wie normaler
+# Verkehr auf DIESEM Server aussieht, und meldet Abweichungen - auch bei
+# Angriffsmustern, die in keiner Regel stehen.
+# Erst lernen:  loginshield learn
+# Dann ansehen: loginshield anomalies
+anomaly:
+  enabled: true
+  action: report          # report = nur melden, block = ab block_score sperren
+  learn_days: 7
+  window: 3600            # betrachteter Zeitraum bei einer Pruefung
+  report_score: 40        # ab hier taucht eine Adresse im Bericht auf
+  block_score: 70
+  min_events: 200         # darunter wird gar nicht geurteilt
+  min_addresses: 20
+
 # Optional: Logdateien mitlesen (loginshield watch)
 logwatch: []
 #  - path: /var/log/auth.log
@@ -262,6 +277,23 @@ def build_parser() -> argparse.ArgumentParser:
     firewall.add_argument("--yes", action="store_true",
                           help="Rueckfrage bei --clear ueberspringen")
     firewall.set_defaults(handler=cmd_firewall)
+
+    learn = subparsers.add_parser(
+        "learn", help="Normalzustand aus den eigenen Aufzeichnungen lernen"
+    )
+    learn.add_argument("--days", type=float, default=None,
+                       help="Lernzeitraum in Tagen (Standard: aus der Konfiguration)")
+    learn.set_defaults(handler=cmd_learn)
+
+    anomalies = subparsers.add_parser(
+        "anomalies", help="Adressen anzeigen, die vom Normalzustand abweichen"
+    )
+    anomalies.add_argument("--hours", type=float, default=1.0,
+                           help="Betrachteter Zeitraum")
+    anomalies.add_argument("--min-score", type=int, default=None,
+                           help="Nur ab diesem Punktwert anzeigen")
+    anomalies.add_argument("--json", action="store_true")
+    anomalies.set_defaults(handler=cmd_anomalies)
 
     filt = subparsers.add_parser(
         "filter", help="Anfrage-Firewall: Regeln anzeigen oder eine URL pruefen"
@@ -740,6 +772,73 @@ def cmd_firewall(args) -> int:
         print("\n  Die Firewall ist in der Konfiguration nicht aktiv.")
         print("  Sperren gelten derzeit nur innerhalb der Anwendung.")
     return 0
+
+
+def cmd_learn(args) -> int:
+    guard = _guard(args)
+    try:
+        baseline = guard.anomaly.learn_and_store(days=args.days)
+        tage = args.days or guard.config.anomaly.learn_days
+        print(f"Normalzustand aus {tage:g} Tagen gelernt:")
+        print(f"  Ereignisse            {baseline.ereignisse}")
+        print(f"  Adressen              {baseline.adressen}")
+        print(f"  Bekannte Pfade        {len(baseline.bekannte_pfade)}")
+        print(f"  Bekannte Kennungen    {len(baseline.bekannte_kennungen)}")
+        print(f"  Fehlerquote           {baseline.fehlerquote * 100:.1f}%")
+        print(f"  Ereignisse je Adresse {baseline.ereignisse_je_ip_median:.0f} "
+              f"(typisch)")
+        print(f"  Aktive Stunden (UTC)  "
+              f"{', '.join(str(h) for h in baseline.aktive_stunden) or '-'}")
+
+        status = guard.anomaly.status()
+        print()
+        if status["ready"]:
+            print("Die Datengrundlage reicht - Abweichungen werden ab jetzt bewertet.")
+            print("Ansehen mit:  loginshield anomalies")
+        else:
+            print(f"Hinweis: {status['reason']}")
+        return 0
+    finally:
+        guard.close()
+
+
+def cmd_anomalies(args) -> int:
+    guard = _guard(args)
+    try:
+        status = guard.anomaly.status()
+        if not status["ready"]:
+            print(status["reason"], file=sys.stderr)
+            print("\nLieber keine Aussage als eine geratene.", file=sys.stderr)
+            return 1
+
+        berichte = guard.anomaly.scan(window=args.hours * 3600)
+        if args.min_score is not None:
+            berichte = [r for r in berichte if r.score >= args.min_score]
+
+        if args.json:
+            print(json.dumps([r.as_dict() for r in berichte], indent=2,
+                             ensure_ascii=False))
+            return 0
+
+        print(f"Abweichungen der letzten {args.hours:g} Stunden")
+        print("=" * 46)
+        print(f"Grundlinie: {status['events']} Ereignisse von {status['addresses']} "
+              f"Adressen, {status['age_hours']:.0f}h alt\n")
+
+        if not berichte:
+            print("  Nichts Auffaelliges.")
+            return 0
+
+        for report in berichte:
+            print(f"  {report.ip}   {report.score:.0f}/100   [{report.verdict}]")
+            for signal in report.signals:
+                print(f"     - {signal.erklaerung}  (+{signal.punkte:.0f})")
+            print()
+        print(f"{len(berichte)} Adresse(n) auffaellig. Sperren mit: "
+              f"loginshield block <IP>")
+        return 0
+    finally:
+        guard.close()
 
 
 def cmd_filter(args) -> int:

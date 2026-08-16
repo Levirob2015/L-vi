@@ -249,6 +249,55 @@ class RequestFilterConfig:
 
 
 @dataclass
+class AnomalyConfig:
+    """Anomalie-Erkennung: lernt den Normalzustand, meldet Abweichungen.
+
+    Standardmaessig wird nur gemeldet, nicht gesperrt. Eine statistische
+    Abweichung ist ein Verdacht, kein Beweis - ein Werbeschub sieht einem
+    Angriff zunaechst aehnlich.
+    """
+
+    enabled: bool = True
+    #: report = nur vermerken, block = ab block_score auch sperren
+    action: str = "report"
+    #: Aus wie vielen Tagen der Normalzustand gelernt wird.
+    learn_days: float = 7.0
+    #: Zeitfenster, das bei einer Pruefung betrachtet wird.
+    window: float = 3600.0
+    #: Ab diesem Punktwert taucht eine Adresse im Bericht auf.
+    report_score: int = 40
+    #: Ab diesem Punktwert wird gesperrt (nur bei action: block).
+    block_score: int = 70
+    block_seconds: int = 3600
+    #: Unterhalb dieser Datenmenge wird gar nicht geurteilt - lieber gar
+    #: keine Aussage als eine geratene.
+    min_events: int = 200
+    min_addresses: int = 20
+    #: Gewichtung der Einzelsignale (Punkte-Obergrenze je Signal).
+    weights: dict = field(default_factory=lambda: {
+        "volumen": 25, "pfadvielfalt": 25, "neue_pfade": 20,
+        "fehlerquote": 20, "kontenvielfalt": 20, "kennung": 10,
+        "uhrzeit": 10, "takt": 15,
+    })
+
+    def validate(self) -> None:
+        if self.action not in ("report", "block"):
+            raise ConfigError("anomaly.action muss report oder block sein")
+        if self.learn_days <= 0:
+            raise ConfigError("anomaly.learn_days muss groesser als 0 sein")
+        if self.window <= 0:
+            raise ConfigError("anomaly.window muss groesser als 0 sein")
+        if not 1 <= self.report_score <= 100:
+            raise ConfigError("anomaly.report_score muss zwischen 1 und 100 liegen")
+        if not 1 <= self.block_score <= 100:
+            raise ConfigError("anomaly.block_score muss zwischen 1 und 100 liegen")
+        if self.block_score < self.report_score:
+            raise ConfigError("anomaly.block_score darf nicht unter report_score liegen")
+        if self.min_events < 1 or self.min_addresses < 1:
+            raise ConfigError("anomaly.min_events/min_addresses muessen > 0 sein")
+
+
+@dataclass
 class HoneypotConfig:
     """Die Falle: vorgetaeuschte Schwachstellen.
 
@@ -329,6 +378,7 @@ class Config:
     firewall: FirewallConfig = field(default_factory=FirewallConfig)
     honeypot: HoneypotConfig = field(default_factory=HoneypotConfig)
     requestfilter: RequestFilterConfig = field(default_factory=RequestFilterConfig)
+    anomaly: AnomalyConfig = field(default_factory=AnomalyConfig)
     logwatch: List[LogSourceConfig] = field(default_factory=list)
 
     def validate(self) -> "Config":
@@ -341,6 +391,7 @@ class Config:
         self.firewall.validate()
         self.honeypot.validate()
         self.requestfilter.validate()
+        self.anomaly.validate()
         for source in self.logwatch:
             source.validate()
         return self
@@ -367,6 +418,7 @@ class Config:
             ("firewall", FirewallConfig),
             ("honeypot", HoneypotConfig),
             ("requestfilter", RequestFilterConfig),
+            ("anomaly", AnomalyConfig),
         ):
             if name in data:
                 kwargs[name] = _build(sub_cls, data.pop(name), name)

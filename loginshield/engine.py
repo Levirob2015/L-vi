@@ -27,6 +27,7 @@ from typing import Dict, List, Optional
 from .config import Config
 from .firewall import Firewall
 from .honeypot import Honeypot
+from .anomaly import AnomalyDetector
 from .requestfilter import RequestFilter
 from .models import Block, Decision, Event, Reason
 from .netutils import (
@@ -75,6 +76,8 @@ class Guard:
         )
         #: Die zweite Firewall: filtert Anfragen nach Inhalt.
         self.requestfilter = RequestFilter(self.config.requestfilter, self)
+        #: Lernt den Normalzustand und meldet Abweichungen.
+        self.anomaly = AnomalyDetector(self.config.anomaly, self)
 
         rules = self.config.rules
         self._limiter = SlidingWindow(rules.request_limit, rules.request_window)
