@@ -21,7 +21,17 @@ Wants=network-online.target
 
 [Service]
 Type=exec
-ExecStart=/usr/local/bin/loginshield --config /etc/loginshield/loginshield.yaml serve --watch
+# Der Pfad passt zur empfohlenen Installation in eine eigene Umgebung:
+#   sudo python3 -m venv /opt/loginshield
+#   sudo /opt/loginshield/bin/pip install "loginshield[yaml] @ git+https://github.com/Levirob2015/L-vi"
+#
+# Warum eine eigene Umgebung und nicht systemweit: Debian und Ubuntu
+# neuerer Versionen lehnen 'sudo pip install' ab (PEP 668), weil es die
+# Paketverwaltung des Systems durcheinanderbringt.
+#
+# Wer LoginShield anders installiert hat, traegt hier den Pfad ein, den
+# 'which loginshield' zeigt.
+ExecStart=/opt/loginshield/bin/loginshield --config /etc/loginshield/loginshield.yaml serve --watch
 Restart=on-failure
 RestartSec=5s
 

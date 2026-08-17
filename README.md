@@ -55,6 +55,160 @@ dem richtigen Passwort.
 
 ---
 
+## Auf einem Server installieren
+
+Diese Schritte sind auf einem frischen System durchgespielt. Vorausgesetzt
+wird nur Python 3.9 oder neuer (`python3 --version`) und ein Zugang mit
+`sudo`.
+
+### 1. Installieren
+
+```bash
+sudo python3 -m venv /opt/loginshield
+sudo /opt/loginshield/bin/pip install "loginshield[yaml] @ git+https://github.com/Levirob2015/L-vi"
+/opt/loginshield/bin/loginshield --version
+```
+
+Zwei Dinge, die sonst Zeit kosten:
+
+* **Eine eigene Umgebung, nicht systemweit.** Debian und Ubuntu neuerer
+  Versionen lehnen `sudo pip install` ab (PEP 668), weil es die
+  Paketverwaltung des Systems durcheinanderbringt.
+* **Die Umgebung nicht nachträglich verschieben.** Der Pfad steht darin
+  fest; nach einem `mv` startet der Befehl nicht mehr. Lieber löschen und
+  am richtigen Ort neu anlegen.
+
+Das `[yaml]` ist optional, aber empfohlen: Ohne PyYAML entsteht eine
+JSON-Konfiguration ohne die erklärenden Kommentare.
+
+### 2. Konfiguration anlegen
+
+```bash
+sudo mkdir -p /etc/loginshield /var/lib/loginshield
+sudo /opt/loginshield/bin/loginshield init --path /etc/loginshield/loginshield.yaml
+```
+
+Dann in der Datei zwei Werte setzen:
+
+```yaml
+db_path: /var/lib/loginshield/loginshield.db
+
+allowlist:
+  - 127.0.0.1
+  - DEINE.EIGENE.IP.HIER      # damit du dich nicht selbst aussperrst
+```
+
+Die eigene Adresse findest du mit `curl -s https://ifconfig.me`. Das
+Dashboard-Token steht schon in der Datei (Rechte 600).
+
+### 3. Nachsehen, ob alles steht
+
+```bash
+sudo /opt/loginshield/bin/loginshield -c /etc/loginshield/loginshield.yaml doctor
+```
+
+Die Zeilen mit `-` zuerst, dann die mit `!`. Diesen Befehl kannst du nach
+jeder Änderung wieder aufrufen.
+
+### 4. Den Schutz anschließen
+
+Jetzt trennt sich der Weg, je nachdem was du schützen willst.
+
+**Variante A – SSH und Webserver, ohne eine Zeile Code.** LoginShield liest
+die Logdateien mit und sperrt, wer dort auffällt:
+
+```yaml
+logwatch:
+  - path: /var/log/auth.log        # Debian/Ubuntu; RHEL: /var/log/secure
+    format: sshd
+  - path: /var/log/nginx/access.log
+    format: nginx
+    path_filter: /login
+    failure_statuses: [401, 403]
+```
+
+Ausprobieren, solange du zusiehst:
+
+```bash
+sudo /opt/loginshield/bin/loginshield -c /etc/loginshield/loginshield.yaml watch
+```
+
+Gelesen werden nur **neu hinzukommende** Zeilen – was schon in der Datei
+steht, wird nicht nachträglich ausgewertet.
+
+**Variante B – deine eigene Python-Anwendung.** Zwei Zeilen in der App
+(siehe [Einbinden in eine eigene Anwendung](#einbinden-in-eine-eigene-anwendung)).
+Wichtig: Beide, App und Dienst, müssen auf **dieselbe** `db_path` zeigen.
+
+### 5. Firewall scharf schalten (optional, aber der eigentliche Punkt)
+
+Ohne Firewall gilt eine Sperre nur in der Anwendung. Mit Firewall kommt die
+Adresse an keinen Dienst mehr heran – auch nicht an SSH.
+
+```yaml
+firewall:
+  enabled: true
+  backend: auto
+```
+
+```bash
+sudo /opt/loginshield/bin/loginshield -c /etc/loginshield/loginshield.yaml firewall --setup
+sudo /opt/loginshield/bin/loginshield -c /etc/loginshield/loginshield.yaml firewall --selftest
+```
+
+Der Selbsttest sperrt eine Testadresse, sieht nach, ob sie wirklich in der
+Firewall steht, und entsperrt sie wieder. Er sagt dir also, ob die Anbindung
+auf **diesem** Rechner funktioniert – statt dass du es beim ersten echten
+Angriff merkst.
+
+### 6. Als Dienst laufen lassen
+
+```bash
+sudo cp deploy/loginshield.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now loginshield
+systemctl status loginshield
+journalctl -u loginshield -f
+```
+
+### 7. Dashboard aufs Telefon
+
+Standardmäßig lauscht das Dashboard nur auf `127.0.0.1`. Für den Zugriff aus
+dem eigenen Netz in der Konfiguration `dashboard.host: 0.0.0.0` setzen (ein
+Token ist dann Pflicht – ohne startet es gar nicht), dann im Safari die
+Adresse mit Token öffnen und "Zum Home-Bildschirm".
+
+**Über das Internet nur durch einen Tunnel** (WireGuard, Tailscale) oder
+hinter einem Reverse-Proxy mit HTTPS. Das Dashboard darf Sperren aufheben.
+
+### Was du danach noch tun solltest
+
+```bash
+# Zustand des Webauftritts festhalten - nur auf einem sauberen System!
+sudo /opt/loginshield/bin/loginshield -c /etc/loginshield/loginshield.yaml \
+     integrity --learn --path /var/www
+
+# Einmal ansehen, was auf der Platte liegt
+sudo /opt/loginshield/bin/loginshield -c /etc/loginshield/loginshield.yaml scan /var/www
+```
+
+Dazu `integrity.enabled: true` mit `paths: [/var/www]` setzen und eine
+[Benachrichtigung](#bescheid-bekommen-statt-nachzusehen) einrichten – sonst
+erfährst du von einem Fund nur, wenn du nachsiehst.
+
+### Wenn etwas nicht geht
+
+| Fehler | Ursache |
+|---|---|
+| `externally-managed-environment` | `pip` ohne eigene Umgebung – Schritt 1 |
+| `cannot execute: required file not found` | Die Umgebung wurde verschoben |
+| `firewall --setup` scheitert | Ohne `sudo` aufgerufen, oder nftables/iptables fehlt |
+| Dashboard zeigt nichts an | App und Dienst nutzen verschiedene `db_path` |
+| `Konfigurationsfehler: dashboard.token ist Pflicht` | `host` ist nicht localhost, Token fehlt |
+| Du hast dich selbst gesperrt | `loginshield unblock DEINE.IP`, dann in die Allowlist |
+
+---
+
 ## Was erkannt wird
 
 | Muster | Beschreibung | Standard-Schwelle |
