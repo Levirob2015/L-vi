@@ -42,6 +42,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from .config import MalwareConfig
+from .models import sauber
 
 log = logging.getLogger("loginshield.filescan")
 
@@ -585,7 +586,8 @@ class Quarantine:
             shutil.move(path, ziel)
             os.chmod(ziel, 0o600)   # nicht mehr ausfuehrbar, nicht lesbar
         except OSError as exc:
-            log.error("Quarantaene fehlgeschlagen fuer %s: %s", path, exc)
+            log.error("Quarantaene fehlgeschlagen fuer %s: %s",
+                      sauber(path, 200), exc)
             return None
 
         beleg = {
@@ -599,7 +601,8 @@ class Quarantine:
             os.chmod(ziel + ".json", 0o600)
         except OSError:  # pragma: no cover - plattformabhaengig
             pass
-        log.warning("In Quarantaene verschoben: %s -> %s", path, ziel)
+        log.warning("In Quarantaene verschoben: %s -> %s",
+                    sauber(path, 200), ziel)
         return ziel
 
     def list(self) -> List[dict]:

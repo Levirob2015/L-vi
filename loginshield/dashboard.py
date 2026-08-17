@@ -73,8 +73,20 @@ def _png(groesse: int = 180) -> bytes:
             + block(b"IEND", b""))
 
 
-#: Einmal erzeugt und wiederverwendet - das Symbol aendert sich nie.
-APPLE_TOUCH_ICON = _png(180)
+#: Erst beim ersten Abruf erzeugt, dann behalten.
+#:
+#: Vorher stand hier ein Aufruf von :func:`_png`, der beim Import lief -
+#: also bei **jedem** Aufruf von ``loginshield``, auch bei ``--version``
+#: oder ``block``. Gemessen: 12 ms fuer ein Bild, das die meisten Aufrufe
+#: nie brauchen. Ein Achtel der gesamten Startzeit fuer nichts.
+_icon_zwischenspeicher: Optional[bytes] = None
+
+
+def apple_touch_icon() -> bytes:
+    global _icon_zwischenspeicher
+    if _icon_zwischenspeicher is None:
+        _icon_zwischenspeicher = _png(180)
+    return _icon_zwischenspeicher
 
 #: Die Beschreibung fuer den Startbildschirm. Android und Chrome lesen sie,
 #: iOS nimmt die apple-Meta-Angaben - deshalb beides.
@@ -184,7 +196,7 @@ def _handler_factory(guard: Guard, config: DashboardConfig):
             # ohne die Kopfzeile mitzuschicken, und es steht nichts darin,
             # was jemanden etwas anginge.
             if route == "/apple-touch-icon.png":
-                self._send(200, APPLE_TOUCH_ICON, "image/png",
+                self._send(200, apple_touch_icon(), "image/png",
                            {"Cache-Control": "public, max-age=86400"})
                 return
             if route == "/manifest.webmanifest":

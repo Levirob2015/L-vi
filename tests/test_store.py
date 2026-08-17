@@ -126,3 +126,63 @@ def test_datenbank_ist_nicht_world_readable(tmp_path):
     store.close()
     mode = stat.S_IMODE(os.stat(path).st_mode)
     assert mode & 0o077 == 0
+
+
+# -- Aufraeumen in Haeppchen ---------------------------------------------
+# Ein DELETE ueber alles haelt die einzige Datenbanksperre so lange, wie
+# das Loeschen dauert - und in dieser Zeit wartet jede Anfrage. Gemessen
+# an 60.000 Ereignissen: 175 ms, in denen ein Login stand.
+def test_prune_loescht_vollstaendig_trotz_haeppchen(store):
+    jetzt = 1_700_000_000.0
+    for index in range(250):
+        store.record_attempt(f"198.51.100.{index % 250}", Event.LOGIN_FAILURE,
+                             ts=jetzt - 10_000)
+    store.record_attempt("203.0.113.1", Event.LOGIN_FAILURE, ts=jetzt)
+
+    attempts, _ = store.prune(jetzt - 5_000, batch=17)
+    assert attempts == 250
+    # Der neue Eintrag ist noch da.
+    assert store.count_failures_by_ip("203.0.113.1", jetzt - 100) == 1
+
+
+def test_prune_mit_haeppchengroesse_eins(store):
+    jetzt = 1_700_000_000.0
+    for _ in range(5):
+        store.record_attempt("198.51.100.1", Event.LOGIN_FAILURE, ts=jetzt - 10_000)
+    assert store.prune(jetzt - 5_000, batch=1)[0] == 5
+
+
+def test_prune_gibt_die_sperre_zwischendurch_ab(store):
+    """Der eigentliche Zweck: Anfragen kommen dazwischen.
+
+    Gemessen wird nicht die Zeit - das waere auf einem ausgelasteten
+    Testrechner unzuverlaessig. Gemessen wird, ob ein zweiter Faden
+    waehrend des Loeschens ueberhaupt zum Zug kommt.
+    """
+    import threading
+
+    jetzt = 1_700_000_000.0
+    for index in range(4000):
+        store.record_attempt(f"198.51.100.{index % 250}", Event.LOGIN_FAILURE,
+                             ts=jetzt - 10_000)
+
+    zaehler = {"abfragen": 0}
+    laeuft = threading.Event()
+    laeuft.set()
+
+    def dazwischen():
+        while laeuft.is_set():
+            store.count_failures_by_ip("198.51.100.1", jetzt - 100)
+            zaehler["abfragen"] += 1
+
+    faden = threading.Thread(target=dazwischen, daemon=True)
+    faden.start()
+    try:
+        store.prune(jetzt - 5_000, batch=100)
+        vorher = zaehler["abfragen"]
+    finally:
+        laeuft.clear()
+        faden.join(timeout=2)
+
+    # Bei 40 Haeppchen muss der andere Faden oft zum Zug gekommen sein.
+    assert vorher > 40, f"nur {vorher} Abfragen kamen dazwischen"

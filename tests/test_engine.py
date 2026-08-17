@@ -366,3 +366,47 @@ def test_der_faden_ruft_die_wartung_wirklich_auf(tmp_path):
     finally:
         guard.maintenance = echte_wartung
         guard.close()
+
+
+def test_beenden_waehrend_der_wartung_wirft_keinen_stapelabzug(tmp_path, caplog):
+    """close() schliesst die Datenbank - der laufende Durchlauf faellt hin.
+
+    Beim Herunterfahren ist das kein Fehler, sondern die Folge. Ein
+    Stapelabzug an dieser Stelle laesst bei jedem Beenden etwas kaputt
+    aussehen, was in Ordnung ist.
+    """
+    import logging
+
+    config = Config(db_path=str(tmp_path / "b.db"))
+    config.maintenance_interval = 0
+    guard = Guard(config)
+    guard.close()                       # Datenbank ist jetzt zu
+
+    guard._wartung_stop.set()           # wir beenden gerade
+    with caplog.at_level(logging.DEBUG, logger="loginshield"):
+        weiter = guard._wartung_durchlauf()
+
+    assert weiter is False              # der Faden endet
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert any("beim Beenden" in r.getMessage() for r in caplog.records)
+
+
+def test_ein_fehler_im_betrieb_wird_sehr_wohl_gemeldet(tmp_path, caplog):
+    import logging
+
+    config = Config(db_path=str(tmp_path / "b2.db"))
+    config.maintenance_interval = 0
+    guard = Guard(config)
+    try:
+        def wirft():
+            raise RuntimeError("irgendwas ist schief")
+
+        guard.maintenance = wirft
+        with caplog.at_level(logging.DEBUG, logger="loginshield"):
+            weiter = guard._wartung_durchlauf(abstand=300)
+
+        assert weiter is True           # der Faden laeuft weiter
+        schwere = [r for r in caplog.records if r.levelno >= logging.ERROR]
+        assert schwere and "irgendwas ist schief" in caplog.text
+    finally:
+        guard.close()

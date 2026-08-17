@@ -41,6 +41,7 @@ from email.message import EmailMessage
 from typing import Dict, List, Optional
 
 from .config import NotifyConfig
+from .models import sauber
 
 log = logging.getLogger("loginshield.notify")
 
@@ -64,7 +65,10 @@ class Meldung:
     unterdrueckt: int = 0
 
     def betreff(self) -> str:
-        text = f"[LoginShield] {self.titel}"
+        # Die Betreffzeile einer E-Mail und die Kopfzeile eines Webhooks
+        # duerfen keine Steuerzeichen enthalten: Python weist beides ab,
+        # und die Meldung faellt dann ganz aus.
+        text = f"[LoginShield] {sauber(self.titel, 120)}"
         if self.unterdrueckt:
             text += f" (+{self.unterdrueckt} weitere)"
         return text
@@ -100,6 +104,9 @@ class Notifier:
         self.zugestellt = 0
         self.fehler = 0
         self.verworfen = 0
+        #: Zaehler fuer flush(): eingereiht gegen erledigt.
+        self._eingereiht = 0
+        self._fertig = 0
 
     @property
     def enabled(self) -> bool:
@@ -144,10 +151,14 @@ class Notifier:
 
     def _einreihen(self, meldung: Meldung) -> bool:
         self.start()
+        with self._lock:
+            self._eingereiht += 1
         try:
             self._queue.put_nowait(meldung)
         except queue.Full:
             self.verworfen += 1
+            with self._lock:
+                self._fertig += 1        # nichts mehr zu erwarten
             log.warning("Benachrichtigung verworfen, Warteschlange voll (%s)",
                         meldung.titel)
             return False
@@ -178,6 +189,9 @@ class Notifier:
                 self.fehler += 1
                 log.warning("Benachrichtigung nicht zugestellt (%s): %s",
                             self.config.method, exc)
+            finally:
+                with self._lock:
+                    self._fertig += 1
 
     def close(self, timeout: float = 3.0) -> None:
         if self._faden is None:
@@ -190,13 +204,21 @@ class Notifier:
         self._faden = None
 
     def flush(self, timeout: float = 5.0) -> bool:
-        """Wartet, bis die Warteschlange leer ist (fuer Tests und den CLI-Test)."""
+        """Wartet, bis alles Eingereihte wirklich zugestellt ist.
+
+        Eine leere Warteschlange genuegt dafuer nicht: Die letzte Meldung
+        kann bereits entnommen und noch unterwegs sein. Frueher stand hier
+        genau diese Pruefung, mit einem ``sleep`` als Notnagel dahinter -
+        weshalb an den Aufrufstellen ueberall noch ein zweites ``sleep``
+        stand. Gezaehlt wird jetzt, was tatsaechlich fertig ist.
+        """
         ende = time.time() + timeout
         while time.time() < ende:
-            if self._queue.empty():
-                time.sleep(0.02)        # dem Faden Zeit zum Abschluss geben
+            with self._lock:
+                offen = self._eingereiht - self._fertig
+            if offen <= 0:
                 return True
-            time.sleep(0.02)
+            time.sleep(0.005)
         return False
 
     # ------------------------------------------------------------------

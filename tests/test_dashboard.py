@@ -286,3 +286,22 @@ def test_zusammenfassung_bleibt_sichtbar(dashboard):
     assert "function fillTable(" in seite
     assert 'fillTable("files"' in seite
     assert 'fillTable("anomalies"' in seite
+
+
+def test_symbol_wird_erst_bei_bedarf_erzeugt():
+    """Vorher lief die Erzeugung beim Import - bei jedem Aufruf.
+
+    12 ms fuer ein Bild, das 'loginshield --version' oder 'block' nie
+    braucht: ein Achtel der gesamten Startzeit fuer nichts.
+    """
+    import importlib
+
+    from loginshield import dashboard as modul
+
+    importlib.reload(modul)
+    assert modul._icon_zwischenspeicher is None      # noch nichts gebaut
+
+    erst = modul.apple_touch_icon()
+    assert erst[:8] == b"\x89PNG\r\n\x1a\n"
+    # Danach behalten, nicht jedes Mal neu.
+    assert modul.apple_touch_icon() is erst

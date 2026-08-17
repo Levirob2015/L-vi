@@ -33,7 +33,7 @@ from .filescan import FileScanner, Quarantine
 from .integrity import IntegrityMonitor
 from .notify import Notifier
 from .requestfilter import RequestFilter
-from .models import Block, Decision, Event, Reason
+from .models import Block, Decision, Event, Reason, sauber
 from .netutils import (
     client_ip,
     ip_in_networks,
@@ -170,18 +170,41 @@ class Guard:
         # zu tun, und der Abgleich mit der Firewall ist ohnehin gerade
         # gelaufen.
         while not self._wartung_stop.wait(abstand):
-            try:
-                self.maintenance()
-            except Exception:  # pragma: no cover - darf den Faden nie beenden
-                log.exception("Wartung fehlgeschlagen - naechster Versuch in %ss",
-                              abstand)
+            if not self._wartung_durchlauf(abstand):
+                return
 
-    def stop_maintenance(self) -> None:
+    def _wartung_durchlauf(self, abstand: float = 0.0) -> bool:
+        """Ein Wartungsdurchlauf. ``False`` heisst: Faden beenden.
+
+        Eigene Methode, damit die Fehlerbehandlung pruefbar ist, ohne auf
+        den naechsten Takt der Schleife zu warten.
+        """
+        try:
+            self.maintenance()
+        except Exception:
+            if self._wartung_stop.is_set():
+                # Beim Beenden ist das kein Fehler, sondern die Folge:
+                # close() hat die Datenbank geschlossen, waehrend dieser
+                # Durchlauf noch lief. Ein Stapelabzug an dieser Stelle
+                # laesst beim Herunterfahren jedes Mal etwas kaputt
+                # aussehen, was in Ordnung ist.
+                log.debug("Wartung beim Beenden abgebrochen")
+                return False
+            log.exception("Wartung fehlgeschlagen - naechster Versuch in %ss",
+                          abstand)
+        return True
+
+    def stop_maintenance(self, timeout: float = 5.0) -> None:
         self._wartung_stop.set()
         faden = self._wartung_faden
         if faden is not None and faden.is_alive():
             # Kurz warten, damit ein laufender Durchlauf noch fertig wird.
-            faden.join(timeout=5.0)
+            faden.join(timeout=timeout)
+            if faden.is_alive():
+                log.info(
+                    "Die Wartung laeuft noch (grosser Bestand?) - es wird "
+                    "nicht laenger gewartet. Der naechste Start raeumt nach."
+                )
         self._wartung_faden = None
 
     # ------------------------------------------------------------------
@@ -474,7 +497,8 @@ class Guard:
                      quelle, ip, route)
             return None
 
-        log.warning("%s ausgeloest von %s: %s (%s)", quelle, ip, route or "-", reason)
+        log.warning("%s ausgeloest von %s: %s (%s)",
+                    quelle, ip, sauber(route, 120) or "-", reason)
         return self.block(
             ip,
             seconds=seconds if seconds is not None else self.config.honeypot.block_seconds,
@@ -523,19 +547,17 @@ class Guard:
         if ip is None:
             return result
 
+        # Der Dateiname kommt vom Absender. Vor allem, was ihn weitergibt.
+        name = sauber(os.path.basename(filename), 60) or "-"
+        grund = f"{name}: {sauber(result.summary, 120)}"
+
         if schadhaft and not self.is_allowlisted(ip):
-            log.warning("Schadhafter Upload von %s: %s (%s)",
-                        ip, filename or "-", result.summary)
-            self.block(
-                ip, seconds=None,
-                reason=Reason.MALICIOUS_UPLOAD,
-                detail=f"{os.path.basename(filename)[:60]}: {result.summary}"[:200],
-            )
+            log.warning("Schadhafter Upload von %s: %s", ip, grund)
+            self.block(ip, seconds=None, reason=Reason.MALICIOUS_UPLOAD,
+                       detail=grund)
         else:
-            self.record_suspicious(
-                ip, route=route or "upload", source="filescan",
-                detail=f"{os.path.basename(filename)[:60]}: {result.summary}"[:200],
-            )
+            self.record_suspicious(ip, route=sauber(route or "upload", 120),
+                                   source="filescan", detail=grund)
         return result
 
     def scan_and_quarantine(self, path: str, ip: Optional[str] = None) -> dict:
@@ -553,7 +575,8 @@ class Guard:
         if ip is not None and self.filescan.is_malicious(result):
             self.record_suspicious(
                 normalize_ip(ip), route="datei", source="filescan",
-                detail=f"{os.path.basename(path)[:60]}: {result.summary}"[:200],
+                detail=f"{sauber(os.path.basename(path), 60)}: "
+                       f"{sauber(result.summary, 120)}",
             )
         return {"result": result, "quarantined": verschoben}
 
@@ -601,6 +624,11 @@ class Guard:
                 raise ValueError(
                     f"{normalized} steht auf der Allowlist und wird nicht gesperrt"
                 )
+
+        # Die Begruendung enthaelt oft fremden Text (einen Dateinamen, einen
+        # Pfad). Hier ist die Engstelle, durch die jede Sperre laeuft -
+        # deshalb wird hier gesaeubert, nicht an jedem Aufrufer.
+        detail = sauber(detail, 200)
 
         now = self.clock()
         rules = self.config.rules

@@ -2,8 +2,48 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Optional
+
+
+#: Steuerzeichen einschliesslich Zeilenumbruch, Tabulator und DEL.
+_STEUERZEICHEN = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def sauber(wert: object, max_len: int = 200) -> str:
+    """Macht fremden Text protokoll- und versandtauglich.
+
+    Alles, was von aussen kommt - Dateinamen aus einem Upload, der Pfad
+    einer Anfrage, ein User-Agent - landet in Protokollzeilen, in der
+    Datenbank und in Benachrichtigungen. Ungefiltert kann der Absender
+    damit einiges anstellen:
+
+    * **Protokollzeilen faelschen.** Ein Upload namens
+      ``harmlos.php\\nIP 203.0.113.1 entsperrt`` erzeugt im Protokoll eine
+      zweite Zeile, die aussieht wie eine Meldung dieses Programms. Wer
+      das Protokoll liest - oder es maschinell auswertet - wird belogen.
+    * **Das Terminal umschreiben.** ``\\x1b[2J`` loescht den Bildschirm
+      dessen, der das Protokoll mit ``tail -f`` verfolgt.
+    * **Die Benachrichtigung verhindern.** Ein Wagenruecklauf im Namen
+      laesst die Betreffzeile einer E-Mail und die Kopfzeile eines
+      Webhooks ungueltig werden; Python weist beides ab. Die Meldung
+      faellt dann aus - ausgerechnet die, die man braeuchte.
+
+    Deshalb: Steuerzeichen raus, Laenge begrenzt.
+    """
+    text = wert if isinstance(wert, str) else str(wert)
+    # Schneller Weg: Der Normalfall ist harmlos und kurz. Diese Funktion
+    # sitzt auf dem Weg jeder Anfrage - sie darf nicht jedes Zeichen
+    # einzeln anfassen, wenn es nichts zu tun gibt.
+    if len(text) <= max_len and not _STEUERZEICHEN.search(text):
+        return text
+    # Steuerzeichen durch ein Leerzeichen ersetzen, nicht loeschen: Sonst
+    # rutscht "a\nb" zu "ab" zusammen und der Name wird unlesbar.
+    text = _STEUERZEICHEN.sub(" ", text)
+    if len(text) > max_len:
+        text = text[:max_len - 3] + "..."
+    return text.strip()
 
 
 class Event:

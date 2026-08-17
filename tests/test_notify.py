@@ -95,7 +95,6 @@ def test_ein_fehler_beim_versand_schlaegt_nicht_durch():
 
     notifier.notify("Sperre", "Text", schwere=9)   # darf nicht werfen
     notifier.flush()
-    time.sleep(0.15)
     notifier.close()
     assert notifier.fehler >= 1
 
@@ -115,7 +114,6 @@ def test_der_faden_ueberlebt_einen_fehler():
     notifier.notify("Erste", "x", schwere=9, kennung="a")
     notifier.notify("Zweite", "y", schwere=9, kennung="b")
     notifier.flush()
-    time.sleep(0.2)
     notifier.close()
 
     assert [m.titel for m in gesehen] == ["Zweite"]
@@ -211,7 +209,6 @@ def test_webhook_schickt_text():
             format="text", min_interval=0))
         notifier.notify("IP gesperrt", "203.0.113.5", schwere=9)
         notifier.flush()
-        time.sleep(0.2)
         notifier.close()
     finally:
         urllib.request.urlopen = echt
@@ -241,7 +238,6 @@ def test_webhook_als_json():
             format="json", min_interval=0))
         notifier.notify("Titel", "Text", schwere=8)
         notifier.flush()
-        time.sleep(0.2)
         notifier.close()
     finally:
         urllib.request.urlopen = echt
@@ -257,7 +253,6 @@ def test_eigenes_programm_wird_aufgerufen(tmp_path):
         command=["sh", "-c", f"printf '%s' \"$1\" > {ziel}", "sh", "{titel}"]))
     notifier.notify("IP gesperrt", "Text", schwere=9)
     notifier.flush()
-    time.sleep(0.4)
     notifier.close()
 
     assert ziel.read_text() == "IP gesperrt"
@@ -285,7 +280,6 @@ def test_email_wird_gebaut(monkeypatch):
         mail_to=["admin@beispiel.test"]))
     notifier.notify("IP gesperrt", "203.0.113.5", schwere=9)
     notifier.flush()
-    time.sleep(0.3)
     notifier.close()
 
     assert gesendet["host"] == "mail.beispiel.test"
@@ -304,7 +298,6 @@ def test_sperre_wird_gemeldet(config, store, clock):
     try:
         guard.block("203.0.113.9", reason="brute_force_ip", detail="5 Fehlversuche")
         guard.notifier.flush()
-        time.sleep(0.2)
     finally:
         guard.close()
 
@@ -326,7 +319,6 @@ def test_netzsperre_wiegt_schwerer(config, store, clock):
         # ... eine Netzsperre schon.
         guard.block("198.51.100.0/24", reason="subnet_abuse")
         guard.notifier.flush()
-        time.sleep(0.2)
     finally:
         guard.close()
 
@@ -354,7 +346,6 @@ def test_schadcode_wird_gemeldet(config, store, clock, tmp_path):
         clock.advance(61)
         guard.maintenance()
         guard.notifier.flush()
-        time.sleep(0.2)
     finally:
         guard.close()
 
