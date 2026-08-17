@@ -171,3 +171,70 @@ def test_watcher_meldet_fehlende_quellen(tmp_path, guard):
     watcher = LogWatcher(guard, [source])
     assert list(watcher.missing_sources()) == [source.path]
     watcher.close()
+
+
+# -- Grenzen beim Lesen --------------------------------------------------
+def test_zu_lange_zeile_wird_uebersprungen(tmp_path, caplog):
+    """Eine 48-MB-Zeile fuellte den Speicher, bis irgendwann ein
+    Zeilenumbruch kam: 96 MB und eine Sekunde Rechenzeit."""
+    import logging
+
+    from loginshield.logwatch import MAX_ZEILE, Tailer
+
+    pfad = tmp_path / "gross.log"
+    pfad.write_text("erste Zeile\n")
+    tailer = Tailer(str(pfad), from_start=True)
+    assert tailer.read_new() == ["erste Zeile"]
+
+    with open(pfad, "a") as handle:
+        handle.write("X" * (MAX_ZEILE + 1000) + "\n")
+        handle.write("danach normal\n")
+
+    with caplog.at_level(logging.WARNING, logger="loginshield.logwatch"):
+        zeilen = tailer.read_new()
+        # Die naechste Runde liefert die Zeile nach der ueberlangen.
+        zeilen += tailer.read_new()
+
+    assert "danach normal" in zeilen
+    assert not any(len(z) > MAX_ZEILE for z in zeilen)
+    assert "laenger als" in caplog.text
+    tailer.close()
+
+
+def test_nach_der_langen_zeile_geht_es_weiter(tmp_path):
+    from loginshield.logwatch import MAX_ZEILE, Tailer
+
+    pfad = tmp_path / "x.log"
+    pfad.write_text("a\n")
+    tailer = Tailer(str(pfad), from_start=True)
+    tailer.read_new()
+
+    with open(pfad, "a") as handle:
+        handle.write("Y" * (MAX_ZEILE * 2) + "\nb\nc\n")
+
+    gesammelt = []
+    for _ in range(4):
+        gesammelt += tailer.read_new()
+    assert "b" in gesammelt and "c" in gesammelt
+    tailer.close()
+
+
+def test_je_durchgang_nur_ein_block(tmp_path):
+    """Nach einer Logrotation wuerde sonst die ganze Datei in einem Zug
+    gelesen - bei einer grossen Datei bis zum Stillstand."""
+    from loginshield.logwatch import MAX_BLOCK, Tailer
+
+    pfad = tmp_path / "viel.log"
+    zeile = "Aug 16 10:00:01 srv sshd[1]: Failed password for root from 203.0.113.9 port 1 ssh2\n"
+    anzahl = (MAX_BLOCK // len(zeile)) + 2000
+    pfad.write_text(zeile * anzahl)
+
+    tailer = Tailer(str(pfad), from_start=True)
+    erste_runde = len(tailer.read_new())
+    assert 0 < erste_runde < anzahl          # nicht alles auf einmal
+
+    gesamt = erste_runde
+    for _ in range(10):
+        gesamt += len(tailer.read_new())
+    assert gesamt == anzahl                  # aber vollstaendig
+    tailer.close()

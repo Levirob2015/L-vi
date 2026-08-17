@@ -21,6 +21,16 @@ from .netutils import normalize_ip
 
 log = logging.getLogger("loginshield.logwatch")
 
+#: Hoechstens so viel wird je Durchgang aus einer Logdatei gelesen. Nach
+#: einer Rotation wuerde sonst der ganze Inhalt der neuen Datei in einem
+#: Zug im Speicher landen.
+MAX_BLOCK = 4 * 1024 * 1024
+
+#: Laenger darf eine einzelne Zeile nicht sein. Zum Vergleich: nginx
+#: begrenzt die Anfragezeile auf 8 KiB, sshd kuerzt Benutzernamen. Was
+#: darueber liegt, ist keine Protokollzeile.
+MAX_ZEILE = 64 * 1024
+
 
 @dataclass
 class ParsedEvent:
@@ -157,6 +167,8 @@ class Tailer:
         self._handle = None
         self._inode: Optional[int] = None
         self._buffer = ""
+        #: True, solange eine zu lange Zeile noch nicht zu Ende ist.
+        self._ueberlang = False
 
     def _open(self) -> bool:
         try:
@@ -170,6 +182,7 @@ class Tailer:
         self._handle = handle
         self._inode = stat.st_ino
         self._buffer = ""
+        self._ueberlang = False
         return True
 
     def _close(self) -> None:
@@ -200,14 +213,49 @@ class Tailer:
                 log.info("Logrotation erkannt: %s", self.path)
 
         lines: List[str] = []
-        chunk = self._handle.read()
+        # Hoechstens ein Block je Durchgang. Ohne diese Grenze wuerde nach
+        # einer Logrotation der ganze Inhalt der neuen Datei in einem Zug
+        # in den Speicher gelesen - bei einer grossen Datei bis zum
+        # Stillstand des Rechners. Der Rest kommt beim naechsten Durchgang,
+        # zwei Sekunden spaeter.
+        chunk = self._handle.read(MAX_BLOCK)
         if not chunk:
             return lines
         self._buffer += chunk
         while "\n" in self._buffer:
             line, self._buffer = self._buffer.split("\n", 1)
+            if self._ueberlang:
+                # Wir haben den Anfang dieser Zeile bereits verworfen -
+                # jetzt ist sie zu Ende, es geht normal weiter.
+                self._ueberlang = False
+                continue
+            if len(line) > MAX_ZEILE:
+                # Auch eine *vollstaendige* Zeile kann jedes Mass
+                # ueberschreiten, wenn sie ganz in einen Block passt. Sonst
+                # bekaeme die Auswertung eine 4 MB lange "Zeile" vorgesetzt.
+                self._zu_lang_melden()
+                continue
             lines.append(line)
+
+        # Eine Zeile ohne Ende: Wenn sie jedes Mass ueberschreitet, ist sie
+        # keine Protokollzeile mehr. Sie wird verworfen, statt den Speicher
+        # zu fuellen, bis irgendwann ein Zeilenumbruch kommt.
+        if len(self._buffer) > MAX_ZEILE:
+            # Eine Zeile ohne Ende: Sie wird verworfen, statt den Speicher
+            # zu fuellen, bis irgendwann ein Zeilenumbruch kommt.
+            self._zu_lang_melden()
+            self._ueberlang = True
+            self._buffer = ""
         return lines
+
+    def _zu_lang_melden(self) -> None:
+        """Warnt genau einmal je ueberlanger Zeile, nicht bei jedem Block."""
+        if self._ueberlang:
+            return
+        log.warning(
+            "Zeile in %s laenger als %s Zeichen - sie wird uebersprungen. "
+            "Ist das wirklich eine Logdatei?", self.path, MAX_ZEILE,
+        )
 
     def close(self) -> None:
         self._close()

@@ -328,8 +328,61 @@ async def _send_denied(send, decision: Decision) -> None:
     await send({"type": "http.response.body", "body": payload})
 
 
+class _Kettenstrom:
+    """Erst der gepruefte Anfang, dann der Rest - ohne ihn zu speichern.
+
+    Der Grund fuer diese Klasse: Vorher wurde der ganze Koerper eingelesen,
+    um ihn danach wieder bereitzustellen. Bei einem 300-MB-Upload waren das
+    600 MB Speicher (einmal gelesen, einmal zusammengefuegt) - und zwar
+    verursacht von der Schutzschicht. Wenige gleichzeitige Uploads haetten
+    den Server umgelegt, den dieses Programm verteidigen soll.
+
+    Jetzt wird nur der Anfang gelesen, der geprueft wird. Alles weitere
+    holt sich die Anwendung selbst, Haeppchen fuer Haeppchen, direkt aus dem
+    urspruenglichen Strom.
+    """
+
+    def __init__(self, kopf: bytes, rest) -> None:
+        self._kopf = io.BytesIO(kopf)
+        self._rest = rest
+
+    def read(self, groesse: int = -1) -> bytes:
+        if groesse is None or groesse < 0:
+            # "Alles" - hier bleibt nichts anderes uebrig, als es auch
+            # herauszugeben. Eine Anwendung, die so liest, entscheidet
+            # selbst ueber ihren Speicher.
+            return self._kopf.read() + (self._rest.read() if self._rest else b"")
+        daten = self._kopf.read(groesse)
+        if len(daten) < groesse and self._rest is not None:
+            daten += self._rest.read(groesse - len(daten))
+        return daten
+
+    def readline(self, groesse: int = -1) -> bytes:
+        zeile = self._kopf.readline(groesse)
+        if zeile.endswith(b"\n") or self._rest is None:
+            return zeile
+        # Der Kopf endete mitten in der Zeile - im Rest weiterlesen.
+        weiter = groesse - len(zeile) if groesse and groesse > 0 else -1
+        return zeile + self._rest.readline(weiter)
+
+    def readlines(self, hinweis: int = -1):
+        zeilen = []
+        while True:
+            zeile = self.readline()
+            if not zeile:
+                return zeilen
+            zeilen.append(zeile)
+
+    def __iter__(self):
+        while True:
+            zeile = self.readline()
+            if not zeile:
+                return
+            yield zeile
+
+
 def _wsgi_body(environ, limit: int) -> bytes:
-    """Liest den Koerper und legt ihn wieder in environ zurueck."""
+    """Liest den Anfang des Koerpers und laesst den Rest, wo er ist."""
     try:
         laenge = int(environ.get("CONTENT_LENGTH") or 0)
     except ValueError:
@@ -340,10 +393,12 @@ def _wsgi_body(environ, limit: int) -> bytes:
     if strom is None:
         return b""
     daten = strom.read(min(laenge, limit))
-    rest = b""
     if laenge > limit:
-        rest = strom.read(laenge - limit)
-    environ["wsgi.input"] = io.BytesIO(daten + rest)
+        # Der Rest bleibt im urspruenglichen Strom - die Anwendung liest
+        # ihn selbst weiter.
+        environ["wsgi.input"] = _Kettenstrom(daten, strom)
+    else:
+        environ["wsgi.input"] = io.BytesIO(daten)
     return daten
 
 

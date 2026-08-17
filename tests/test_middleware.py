@@ -196,3 +196,92 @@ def test_wsgi_sperrt_nach_fehlversuchen(guard, config):
 
     assert captured[-1].startswith("403")
     assert json.loads(b"".join(body))["reason"] == "ip_blocked"
+
+
+# -- Grosse Uploads duerfen den Server nicht umlegen ---------------------
+# Vorher wurde der ganze Koerper eingelesen, um ihn danach wieder
+# bereitzustellen: Bei 300 MB waren das 600 MB Speicher - verursacht von
+# der Schutzschicht, die den Server verteidigen soll.
+class LangerStrom:
+    """Liefert viele Bytes, ohne sie selbst im Speicher zu halten."""
+
+    def __init__(self, gesamt):
+        self.uebrig = gesamt
+
+    def read(self, groesse=-1):
+        if self.uebrig <= 0:
+            return b""
+        menge = self.uebrig if groesse is None or groesse < 0 else min(groesse, self.uebrig)
+        self.uebrig -= menge
+        return b"x" * menge
+
+
+def test_wsgi_liest_nicht_den_ganzen_koerper(guard):
+    """Nur der gepruefte Anfang wird gelesen - der Rest bleibt, wo er ist."""
+    from loginshield.middleware import _wsgi_body
+
+    GESAMT = 8 * 1024 * 1024
+    strom = LangerStrom(GESAMT)
+    environ = {"CONTENT_LENGTH": str(GESAMT), "wsgi.input": strom}
+
+    geprueft = _wsgi_body(environ, 64 * 1024)
+    assert len(geprueft) == 64 * 1024
+    # Entscheidend: Der Rest wurde noch nicht angefasst.
+    assert strom.uebrig == GESAMT - 64 * 1024
+
+
+def test_die_anwendung_bekommt_trotzdem_alles(guard):
+    """Bei aller Sparsamkeit darf kein Byte verloren gehen."""
+    GESAMT = 5 * 1024 * 1024
+    gelesen = {"summe": 0}
+
+    def app(environ, start_response):
+        strom = environ["wsgi.input"]
+        while True:
+            stueck = strom.read(65536)
+            if not stueck:
+                break
+            gelesen["summe"] += len(stueck)
+        start_response("200 OK", [("Content-Type", "text/plain")])
+        return [b"ok"]
+
+    WSGIShield(app, guard)({
+        "PATH_INFO": "/upload", "REQUEST_METHOD": "POST",
+        "REMOTE_ADDR": "198.51.100.5", "HTTP_USER_AGENT": "x",
+        "CONTENT_TYPE": "application/octet-stream",
+        "CONTENT_LENGTH": str(GESAMT),
+        "wsgi.input": LangerStrom(GESAMT),
+    }, lambda s, h, e=None: None)
+
+    assert gelesen["summe"] == GESAMT
+
+
+def test_kettenstrom_liest_ueber_die_grenze_hinweg():
+    import io
+
+    from loginshield.middleware import _Kettenstrom
+
+    strom = _Kettenstrom(b"Kopf-", io.BytesIO(b"Rest-Daten"))
+    assert strom.read(7) == b"Kopf-Re"          # ueber die Naht hinweg
+    assert strom.read() == b"st-Daten"
+    assert strom.read(5) == b""
+
+
+def test_kettenstrom_zeilenweise():
+    import io
+
+    from loginshield.middleware import _Kettenstrom
+
+    # Die Naht liegt mitten in der zweiten Zeile.
+    strom = _Kettenstrom(b"eins\nzw", io.BytesIO(b"ei\ndrei\n"))
+    assert list(strom) == [b"eins\n", b"zwei\n", b"drei\n"]
+
+
+def test_kleiner_koerper_bleibt_ein_einfacher_puffer(guard):
+    import io
+
+    from loginshield.middleware import _wsgi_body
+
+    environ = {"CONTENT_LENGTH": "5", "wsgi.input": io.BytesIO(b"hallo")}
+    assert _wsgi_body(environ, 64 * 1024) == b"hallo"
+    assert environ["wsgi.input"].read() == b"hallo"
