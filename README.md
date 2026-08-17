@@ -1235,17 +1235,52 @@ Was das System **nicht** leistet, damit die Erwartung stimmt:
 
 ```bash
 pip install pytest
-python -m pytest -q      # 353 Tests
+python -m pytest -q      # 574 Tests
 ```
 
 Abgedeckt sind unter anderem: Erkennungsregeln und Eskalation, Honeypot in
 allen drei Varianten (inklusive der Prüfung, dass die Köder sich nicht
-verraten), Allowlist,
-Rate-Limiting, IP-Auflösung hinter Proxys inklusive gefälschter Header,
-Log-Parsing (sshd/nginx/custom) samt Logrotation, alle Firewall-Backends
-gegen einen aufgezeichneten Kommando-Ausführer, ASGI- und WSGI-Middleware,
-Dashboard-API mit Authentifizierung und die Kommandozeile. Zeitabhängige
-Tests laufen über eine steuerbare Uhr – keine echten Wartezeiten.
+verraten), Allowlist, Rate-Limiting, IP-Auflösung hinter Proxys inklusive
+gefälschter Header, Log-Parsing (sshd/nginx/custom) samt Logrotation, alle
+Firewall-Backends gegen einen aufgezeichneten Kommando-Ausführer, ASGI- und
+WSGI-Middleware, Dashboard-API mit Authentifizierung und die Kommandozeile.
+Zeitabhängige Tests laufen über eine steuerbare Uhr – keine echten
+Wartezeiten.
+
+### Auf allen unterstützten Python-Fassungen
+
+Das Projekt verspricht Python 3.9 und neuer. Dieses Versprechen ist nur so
+gut wie seine Prüfung – und ein Fehler, der nur auf 3.9 auftrat, hat genau
+hier zwei Runden lang überlebt, weil lokal nur 3.11 lief:
+
+```bash
+for v in 3.9 3.10 3.11 3.12 3.13; do
+  uv venv --python $v /tmp/py$v && uv pip install -q --python /tmp/py$v/bin/python pytest PyYAML
+  /tmp/py$v/bin/python -m pytest -q
+done
+```
+
+Dieselben Fassungen prüft auch die CI bei jedem Push
+(`.github/workflows/tests.yml`), einmal davon zusätzlich ohne PyYAML.
+
+### Was diese Tests bewusst *nicht* messen
+
+Zeiten. Zwei Anläufe eines Tests sind daran gescheitert: Auf fremder
+Hardware misst man die Prozessverwaltung des Systems mit, nicht das eigene
+Programm. Wo es auf Millisekunden ankommt – etwa beim häppchenweisen
+Aufräumen der Datenbank – steht die Messung als Zahlenreihe im Quelltext,
+und der Test prüft stattdessen den Mechanismus (wird die Datenbanksperre
+zwischen den Häppchen abgegeben?).
+
+Messungen, die sich nicht sinnvoll als Test festschreiben lassen, stehen
+dort, wo die Entscheidung gefallen ist:
+
+| Was | Wo |
+|---|---|
+| Wartezeit beim Aufräumen, je Python-Fassung | `store.py`, `prune()` |
+| Verbindungsbremse gegen echtes nftables gemessen | README, Firewall |
+| Fehlalarm-Durchlauf über `/etc` und die Standardbibliothek | `filescan.py` |
+| Speicherbedarf großer Uploads | `middleware.py`, `_Kettenstrom` |
 
 ---
 
