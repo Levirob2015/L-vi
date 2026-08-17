@@ -1275,4 +1275,4 @@ tests/           Testsuite
 
 ## Lizenz
 
-MIT
+MIT – siehe [LICENSE](LICENSE).
