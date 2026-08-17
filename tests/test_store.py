@@ -1,3 +1,5 @@
+import time
+
 from loginshield.models import Event
 from loginshield.store import Store
 
@@ -152,37 +154,64 @@ def test_prune_mit_haeppchengroesse_eins(store):
     assert store.prune(jetzt - 5_000, batch=1)[0] == 5
 
 
-def test_prune_gibt_die_sperre_zwischendurch_ab(store):
-    """Der eigentliche Zweck: Anfragen kommen dazwischen.
+def test_prune_laesst_anfragen_dazwischen(store):
+    """Der eigentliche Zweck: Eine Anfrage wartet nicht das ganze Loeschen ab.
 
-    Gemessen wird nicht die Zeit - das waere auf einem ausgelasteten
-    Testrechner unzuverlaessig. Gemessen wird, ob ein zweiter Faden
-    waehrend des Loeschens ueberhaupt zum Zug kommt.
+    Gemessen wird das Verhaeltnis, nicht eine absolute Zahl: Wie lange
+    musste die laengste Anfrage warten, verglichen mit der Gesamtdauer des
+    Loeschens? Ohne Pause wartet sie fast die ganze Zeit (Verhaeltnis nahe
+    1), mit Pause nur ein Haeppchen lang.
+
+    Die erste Fassung dieses Tests zaehlte die Zwischenzugriffe und
+    verlangte mehr als 40. Das ist eine Eigenschaft der Ablaufplanung, kein
+    Versprechen: Auf Python 3.9 waren es 9, und der Test schlug fehl -
+    obwohl er damit auf einen echten Fehler zeigte (siehe PRUNE_PAUSE).
     """
     import threading
 
     jetzt = 1_700_000_000.0
-    for index in range(4000):
+    for index in range(6000):
         store.record_attempt(f"198.51.100.{index % 250}", Event.LOGIN_FAILURE,
                              ts=jetzt - 10_000)
 
-    zaehler = {"abfragen": 0}
+    wartezeiten = []
     laeuft = threading.Event()
     laeuft.set()
 
     def dazwischen():
         while laeuft.is_set():
+            begonnen = time.perf_counter()
             store.count_failures_by_ip("198.51.100.1", jetzt - 100)
-            zaehler["abfragen"] += 1
+            wartezeiten.append(time.perf_counter() - begonnen)
 
     faden = threading.Thread(target=dazwischen, daemon=True)
     faden.start()
+    time.sleep(0.05)
     try:
-        store.prune(jetzt - 5_000, batch=100)
-        vorher = zaehler["abfragen"]
+        vorher = len(wartezeiten)
+        begonnen = time.perf_counter()
+        store.prune(jetzt - 5_000, batch=200)
+        gesamtdauer = time.perf_counter() - begonnen
     finally:
         laeuft.clear()
         faden.join(timeout=2)
 
-    # Bei 40 Haeppchen muss der andere Faden oft zum Zug gekommen sein.
-    assert vorher > 40, f"nur {vorher} Abfragen kamen dazwischen"
+    waehrend = wartezeiten[vorher:]
+    assert waehrend, "der andere Faden kam ueberhaupt nicht zum Zug"
+    laengste = max(waehrend)
+    assert laengste < gesamtdauer / 3, (
+        f"laengste Wartezeit {laengste*1000:.0f} ms von "
+        f"{gesamtdauer*1000:.0f} ms Gesamtdauer - die Sperre wird nicht "
+        f"abgegeben"
+    )
+
+
+def test_pause_ist_eine_echte_pause():
+    """sleep(0) genuegt nicht - auf Python 3.9 wirkt es gar nicht.
+
+    Diese Zeile ist der Unterschied zwischen 17 ms und 517 ms Wartezeit
+    auf 3.9. Sie soll nicht versehentlich wieder zu sleep(0) werden.
+    """
+    from loginshield.store import PRUNE_PAUSE
+
+    assert PRUNE_PAUSE > 0

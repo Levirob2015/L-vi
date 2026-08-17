@@ -19,6 +19,10 @@ from .models import Attempt, Block, sauber, Event
 
 SCHEMA_VERSION = 3
 
+#: Pause zwischen zwei Loesch-Haeppchen beim Aufraeumen. Muss eine echte
+#: Pause sein, kein sleep(0): Siehe die Messung in :meth:`Store.prune`.
+PRUNE_PAUSE = 0.001
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS attempts (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -643,19 +647,28 @@ class Store:
         selbst laeuft, passiert das nicht mehr nur, wenn jemand nachsieht,
         sondern regelmaessig.
 
-        Das ``sleep(0)`` zwischen den Haeppchen ist der eigentliche Trick.
-        Ohne es nimmt dieselbe Schleife die Sperre sofort wieder und die
-        wartende Anfrage kommt trotzdem nicht dazwischen. Gemessen an
-        40.000 Ereignissen, waehrend nebenher Anfragen liefen:
+        Die kurze Pause zwischen den Haeppchen ist der eigentliche Trick.
+        Ohne sie nimmt dieselbe Schleife die Sperre sofort wieder, und die
+        wartende Anfrage kommt trotzdem nicht dazwischen.
 
-            ohne Haeppchen         192 ms Gesamtdauer, 191 ms Wartezeit
-            2000 ohne sleep(0)     192 ms,             191 ms
-            2000 mit sleep(0)      209 ms,              22 ms
-            500 mit sleep(0)       351 ms,              13 ms   <- gewaehlt
+        Es muss eine **echte** Pause sein. ``sleep(0)`` gibt nur einen
+        Hinweis an die Ablaufplanung, und der wirkt je nach
+        Python-Fassung unterschiedlich. Gemessen an 40.000 Ereignissen,
+        waehrend nebenher Anfragen liefen (schlimmste Wartezeit einer
+        Anfrage):
 
-        Das Aufraeumen dauert damit fast doppelt so lange. Das ist der
-        Preis, und er ist richtig herum bezahlt: Es laeuft im Hintergrund,
-        waehrend die Wartezeit einen echten Login trifft.
+                              Python 3.9      Python 3.11
+            ohne Pause          395 ms          168 ms
+            sleep(0)            517 ms           16 ms
+            sleep(0.001)         17 ms           14 ms   <- gewaehlt
+
+        Auf 3.9 half ``sleep(0)`` also gar nichts - dort war das Problem
+        trotz Haeppchen unveraendert vorhanden. Mit einer echten
+        Millisekunde wirkt es auf jeder Fassung gleich.
+
+        Das Aufraeumen dauert dadurch etwa ein Fuenftel laenger. Der Preis
+        ist richtig herum bezahlt: Es laeuft im Hintergrund, waehrend die
+        Wartezeit einen echten Login trifft.
         """
         attempts = 0
         batch = max(1, int(batch))
@@ -670,8 +683,8 @@ class Store:
             attempts += max(0, entfernt)
             if entfernt < batch:
                 break
-            # Die Sperre wirklich abgeben, nicht nur kurz loslassen.
-            time.sleep(0)
+            # Die Sperre wirklich abgeben, nicht nur einen Hinweis geben.
+            time.sleep(PRUNE_PAUSE)
 
         with self._lock:
             blocks = self._conn.execute(
