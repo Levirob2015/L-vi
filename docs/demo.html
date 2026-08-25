@@ -507,6 +507,53 @@ tr.sev-warn td:first-child { border-left-color: var(--warn); }
 .chip-ok   { color: var(--ok);   background: var(--ok-dim); }
 .chip-trap { color: var(--warn); background: var(--warn-dim); }
 .chip-deny { color: var(--muted); background: var(--accent-dim); }
+.chip-datei { color: var(--crit); background: var(--crit-dim); }
+
+/* Die Meldung, wie sie im Betrieb aufs Telefon geht. */
+.meldung {
+  position: fixed;
+  z-index: 40;
+  right: calc(16px + env(safe-area-inset-right));
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  left: auto;
+  width: min(340px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-shadow: var(--shadow);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.meldung[hidden] { display: none; }
+.meldung.krit { border-left-color: var(--crit); }
+.meldung-kopf {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.meldung strong { font-size: 14px; }
+.meldung span#meldung-text { color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) {
+  .meldung { animation: meldung-auf .25s ease-out; }
+  @keyframes meldung-auf {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: none; }
+  }
+}
+@media (max-width: 560px) {
+  .meldung { left: calc(12px + env(safe-area-inset-left)); right: calc(12px + env(safe-area-inset-right)); width: auto; }
+}
+.chip-wache { color: var(--warn); background: var(--warn-dim); }
 
 /* ---------- Ereignisstrom ---------- */
 .stream {
@@ -685,6 +732,9 @@ a { color: var(--accent); text-underline-offset: 2px; }
           <button class="primary" id="run-brute" type="button">Brute-Force-Angriff</button>
           <button id="run-spray" type="button">Password Spraying</button>
           <button id="run-trap" type="button">Honeypot-Scan</button>
+          <button id="run-upload" type="button">Webshell hochladen</button>
+          <button id="run-einbruch" type="button">Einbruch bemerken</button>
+          <button id="run-wache" type="button">Firewall-Regeln löschen</button>
           <button class="danger" id="reset" type="button">Zurücksetzen</button>
           <p class="hint" id="hint">
             Drei typische Angriffsmuster. Jedes wird anders erkannt &mdash; und
@@ -709,6 +759,10 @@ a { color: var(--accent); text-underline-offset: 2px; }
         <div class="kpi is-warn">
           <span class="label">Honeypot-Treffer</span>
           <span class="value" id="k-trap">0</span>
+        </div>
+        <div class="kpi is-crit">
+          <span class="label">Dateibefunde</span>
+          <span class="value" id="k-datei">0</span>
         </div>
         <div class="kpi is-ok">
           <span class="label">Echte Logins</span>
@@ -758,6 +812,41 @@ a { color: var(--accent); text-underline-offset: 2px; }
           </table>
         </div>
         <div class="empty" id="blocks-empty">Keine aktiven Sperren.</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="meldung" id="meldung" hidden aria-live="polite">
+    <div class="meldung-kopf">
+      <span class="meldung-app">LoginShield</span>
+      <span class="meldung-zeit">jetzt</span>
+    </div>
+    <strong id="meldung-titel"></strong>
+    <span id="meldung-text"></span>
+  </div>
+
+  <section class="block">
+    <p class="eyebrow">Nach dem Einbruch</p>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Dateien auf dem Server</h2>
+        <div class="spacer"></div>
+        <span class="num dim" id="datei-zustand" style="font-size:12px"></span>
+      </div>
+      <div class="panel-body">
+        <div class="scroll" id="datei-tabelle" hidden>
+          <table>
+            <thead>
+              <tr>
+                <th>Art</th><th>Datei</th><th class="num">Schwere</th><th>Bedeutung</th>
+              </tr>
+            </thead>
+            <tbody id="dateien"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="datei-leer">
+          Vergleichsgrundlage vorhanden &mdash; nichts hat sich ver&auml;ndert.
+        </div>
       </div>
     </div>
   </section>
@@ -896,7 +985,8 @@ window.onerror = function (message) {
   var reduce = supportsQuery && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   // ---------- Zustand ----------
-  var state = { events: [], blocks: [], hourly: [], ok: 0, filter: "all" };
+  var state = { events: [], blocks: [], hourly: [], ok: 0, filter: "all",
+               dateien: [], meldungen: 0 };
   var running = false;
   var timers = [];
   var seq = 0;
@@ -904,6 +994,7 @@ window.onerror = function (message) {
   var ATTACKER = "198.51.100.66";
   var SPRAYER  = "203.0.113.41";
   var SCANNER  = "192.0.2.77";
+  var LADER    = "203.0.113.88";
   var USERS = ["admin", "root", "info", "backup", "postgres", "anna", "ben", "test"];
 
   function clearTimers() {
@@ -919,8 +1010,12 @@ window.onerror = function (message) {
   function seed() {
     state.events = [];
     state.blocks = [];
+    state.dateien = [];
     state.ok = 0;
     seq = 0;
+
+    var kasten = document.getElementById("meldung");
+    if (kasten) { kasten.hidden = true; }
 
     var shape = [1,0,2,1,0,1,3,2,1,4,2,1,0,2,5,3,2,1,3,2,4,2,1,2];
     state.hourly = shape.slice();
@@ -971,6 +1066,28 @@ window.onerror = function (message) {
       });
     }
     render();
+  }
+
+  function addDatei(art, pfad, schwere, bedeutung) {
+    state.dateien.unshift({
+      art: art, pfad: pfad, schwere: schwere, bedeutung: bedeutung, fresh: true
+    });
+    render();
+  }
+
+  // Die Meldung, die im Betrieb aufs Telefon geht. Hier als Einblendung,
+  // damit sichtbar wird: Man muss nicht selbst nachsehen.
+  function melden(titel, text, stufe) {
+    var kasten = document.getElementById("meldung");
+    if (!kasten) { return; }
+    state.meldungen += 1;
+    kasten.className = "meldung" + (stufe === "krit" ? " krit" : "");
+    kasten.hidden = false;
+    var kopf = document.getElementById("meldung-titel");
+    var leib = document.getElementById("meldung-text");
+    if (kopf) { kopf.textContent = titel; }
+    if (leib) { leib.textContent = text; }
+    later(function () { kasten.hidden = true; }, reduce ? 3200 : 6500);
   }
 
   // ---------- Angriffsabläufe ----------
@@ -1061,11 +1178,97 @@ window.onerror = function (message) {
   }
 
   // ---------- Darstellung ----------
+  function uploadShell() {
+    beginn("Jemand lädt eine Datei hoch, die wie ein Bild heißt …");
+    var step = reduce ? 260 : 780;
+
+    addEvent("datei", LADER, "gast",
+      "POST /upload – urlaub.jpg (28 KB) angenommen, wird geprüft");
+
+    later(function () {
+      addEvent("datei", LADER, "gast",
+        "Inhalt beginnt mit <?php – .jpg-Datei enthält PHP-Quelltext");
+    }, step);
+
+    later(function () {
+      addEvent("deny", LADER, "gast",
+        "Abgewiesen (HTTP 403) – die Datei erreicht die Anwendung nicht");
+      addBlock(LADER, "malicious_upload", 900, 0);
+      melden("Schadhafter Upload abgewiesen",
+             "urlaub.jpg: PHP-Code in einer Bilddatei · " + LADER, "krit");
+      document.getElementById("hint").textContent =
+        "Geprüft, bevor die Anwendung sie zu sehen bekommt. Eine Webshell, " +
+        "die nie auf der Platte landet, muss auch nicht gefunden werden.";
+      busy(false);
+    }, step * 2);
+  }
+
+  function einbruch() {
+    beginn("Angenommen, es hat doch jemand geschafft – was fällt dann auf?");
+    var step = reduce ? 300 : 900;
+
+    addEvent("wache", "–", "system",
+      "Stündliche Prüfung: 412 Dateien mit der Grundlage verglichen");
+
+    later(function () {
+      addDatei("neu", "/var/www/uploads/bild.php", 10,
+        "neue Skriptdatei in einem Upload-Verzeichnis");
+      addEvent("datei", "–", "system",
+        "Neue Datei gefunden – dort gehören Bilder hin, keine Programme");
+    }, step);
+
+    later(function () {
+      addDatei("geändert", "/var/www/index.php", 9,
+        "Inhalt hat sich seit der Grundlage verändert");
+      addEvent("datei", "–", "system", "index.php wurde nachträglich verändert");
+    }, step * 1.8);
+
+    later(function () {
+      addDatei("gelöscht", "/var/www/README.txt", 6, "Datei ist verschwunden");
+      addEvent("datei", "–", "system",
+        "bild.php enthält eval($_POST[…]) – in Quarantäne verschoben");
+      melden("Schadcode auf dem Server gefunden",
+             "/var/www/uploads/bild.php · liegt jetzt in der Quarantäne", "krit");
+      document.getElementById("hint").textContent =
+        "Neu, geändert, gelöscht: Alle drei Spuren eines Einbruchs fallen auf, " +
+        "weil der Zustand vorher festgehalten wurde. Gelöscht wird nie – die " +
+        "Datei ist Beweismittel.";
+      busy(false);
+    }, step * 2.6);
+  }
+
+  function firewallWache() {
+    beginn("Jemand lädt einen fremden Regelsatz – die Sperren wären weg …");
+    var step = reduce ? 300 : 900;
+
+    addEvent("wache", "–", "system",
+      "nft flush ruleset – die eigenen Firewall-Regeln sind verschwunden");
+
+    later(function () {
+      addEvent("wache", "–", "system",
+        "Wartung: Regeln fehlen, obwohl " + state.blocks.length +
+        " Sperre(n) gelten – werden neu angelegt");
+    }, step);
+
+    later(function () {
+      addEvent("wache", "–", "system",
+        "Regeln wiederhergestellt, Sperren zurückgeschrieben");
+      melden("Firewall-Regeln waren verschwunden",
+             "Neu angelegt. Zwischenzeitlich galten die Sperren nur in der Anwendung.");
+      document.getElementById("hint").textContent =
+        "Der stillste Ausfall überhaupt: Die Liste zeigt weiter Sperren, " +
+        "aufgehalten wird niemand. Deshalb sieht die Wartung alle fünf Minuten nach.";
+      busy(false);
+    }, step * 2);
+  }
+
   var KINDS = {
     fail: ["Fehlversuch", "chip-fail"],
     ok:   ["Erfolg", "chip-ok"],
     trap: ["Honeypot", "chip-trap"],
-    deny: ["Abgewiesen", "chip-deny"]
+    deny: ["Abgewiesen", "chip-deny"],
+    datei: ["Datei", "chip-datei"],
+    wache: ["Wache", "chip-wache"]
   };
 
   function el(tag, text, cls) {
@@ -1117,7 +1320,50 @@ window.onerror = function (message) {
     setValue("k-ips", Object.keys(ips).length, "ips");
     setValue("k-blocks", state.blocks.length, "blocks");
     setValue("k-trap", traps.length, "trap");
+    setValue("k-datei", state.dateien.length, "datei");
     setValue("k-ok", state.ok, "ok");
+  }
+
+  function renderDateien() {
+    var body = document.getElementById("dateien");
+    var tabelle = document.getElementById("datei-tabelle");
+    var leer = document.getElementById("datei-leer");
+    var zustand = document.getElementById("datei-zustand");
+    if (!body) { return; }
+
+    body.textContent = "";
+    tabelle.hidden = state.dateien.length === 0;
+    leer.hidden = state.dateien.length > 0;
+
+    var summe = 0;
+    state.dateien.forEach(function (d) { summe += d.schwere; });
+    zustand.textContent = state.dateien.length
+      ? "Bewertung: " + (summe >= 9 ? "kritisch" : "auffällig")
+      : "412 Dateien überwacht";
+
+    state.dateien.forEach(function (d) {
+      var row = el("tr", null, d.fresh && !reduce ? "enter" : "");
+      d.fresh = false;
+
+      var art = el("td");
+      art.appendChild(el("span", d.art, "chip " + (d.schwere >= 9 ? "chip-fail" : "chip-trap")));
+      row.appendChild(art);
+
+      // Dateiname gross, Ordner klein darunter: Auf dem Telefon draengt
+      // ein langer Pfad sonst alles Wichtige aus dem Bild.
+      var teile = d.pfad.split("/");
+      var name = teile.pop();
+      var zelle = el("td", null, "mono");
+      zelle.appendChild(el("div", name));
+      if (teile.length) {
+        zelle.appendChild(el("div", teile.join("/") + "/", "dim"));
+      }
+      row.appendChild(zelle);
+
+      row.appendChild(el("td", String(d.schwere), "num"));
+      row.appendChild(el("td", d.bedeutung, "dim"));
+      body.appendChild(row);
+    });
   }
 
   function renderBlocks() {
@@ -1266,6 +1512,7 @@ window.onerror = function (message) {
   function render() {
     renderKpis();
     renderBlocks();
+    renderDateien();
     renderStream();
     drawChart();
   }
@@ -1294,6 +1541,9 @@ window.onerror = function (message) {
   document.getElementById("run-brute").addEventListener("click", bruteForce);
   document.getElementById("run-spray").addEventListener("click", spraying);
   document.getElementById("run-trap").addEventListener("click", honeypot);
+  document.getElementById("run-upload").addEventListener("click", uploadShell);
+  document.getElementById("run-einbruch").addEventListener("click", einbruch);
+  document.getElementById("run-wache").addEventListener("click", firewallWache);
 
   document.getElementById("reset").addEventListener("click", function () {
     clearTimers();
