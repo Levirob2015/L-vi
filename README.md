@@ -25,8 +25,10 @@ zuschnappt.
 
 **Auf dem iPad:** Die Seite in Safari öffnen und über *Teilen → Zum
 Home-Bildschirm* ablegen – sie bekommt dann ein eigenes Symbol und startet
-ohne Browserleiste, wie eine App. Die Schutzsoftware selbst läuft dort
-nicht: sie schützt einen Server, kein Tablet.
+ohne Browserleiste, wie eine App. Das hier ist die Vorschau mit erfundenen
+Daten; für die echte Anzeige des eigenen Servers siehe [Die App auf dem
+iPhone und iPad](#die-app-auf-dem-iphone-und-ipad). Die Schutzsoftware
+selbst läuft dort nicht: sie schützt einen Server, kein Tablet.
 
 ---
 
@@ -171,12 +173,14 @@ systemctl status loginshield
 journalctl -u loginshield -f
 ```
 
-### 7. Dashboard aufs Telefon
+### 7. Dashboard aufs Telefon oder iPad
 
 Standardmäßig lauscht das Dashboard nur auf `127.0.0.1`. Für den Zugriff aus
 dem eigenen Netz in der Konfiguration `dashboard.host: 0.0.0.0` setzen (ein
-Token ist dann Pflicht – ohne startet es gar nicht), dann im Safari die
-Adresse mit Token öffnen und "Zum Home-Bildschirm".
+Token ist dann Pflicht – ohne startet es gar nicht), dann im Safari
+`http://<server-ip>:8787` öffnen, "Zum Home-Bildschirm", App starten und den
+Token einmal eintragen. Ausführlich: [Die App auf dem iPhone und
+iPad](#die-app-auf-dem-iphone-und-ipad).
 
 **Über das Internet nur durch einen Tunnel** (WireGuard, Tailscale) oder
 hinter einem Reverse-Proxy mit HTTPS. Das Dashboard darf Sperren aufheben.
@@ -981,43 +985,89 @@ Exitcode 1 heißt: Es gibt etwas zu tun (`-`-Zeilen zuerst).
 
 ---
 
-## Auf dem iPhone und iPad
+## Die App auf dem iPhone und iPad
 
 Gleich vorweg, damit keine falsche Erwartung entsteht: **Der Schutz selbst
-läuft nicht auf iOS.** Er gehört auf den Server, auf dem deine Anwendung
-liegt. iOS lässt keine Dienste im Hintergrund laufen, hat keine
-Systemrechte und keine Firewall, an die sich ein Programm hängen könnte.
-Ein iPhone kann einen Server nicht verteidigen.
+läuft nicht auf iOS, und keine App auf einem iPad kann das iPad schützen.**
+Er gehört auf den Server, auf dem deine Anwendung liegt. iOS lässt keine
+Dienste im Hintergrund laufen, hat keine Systemrechte und keine Firewall,
+an die sich ein Programm hängen könnte. Jede App im App Store, die etwas
+anderes verspricht, kann es nicht halten – sie sieht vom Rest des Geräts
+nichts. Das iPad selbst schützen Apples Updates, ein Gerätecode und
+Zwei-Faktor an der Apple-ID; dafür braucht es nichts zu installieren.
 
-Was aufs iPhone gehört, ist die **Bedienoberfläche**: nachsehen, wer gerade
+Was aufs iPad gehört, ist die **Bedienoberfläche**: nachsehen, wer gerade
 angreift, und eine Sperre aufheben, ohne am Rechner zu sitzen. Genau dafür
-ist das Dashboard eingerichtet:
+ist das Dashboard eingerichtet.
 
-* **Zum Home-Bildschirm hinzufügen** – es startet dann ohne Safari-Leisten,
-  mit eigenem Symbol, wie eine App.
+### Einrichten – einmal, drei Schritte
+
+```bash
+# 1. Auf dem Server - im eigenen Netz erreichbar, mit Token:
+loginshield serve --host 0.0.0.0
+```
+
+2. Im Safari auf dem iPad `http://<server-ip>:8787` öffnen, dann
+   *Teilen → Zum Home-Bildschirm*. Es entsteht ein eigenes Symbol.
+3. Die App vom Symbol aus starten und den Token **einmal** eintragen. Er
+   steht in der Konfiguration unter `dashboard.token`. Danach nicht mehr.
+
+Die Adresse mit `?token=…` funktioniert weiterhin, ist aber nicht mehr
+nötig – und der Anmeldebildschirm ist der bessere Weg: Ein Token in der
+Adresszeile steht im Verlauf und auf jedem Bildschirmfoto.
+
+### Was die App vom Browserfenster unterscheidet
+
+* **Sie überlebt den Kaltstart.** iOS wirft eine App vom Startbildschirm
+  aus dem Speicher, sobald der Platz knapp wird. Der Token liegt deshalb
+  in `localStorage`, nicht in `sessionStorage`: Nach dem nächsten Start
+  ist die Lage sofort da, ohne Nachfrage. (Vorher endete jeder Kaltstart
+  in „Token fehlt oder ist falsch" – das Symbol zeigt auf `/`, ohne Token
+  in der Adresse.)
+* **Abmelden** löscht den Token wieder vom Gerät – oben rechts.
+* **Ein rotes Band statt stiller Zahlen**, wenn der Server nicht antwortet.
+  Unterwegs ist das der Normalfall und kein Ausrutscher: Das Tablet ist
+  dann einfach nicht im selben Netz. Die letzten Zahlen bleiben stehen,
+  aber du siehst, dass sie alt sind.
+* **Zurück aus dem Hintergrund lädt sie sofort neu.** iOS friert eine App
+  ein; ohne das stehen dort die Zahlen von gestern Abend.
+* **Im Hintergrund fragt sie nichts ab.** Ein Wecker, der jede halbe
+  Minute Daten holt, kostet nur Akku – gesehen hat sie in der Zeit niemand.
+* **Zwei Spalten im Querformat.** Ein iPad Pro ist quer 1194 Punkte breit;
+  untereinander stünde dort eine schmale Tabelle in sehr viel Leere.
 * **Nichts liegt unter der Kamera-Aussparung** oder hinter dem Streifen der
   Home-Taste (`viewport-fit=cover` plus Sicherheitsabstände).
 * **Alle Schaltflächen sind mindestens 44 Punkte hoch** – Apples eigenes
   Mindestmaß für das Tippen mit dem Daumen.
 * **Eingabefelder haben 16px Schrift.** Darunter zoomt Safari beim Antippen
   in die Seite hinein, und man findet nicht mehr heraus.
+* **Das Token-Feld wird nicht verbessert.** Ohne `autocapitalize="none"`
+  schreibt Safari den ersten Buchstaben groß, und die Anmeldung scheitert
+  an etwas, das auf dem Bildschirm richtig aussieht.
 * **Keine Seite scrollt quer.** Breite Tabellen scrollen in ihrem eigenen
   Kasten.
 * IP-Adressen werden nicht in Telefonnummern-Links verwandelt.
 
-So kommst du vom iPhone dran:
+### Was das für die Sicherheit heißt
 
-```bash
-# Auf dem Server - im eigenen Netz erreichbar, mit Token:
-loginshield serve --host 0.0.0.0
-```
+Der Token liegt dauerhaft auf dem Gerät. Wer das **entsperrte** iPad in die
+Hand bekommt, kann damit Sperren aufheben – derselbe Schutz wie für alles
+andere darauf, also: Gerätecode an. Wer das nicht will, meldet sich nach
+dem Nachsehen ab und tippt den Token beim nächsten Mal neu ein.
 
-Dann im Safari `http://<server-ip>:8787/?token=<dein-token>` öffnen, Teilen ->
-"Zum Home-Bildschirm". Das Token merkt sich die Seite danach selbst.
+Ohne Token zeigt die Seite nur den Anmeldebildschirm; sie kommt mit Status
+`401` und enthält keine Daten. Alles Inhaltliche liegt hinter `/api/` und
+verlangt den Token in der Kopfzeile `X-Auth-Token` – nicht in der URL, was
+CSRF ausschließt. Wer ohne Token anfragt und dabei nicht nach HTML fragt –
+also kein Browser ist, sondern ein Scanner –, bekommt weiterhin nur eine
+Textzeile statt 55 kB.
 
 **Über das Internet nur durch einen Tunnel** (WireGuard, Tailscale) oder
 hinter einem Reverse-Proxy mit HTTPS. Das Dashboard darf Sperren aufheben –
-das gehört nicht ungeschützt ins offene Netz.
+das gehört nicht ungeschützt ins offene Netz. Über HTTP im eigenen Netz
+gibt es aus demselben Grund auch keinen Service Worker: Den lässt Safari
+nur in einem sicheren Kontext zu, also erst hinter HTTPS. Die App braucht
+darum eine Verbindung zum Server; offline zeigt sie den letzten Stand.
 
 ---
 
@@ -1159,6 +1209,11 @@ Zum Sicherheitsmodell:
 * Ändernde Aufrufe verlangen den Token im Header `X-Auth-Token`, nicht in der
   URL. Damit ist CSRF ausgeschlossen, und der Token landet nicht in
   Server-Logs oder im Browserverlauf.
+* Ohne gültigen Token kommt die Seite mit Status `401` und zeigt nur den
+  Anmeldebildschirm. Sie enthält keine Daten – alles Inhaltliche liegt
+  hinter `/api/`. Ein einmal eingetragener Token bleibt auf dem Gerät, bis
+  man sich abmeldet (siehe [Die App auf dem iPhone und
+  iPad](#die-app-auf-dem-iphone-und-ipad)).
 * Token-Vergleich in konstanter Zeit, strikte CSP, keine externen Ressourcen.
 
 Für den Zugriff von unterwegs besser einen SSH-Tunnel nehmen, als den Port
@@ -1295,7 +1350,7 @@ loginshield/
   middleware.py  ASGI- und WSGI-Einbindung
   honeypot.py    die Falle: Köderpfade, Honeytoken, Köder-Server
   logwatch.py    Logdateien mitlesen
-  dashboard.py   Web-Oberfläche
+  dashboard.py   Web-Oberfläche, auch als App auf dem iPad
   firewall.py    System-Firewall (nftables, iptables, ufw, mehrere zugleich)
   requestfilter.py  Anfrage-Firewall: prüft den Inhalt der Anfragen
   anomaly.py     lernt den Normalzustand, meldet Abweichungen

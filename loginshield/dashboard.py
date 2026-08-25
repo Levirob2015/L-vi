@@ -95,6 +95,7 @@ MANIFEST = json.dumps({
     "short_name": "LoginShield",
     "description": "Angriffe sehen und sperren",
     "start_url": "./",
+    "scope": "./",
     "display": "standalone",
     "orientation": "any",
     "background_color": "#f6f7f9",
@@ -185,10 +186,33 @@ def _handler_factory(guard: Guard, config: DashboardConfig):
         def do_GET(self):  # noqa: N802 - Signatur vorgegeben
             route = urlparse(self.path).path
             if route in ("/", "/index.html"):
-                if not self._authorized(allow_query_token=True):
-                    self._send(401, b"Token fehlt oder ist falsch.\n", "text/plain; charset=utf-8")
+                # Ohne Token kommt dieselbe Seite, nur mit Status 401: Sie
+                # zeigt dann den Anmeldebildschirm statt der Lage.
+                #
+                # Frueher stand hier eine Textzeile - und damit war die App
+                # auf dem iPad nach jedem Kaltstart tot: Das Symbol auf dem
+                # Startbildschirm zeigt auf "/" ohne Token (die Seite nimmt
+                # ihn ja aus der Adresse heraus, bevor man "Zum
+                # Home-Bildschirm" tippt), und einen Weg, ihn nachzureichen,
+                # gab es in der Anzeige nicht.
+                #
+                # Die Seite selbst enthaelt keine Daten. Alles Inhaltliche
+                # liegt hinter /api/ und bleibt ohne Token verschlossen.
+                if self._authorized(allow_query_token=True):
+                    self._send(200, INDEX_HTML.encode("utf-8"),
+                               "text/html; charset=utf-8")
                     return
-                self._send(200, INDEX_HTML.encode("utf-8"), "text/html; charset=utf-8")
+                # Die Seite ist 55 kB. Wer sie ohne Token anfordert und
+                # dabei nicht nach HTML fragt, ist kein Browser, sondern
+                # ein Scanner - der bekommt weiterhin die eine Zeile.
+                # Jeder Browser schickt beim Oeffnen einer Adresse
+                # "Accept: text/html", auch die App vom Startbildschirm.
+                if "text/html" not in (self.headers.get("Accept") or ""):
+                    self._send(401, b"Token fehlt oder ist falsch.\n",
+                               "text/plain; charset=utf-8")
+                    return
+                self._send(401, INDEX_HTML.encode("utf-8"),
+                           "text/html; charset=utf-8")
                 return
 
             # Symbol und Beschreibung fuer den Startbildschirm. Bewusst
@@ -213,7 +237,18 @@ def _handler_factory(guard: Guard, config: DashboardConfig):
                 return
 
             params = _query(self.path)
-            if route == "/api/summary":
+            if route == "/api/session":
+                # Der kleinste Aufruf, der einen Token verlangt. Der
+                # Anmeldebildschirm prueft damit eine Eingabe, ohne die
+                # ganze Lage zu laden; die App erkennt daran ausserdem,
+                # ob ueberhaupt ein Token noetig ist (auf localhost nicht).
+                self._json(200, {
+                    "ok": True,
+                    "version": __version__,
+                    "mutations": config.allow_mutations,
+                    "token_required": token_required,
+                })
+            elif route == "/api/summary":
                 self._json(200, self._summary(params))
             elif route == "/api/attempts":
                 self._json(200, self._attempts(params))
@@ -487,6 +522,11 @@ td { padding:7px 10px 7px 0; border-bottom:1px solid var(--line); white-space:no
 tr:last-child td { border-bottom:none; }
 .mono { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
 td.wrap { white-space:normal; word-break:break-all; min-width:12ch; }
+/* Fliesstext in einer Tabelle darf umbrechen. Ohne das schiebt die
+   Begruendung einer Sperre ("12 Fehlversuche in 300s") die Schaltflaeche
+   zum Entsperren aus dem Bild, sobald die Tabelle in einer Spalte steht -
+   also genau auf dem iPad im Querformat. */
+td.satz { white-space:normal; min-width:14ch; }
 .klein { font-size:11px; }
 .tag { display:inline-block; padding:1px 7px; border-radius:20px; font-size:12px;
   border:1px solid var(--line); color:var(--muted); }
@@ -514,6 +554,45 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
   /* Ueber dem Streifen der Home-Taste, nicht darunter. */
   bottom:calc(16px + env(safe-area-inset-bottom));
   right:calc(16px + env(safe-area-inset-right)); }
+
+/* Ohne das gewinnt die Anzeigeart aus den Regeln unten gegen das
+   hidden-Merkmal, und Verborgenes stuende trotzdem auf der Seite. */
+[hidden] { display:none !important; }
+
+/* ------------------------------------------------------------------
+   Anmeldung
+   ------------------------------------------------------------------
+   Die App auf dem Startbildschirm startet auf "/" - ohne Token in der
+   Adresse. Ohne diesen Bildschirm waere sie nach jedem Kaltstart tot.
+   ------------------------------------------------------------------ */
+#login { display:flex; justify-content:center; padding:32px 20px;
+  padding-left:calc(20px + env(safe-area-inset-left));
+  padding-right:calc(20px + env(safe-area-inset-right));
+  padding-bottom:calc(32px + env(safe-area-inset-bottom)); }
+.login-box { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+  padding:20px; width:min(420px,100%); display:flex; flex-direction:column; gap:12px; }
+.login-box h2 { font-size:16px; margin:0; }
+.login-box p { margin:0; font-size:13.5px; color:var(--muted); }
+#login-token { width:100%; }
+#login-error { color:var(--danger); font-size:13.5px; }
+#login-error:empty { display:none; }
+
+/* ------------------------------------------------------------------
+   Verbindungsband
+   ------------------------------------------------------------------
+   Bleibt stehen, solange der Server nicht antwortet. Ein Hinweis, der
+   nach vier Sekunden verschwindet, taugt dafuer nicht: Unterwegs ist
+   "nicht erreichbar" der Normalfall und keine Ausnahme - das Tablet ist
+   dann einfach nicht im selben Netz. Ohne dieses Band zeigt die App
+   veraltete Zahlen, ohne dass es jemandem auffaellt.
+   ------------------------------------------------------------------ */
+#offline { display:flex; flex-wrap:wrap; gap:10px; align-items:center;
+  justify-content:space-between; background:var(--danger); color:#fff;
+  font-size:14px; padding:10px 20px;
+  padding-left:calc(20px + env(safe-area-inset-left));
+  padding-right:calc(20px + env(safe-area-inset-right)); }
+#offline button { border-color:rgba(255,255,255,.6); color:#fff; }
+#offline button:hover { border-color:#fff; color:#fff; }
 
 /* ------------------------------------------------------------------
    Telefon und Tablet
@@ -555,12 +634,20 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
   input, select { font-size:16px; padding:9px 11px; }
   th, td { padding-top:10px; padding-bottom:10px; }
 }
+
+/* Ein iPad im Querformat ist 1194 Punkte breit. Untereinander gestellt
+   stehen dort schmale Tabellen in einer sehr breiten Flaeche, und die
+   Ereignisse liegen drei Bildschirmhoehen tiefer. Paarweise nebeneinander
+   passt die Lage aufs Bild, ohne dass etwas kleiner wird. */
+@media (min-width:980px) {
+  .paar { display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start; }
+}
 </style>
 </head>
 <body>
 <header>
   <h1>LoginShield <span id="meta"></span></h1>
-  <div class="row">
+  <div class="row" id="kopf-bedienung" hidden>
     <select id="hours">
       <option value="1">Letzte Stunde</option>
       <option value="24" selected>Letzte 24 Stunden</option>
@@ -568,10 +655,33 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
       <option value="720">Letzte 30 Tage</option>
     </select>
     <button id="refresh">Aktualisieren</button>
+    <button id="logout" hidden>Abmelden</button>
   </div>
 </header>
 
-<main>
+<div id="offline" hidden role="status">
+  <span>Keine Verbindung zum Server. Die Zahlen sind der letzte Stand.</span>
+  <button id="offline-retry">Erneut versuchen</button>
+</div>
+
+<div id="login" hidden>
+  <div class="login-box">
+    <h2>Anmelden</h2>
+    <p>Dieses Geraet braucht den Dashboard-Token einmalig. Er steht in der
+       Konfiguration unter <span class="mono">dashboard.token</span> und
+       bleibt danach auf dem Geraet gespeichert.</p>
+    <!-- autocapitalize und autocorrect sind hier keine Feinheit: Safari
+         schreibt sonst den ersten Buchstaben des Tokens gross und
+         verbessert ihn unterwegs, und die Anmeldung scheitert an etwas,
+         das auf dem Bildschirm richtig aussieht. -->
+    <input id="login-token" type="password" placeholder="Token"
+           autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
+    <button class="primary" id="login-go">Anmelden</button>
+    <div id="login-error" role="alert"></div>
+  </div>
+</div>
+
+<main hidden>
   <div class="cards">
     <div class="card danger"><div class="label">Fehlversuche</div><div class="value" id="c-fail">-</div></div>
     <div class="card"><div class="label">Angreifende IPs</div><div class="value" id="c-ips">-</div></div>
@@ -587,6 +697,7 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
       <div class="muted" style="font-size:12px;margin-top:6px" id="chart-range"></div></div>
   </section>
 
+  <div class="paar">
   <section>
     <h2>Aktive Sperren</h2>
     <div class="body"><table id="blocks"><thead><tr>
@@ -602,7 +713,9 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
     </tr></thead><tbody></tbody></table>
     <div class="empty-state" id="offenders-empty" hidden>Nichts Auffaelliges im Zeitraum.</div></div>
   </section>
+  </div>
 
+  <div class="paar">
   <section>
     <h2>Abweichungen vom Normalzustand</h2>
     <div class="body">
@@ -623,6 +736,7 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
       <div id="quarantine-note" class="muted" style="font-size:13px;margin-top:8px"></div>
     </div>
   </section>
+  </div>
 
   <section>
     <h2>Letzte Ereignisse</h2>
@@ -666,24 +780,131 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
 (function () {
   "use strict";
 
-  // Token aus der URL holen, merken und aus der Adresszeile entfernen,
-  // damit er nicht im Verlauf oder in Screenshots landet.
-  var params = new URLSearchParams(location.search);
-  if (params.get("token")) {
-    sessionStorage.setItem("ls_token", params.get("token"));
-    history.replaceState({}, "", location.pathname);
-  }
-  var TOKEN = sessionStorage.getItem("ls_token") || "";
+  var TOKEN_SCHLUESSEL = "ls_token";
   var timer = null;
+  var intervall = 0;
+  var angemeldet = false;
+
+  // Token aus der URL holen und sofort aus der Adresszeile entfernen,
+  // damit er nicht im Verlauf oder auf einem Bildschirmfoto landet.
+  var params = new URLSearchParams(location.search);
+  var url_token = params.get("token") || "";
+  if (url_token) { history.replaceState({}, "", location.pathname); }
+
+  // Der Token liegt in localStorage, nicht mehr in sessionStorage.
+  //
+  // Das ist der Unterschied zwischen einer Seite und einer App: iOS wirft
+  // eine App vom Startbildschirm aus dem Speicher, sobald der Platz
+  // knapp wird. Mit sessionStorage war der Token danach weg, und das
+  // Symbol fuehrte auf eine Fehlermeldung - jedes Mal.
+  //
+  // Der Preis: Wer das entsperrte Tablet in die Hand bekommt, hat auch
+  // den Token. Auf einem Geraet mit Code ist das derselbe Schutz wie fuer
+  // alles andere darauf; wer ihn nicht will, meldet sich ab.
+  function merken(wert) {
+    try {
+      if (wert) { localStorage.setItem(TOKEN_SCHLUESSEL, wert); }
+      else { localStorage.removeItem(TOKEN_SCHLUESSEL); }
+    } catch (fehler) {
+      // Safari mit blockierten Website-Daten. Dann gilt der Token eben
+      // nur, solange die App offen bleibt - das ist immer noch besser
+      // als ein Abbruch an dieser Stelle.
+    }
+  }
+
+  function gemerkt() {
+    try {
+      var alt = sessionStorage.getItem(TOKEN_SCHLUESSEL);
+      if (alt) {
+        // Umzug von frueher: einmal uebernehmen, dann aufraeumen.
+        sessionStorage.removeItem(TOKEN_SCHLUESSEL);
+        if (!localStorage.getItem(TOKEN_SCHLUESSEL)) {
+          localStorage.setItem(TOKEN_SCHLUESSEL, alt);
+        }
+      }
+      return localStorage.getItem(TOKEN_SCHLUESSEL) || "";
+    } catch (fehler) {
+      return "";
+    }
+  }
+
+  var TOKEN = url_token || gemerkt();
+  if (url_token) { merken(url_token); }
 
   function api(path, options) {
     options = options || {};
     options.headers = Object.assign({"X-Auth-Token": TOKEN}, options.headers || {});
     return fetch(path, options).then(function (response) {
-      if (response.status === 401) { throw new Error("Nicht autorisiert - Token pruefen."); }
+      verbindung(true);
+      if (response.status === 401) {
+        var abgelehnt = new Error("Token fehlt oder ist falsch.");
+        abgelehnt.unauthorized = true;
+        throw abgelehnt;
+      }
       if (!response.ok) { throw new Error("HTTP " + response.status); }
       return response.json();
+    }, function () {
+      // fetch scheitert nur, wenn die Anfrage gar nicht erst ankommt:
+      // Server aus, anderes Netz, Flugmodus. Ein Statuscode waere hier
+      // schon eine Antwort gewesen.
+      verbindung(false);
+      var weg = new Error("Keine Verbindung zum Server.");
+      weg.offline = true;
+      throw weg;
     });
+  }
+
+  // -- Zustand der Anzeige --------------------------------------------
+
+  function verbindung(erreichbar) {
+    document.getElementById("offline").hidden = !!erreichbar;
+  }
+
+  function zeigeAnmeldung(meldung) {
+    angemeldet = false;
+    stopTimer();
+    document.getElementById("login").hidden = false;
+    document.querySelector("main").hidden = true;
+    document.getElementById("kopf-bedienung").hidden = true;
+    document.getElementById("login-error").textContent = meldung || "";
+  }
+
+  function zeigeApp(info) {
+    angemeldet = true;
+    document.getElementById("login").hidden = true;
+    document.getElementById("login-error").textContent = "";
+    document.querySelector("main").hidden = false;
+    document.getElementById("kopf-bedienung").hidden = false;
+    // Ohne Token gibt es nichts abzumelden (Dashboard nur auf localhost).
+    document.getElementById("logout").hidden = !(info && info.token_required);
+  }
+
+  // Eine Stelle fuer alles, was schiefgehen kann: abgelaufener Token
+  // zurueck zur Anmeldung, fehlende Verbindung sagt schon das Band,
+  // alles andere als Einblendung.
+  function melde(fehler) {
+    if (fehler && fehler.unauthorized) {
+      TOKEN = "";
+      merken("");
+      zeigeAnmeldung("Der Token gilt hier nicht. Bitte neu anmelden.");
+      return;
+    }
+    if (fehler && fehler.offline) { return; }
+    toast(fehler.message, true);
+  }
+
+  function stopTimer() {
+    if (timer !== null) { clearInterval(timer); timer = null; }
+  }
+
+  // Im Hintergrund laeuft nichts weiter. iOS friert die App ohnehin ein;
+  // ein Wecker, der jede halbe Minute Daten holt, kostet nur Strom -
+  // gesehen hat sie in der Zeit niemand.
+  function starteTimer() {
+    stopTimer();
+    if (intervall > 0 && angemeldet && !document.hidden) {
+      timer = setInterval(load, intervall * 1000);
+    }
   }
 
   function toast(message, isError) {
@@ -771,7 +992,10 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
 
     fill("blocks", "blocks-empty", data.blocks, function (block) {
       var row = el("tr");
-      var target = el("td", null, "mono");
+      // "satz": Die Marke "ganzes Netz" darf unter die Adresse rutschen.
+      // Nebeneinander macht sie die Spalte 227 Punkte breit - in einer
+      // von zwei Spalten auf dem iPad ist das ein Drittel der Tabelle.
+      var target = el("td", null, "mono satz");
       target.appendChild(document.createTextNode(block.ip));
       if (block.is_network) {
         target.appendChild(document.createTextNode(" "));
@@ -781,7 +1005,7 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
       row.appendChild(el("td", block.reason));
       row.appendChild(el("td", fmtDuration(block.remaining)));
       row.appendChild(el("td", block.strikes));
-      row.appendChild(el("td", block.detail, "muted"));
+      row.appendChild(el("td", block.detail, "muted satz"));
       row.appendChild(actionButton("Entsperren", "", function () {
         api("/api/unblock", {
           method: "POST",
@@ -790,7 +1014,7 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
         }).then(function () {
           toast(block.ip + " entsperrt.");
           load();
-        }).catch(function (error) { toast(error.message, true); });
+        }).catch(melde);
       }));
       return row;
     });
@@ -809,7 +1033,7 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
         }).then(function () {
           toast(item.ip + " fuer 60 Minuten gesperrt.");
           load();
-        }).catch(function (error) { toast(error.message, true); });
+        }).catch(melde);
       }));
       return row;
     });
@@ -826,7 +1050,7 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
           headers: {"Content-Type": "application/json"},
           body: JSON.stringify({cidr: entry.cidr})
         }).then(function () { toast("Entfernt: " + entry.cidr); load(); })
-          .catch(function (error) { toast(error.message, true); });
+          .catch(melde);
       }));
       return row;
     });
@@ -860,14 +1084,14 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
       cell.appendChild(el("span", item.score + "/100",
         "tag " + (item.verdict === "kritisch" ? "fail" : "deny")));
       row.appendChild(cell);
-      row.appendChild(el("td", item.summary, "muted"));
+      row.appendChild(el("td", item.summary, "muted satz"));
       row.appendChild(actionButton("Sperren", "", function () {
         api("/api/block", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
           body: JSON.stringify({ip: item.ip, minutes: 60, reason: "anomaly"})
         }).then(function () { toast(item.ip + " gesperrt."); load(); })
-          .catch(function (error) { toast(error.message, true); });
+          .catch(melde);
       }));
       return row;
     });
@@ -907,17 +1131,53 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
     api("/api/summary?hours=" + encodeURIComponent(hours))
       .then(function (data) {
         renderSummary(data);
-        if (timer === null && data.refresh_seconds > 0) {
-          timer = setInterval(load, data.refresh_seconds * 1000);
-        }
+        intervall = data.refresh_seconds || 0;
+        starteTimer();
       })
-      .catch(function (error) { toast(error.message, true); });
+      .catch(melde);
     api("/api/attempts?limit=100&event=" + encodeURIComponent(event))
       .then(renderAttempts)
-      .catch(function (error) { toast(error.message, true); });
+      .catch(melde);
     api("/api/files")
       .then(renderFiles)
-      .catch(function (error) { toast(error.message, true); });
+      .catch(melde);
+  }
+
+  // Erster Aufruf und jeder Versuch danach: Erst fragen, ob der Token
+  // hier gilt - daran haengt, ob die Anmeldung oder die Lage kommt.
+  function start() {
+    api("/api/session").then(function (info) {
+      zeigeApp(info);
+      load();
+    }).catch(function (fehler) {
+      if (fehler.unauthorized) {
+        zeigeAnmeldung(TOKEN ? "Der Token gilt hier nicht. Bitte neu anmelden." : "");
+        return;
+      }
+      // Kein Netz: Wer angemeldet ist, bleibt es. Ein Anmeldebildschirm
+      // waere hier die falsche Auskunft - der Token ist ja in Ordnung.
+      if (!TOKEN) { zeigeAnmeldung(""); }
+      else { zeigeApp({token_required: true}); }
+    });
+  }
+
+  function anmelden() {
+    var feld = document.getElementById("login-token");
+    var eingabe = feld.value.trim();
+    if (!eingabe) { return; }
+    var vorher = TOKEN;
+    TOKEN = eingabe;
+    api("/api/session").then(function (info) {
+      merken(eingabe);
+      feld.value = "";
+      zeigeApp(info);
+      load();
+    }).catch(function (fehler) {
+      TOKEN = vorher;
+      document.getElementById("login-error").textContent = fehler.unauthorized
+        ? "Dieser Token stimmt nicht."
+        : fehler.message;
+    });
   }
 
   function renderFiles(data) {
@@ -985,6 +1245,31 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
     });
   }
 
+  document.getElementById("login-go").addEventListener("click", anmelden);
+  document.getElementById("login-token").addEventListener("keydown", function (ereignis) {
+    // Auf dem iPad steht dort "Return" - das soll anmelden, nicht nichts tun.
+    if (ereignis.key === "Enter") { anmelden(); }
+  });
+
+  document.getElementById("logout").addEventListener("click", function () {
+    TOKEN = "";
+    merken("");
+    document.getElementById("login-token").value = "";
+    zeigeAnmeldung("Abgemeldet.");
+  });
+
+  document.getElementById("offline-retry").addEventListener("click", function () {
+    if (angemeldet) { load(); } else { start(); }
+  });
+
+  // Zurueck aus dem Hintergrund: Die App war eingefroren, die Zahlen auf
+  // dem Bildschirm sind so alt wie der letzte Blick. Also sofort neu
+  // laden, statt bis zum naechsten Wecker veraltete Werte zu zeigen.
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) { stopTimer(); return; }
+    if (angemeldet) { load(); starteTimer(); }
+  });
+
   document.getElementById("refresh").addEventListener("click", load);
   document.getElementById("hours").addEventListener("change", load);
   document.getElementById("event-filter").addEventListener("change", load);
@@ -1001,7 +1286,7 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
       document.getElementById("allow-note").value = "";
       toast("Zur Allowlist hinzugefuegt: " + cidr);
       load();
-    }).catch(function (error) { toast(error.message, true); });
+    }).catch(melde);
   });
 
   document.getElementById("block-add").addEventListener("click", function () {
@@ -1019,10 +1304,10 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
       document.getElementById("block-ip").value = "";
       toast(ip + " gesperrt.");
       load();
-    }).catch(function (error) { toast(error.message, true); });
+    }).catch(melde);
   });
 
-  load();
+  start();
 })();
 </script>
 </body>

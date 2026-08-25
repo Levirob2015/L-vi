@@ -20,10 +20,13 @@ def dashboard(guard):
     dashboard.stop()
 
 
-def request(dashboard, path, *, method="GET", token=TOKEN, payload=None):
+def request(dashboard, path, *, method="GET", token=TOKEN, payload=None,
+            accept=None):
     url = f"http://127.0.0.1:{dashboard.port}{path}"
     data = json.dumps(payload).encode() if payload is not None else None
     req = urllib.request.Request(url, data=data, method=method)
+    if accept is not None:
+        req.add_header("Accept", accept)
     if token is not None:
         req.add_header("X-Auth-Token", token)
     if data:
@@ -305,3 +308,144 @@ def test_symbol_wird_erst_bei_bedarf_erzeugt():
     assert erst[:8] == b"\x89PNG\r\n\x1a\n"
     # Danach behalten, nicht jedes Mal neu.
     assert modul.apple_touch_icon() is erst
+
+
+# -- Die App auf dem iPad ------------------------------------------------
+# Das Symbol auf dem Startbildschirm zeigt auf "/" - ohne Token in der
+# Adresse. Was danach passiert, entscheidet, ob die App benutzbar ist
+# oder bei jedem Kaltstart in einer Fehlermeldung endet.
+def test_seite_kommt_auch_ohne_token(dashboard):
+    """Ohne Token dieselbe Seite mit 401 - sie zeigt dann die Anmeldung.
+
+    Frueher kam hier eine Textzeile. Damit war die App auf dem
+    Startbildschirm tot, sobald iOS sie aus dem Speicher geworfen hatte:
+    kein Feld, keine Erklaerung, kein Weg zurueck.
+    """
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        request(dashboard, "/", token=None, accept="text/html")
+    assert exc.value.code == 401
+    seite = exc.value.read().decode("utf-8")
+    assert exc.value.headers.get("Content-Type").startswith("text/html")
+    assert 'id="login"' in seite
+    assert 'id="login-token"' in seite
+
+
+def test_seite_verraet_ohne_token_nichts(dashboard):
+    """Die Anmeldeseite ist dieselbe Datei - Daten stehen nicht darin."""
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        request(dashboard, "/", token=None, accept="text/html")
+    assert TOKEN not in exc.value.read().decode("utf-8")
+    # Und die Daten dahinter bleiben verschlossen.
+    with pytest.raises(urllib.error.HTTPError) as api:
+        request(dashboard, "/api/summary", token=None)
+    assert api.value.code == 401
+
+
+def test_session_bestaetigt_den_token(dashboard):
+    """Der kleinste Aufruf mit Token: Damit prueft die Anmeldung eine Eingabe."""
+    status, daten = json_request(dashboard, "/api/session")
+    assert status == 200
+    assert daten["ok"] is True
+    assert daten["token_required"] is True
+    assert daten["version"]
+
+
+def test_session_weist_falschen_token_ab(dashboard):
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        request(dashboard, "/api/session", token="falsch")
+    assert exc.value.code == 401
+
+
+def test_session_sagt_wenn_kein_token_noetig_ist(guard):
+    """Auf localhost ohne Token soll die App keine Anmeldung zeigen."""
+    dashboard = Dashboard(guard, DashboardConfig(host="127.0.0.1", port=0, token=""))
+    dashboard.start_background()
+    try:
+        status, daten = json_request(dashboard, "/api/session", token=None)
+        assert status == 200
+        assert daten["token_required"] is False
+    finally:
+        dashboard.stop()
+
+
+def test_token_ueberlebt_den_kaltstart(dashboard):
+    """localStorage statt sessionStorage.
+
+    iOS wirft eine App vom Startbildschirm aus dem Speicher, sobald der
+    Platz knapp wird. Mit sessionStorage war der Token danach weg.
+    """
+    seite = request(dashboard, "/")[1].decode("utf-8")
+    assert "localStorage.setItem(TOKEN_SCHLUESSEL" in seite
+    assert "sessionStorage.setItem" not in seite
+    # Der alte Platz wird noch einmal ausgelesen und dann geraeumt.
+    assert "sessionStorage.getItem(TOKEN_SCHLUESSEL)" in seite
+    assert "sessionStorage.removeItem(TOKEN_SCHLUESSEL)" in seite
+
+
+def test_token_verlaesst_die_adresszeile(dashboard):
+    """Sonst steht er im Verlauf und auf jedem Bildschirmfoto."""
+    seite = request(dashboard, "/")[1].decode("utf-8")
+    assert 'history.replaceState({}, "", location.pathname)' in seite
+
+
+def test_abmelden_ist_moeglich(dashboard):
+    seite = request(dashboard, "/")[1].decode("utf-8")
+    assert 'id="logout"' in seite
+    assert 'document.getElementById("login-token").value = "";' in seite
+
+
+def test_fehlende_verbindung_bleibt_sichtbar(dashboard):
+    """Unterwegs ist "nicht erreichbar" der Normalfall, kein Ausrutscher.
+
+    Eine Einblendung, die nach vier Sekunden verschwindet, taugt dafuer
+    nicht: Danach zeigt die App alte Zahlen, ohne dass es auffaellt.
+    """
+    seite = request(dashboard, "/")[1].decode("utf-8")
+    assert 'id="offline"' in seite
+    assert 'id="offline-retry"' in seite
+    assert "function verbindung(" in seite
+
+
+def test_das_eingabefeld_wird_nicht_verbessert(dashboard):
+    """Safari schreibt sonst den ersten Buchstaben des Tokens gross."""
+    seite = request(dashboard, "/")[1].decode("utf-8")
+    feld = seite.split('id="login-token"', 1)[1].split(">", 1)[0]
+    assert 'autocapitalize="none"' in feld
+    assert 'autocorrect="off"' in feld
+    assert 'spellcheck="false"' in feld
+    assert 'type="password"' in feld
+
+
+def test_im_hintergrund_laeuft_nichts(dashboard):
+    """Ein Wecker, der jede halbe Minute Daten holt, kostet nur Strom."""
+    seite = request(dashboard, "/")[1].decode("utf-8")
+    assert 'document.addEventListener("visibilitychange"' in seite
+    assert "if (document.hidden) { stopTimer(); return; }" in seite
+    assert "!document.hidden" in seite
+
+
+def test_zwei_spalten_im_querformat(dashboard):
+    """Ein iPad quer ist 1194 Punkte breit - untereinander ist das leer."""
+    seite = request(dashboard, "/")[1].decode("utf-8")
+    assert "@media (min-width:980px)" in seite
+    assert seite.count('<div class="paar">') == 2
+
+
+def test_manifest_hat_einen_geltungsbereich(dashboard):
+    """Ohne scope faellt ein Link aus der App zurueck in Safari."""
+    daten = json.loads(request(dashboard, "/manifest.webmanifest", token=None)[1])
+    assert daten["scope"] == "./"
+
+
+def test_scanner_bekommt_nicht_die_ganze_seite(dashboard):
+    """55 kB fuer jede Anfrage ohne Token waeren ein Verstaerker.
+
+    Ein Browser fragt beim Oeffnen einer Adresse nach HTML; ein Scanner
+    schickt "*/*" und bekommt weiterhin die eine Zeile.
+    """
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        request(dashboard, "/", token=None, accept="*/*")
+    assert exc.value.code == 401
+    koerper = exc.value.read()
+    assert len(koerper) < 200
+    assert exc.value.headers.get("Content-Type").startswith("text/plain")
