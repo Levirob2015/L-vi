@@ -1240,7 +1240,9 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
       }
       row.appendChild(zelle);
       row.appendChild(el("td", String(change.severity)));
-      row.appendChild(el("td", change.description, "muted"));
+      // Auch das ist Fliesstext: ohne Umbruch steht in der schmalen
+      // Spalte nur der Anfang, und der Rest liegt hinter dem Rand.
+      row.appendChild(el("td", change.description, "muted satz"));
       return row;
     });
   }
@@ -1313,3 +1315,495 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
 </body>
 </html>
 """
+
+
+# ----------------------------------------------------------------------
+# Vorschau: dieselbe Seite als einzelne Datei
+# ----------------------------------------------------------------------
+# Keine Nachbildung, sondern das Original: Es wird nur der Server
+# ausgetauscht, den es dabei nicht gibt. ``window.fetch`` beantwortet die
+# Aufrufe unter /api/ aus einer erfundenen Lage im Speicher. Alles davor
+# - Anmeldung, Token auf dem Geraet, Verbindungsband, Neuladen aus dem
+# Hintergrund, die zwei Spalten im Querformat - ist derselbe Code, der
+# auch auf dem Server ausgeliefert wird.
+#
+# Damit kann eine Vorschau nicht anders aussehen als die Anwendung: Sie
+# ist die Anwendung.
+#
+# Neu erzeugen nach jeder Aenderung an der Seite:
+#
+#     python -c "from loginshield.dashboard import preview_html; \
+#                open('docs/ipad.html','w').write(preview_html())"
+#
+# ``tests/test_dashboard.py`` prueft, dass die Datei aktuell ist.
+
+#: Der Token, den die Vorschau annimmt. Steht sichtbar auf der Seite.
+PREVIEW_TOKEN = "vorschau"
+
+_PREVIEW_STYLE = """
+/* --- nur in der Vorschau ------------------------------------------ */
+#vorfuehrung { display:flex; flex-wrap:wrap; gap:10px; align-items:center;
+  justify-content:space-between; background:var(--panel); color:var(--muted);
+  border-bottom:1px dashed var(--line); font-size:13px; padding:10px 20px;
+  padding-top:calc(10px + env(safe-area-inset-top));
+  padding-left:calc(20px + env(safe-area-inset-left));
+  padding-right:calc(20px + env(safe-area-inset-right)); }
+#vorfuehrung b { color:var(--text); }
+#vorfuehrung code { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  background:var(--bg); border:1px solid var(--line); border-radius:5px;
+  padding:1px 6px; color:var(--text); }
+#vorfuehrung .row { gap:8px; }
+/* Der Kopf der Anwendung haelt jetzt keinen Abstand mehr nach oben:
+   Darueber steht dieser Streifen, nicht die Uhr des iPads. */
+#vorfuehrung + header { padding-top:16px; }
+.erklaerung { max-width:760px; margin:0 auto; padding:8px 20px 40px;
+  padding-left:calc(20px + env(safe-area-inset-left));
+  padding-right:calc(20px + env(safe-area-inset-right));
+  padding-bottom:calc(40px + env(safe-area-inset-bottom));
+  color:var(--muted); font-size:14px; }
+.erklaerung h2 { color:var(--text); font-size:15px; margin:24px 0 8px; }
+.erklaerung p { margin:0 0 10px; }
+.erklaerung ul { margin:0 0 10px; padding-left:20px; }
+.erklaerung li { margin-bottom:6px; }
+.erklaerung strong { color:var(--text); }
+@media (max-width:760px) {
+  #vorfuehrung { padding:10px 14px; padding-top:calc(10px + env(safe-area-inset-top)); }
+  #vorfuehrung + header { padding-top:12px; }
+  .erklaerung { padding-left:14px; padding-right:14px; }
+}
+"""
+
+_PREVIEW_BANNER = """<div id="vorfuehrung">
+  <span><b>Vorschau.</b> Erfundene Daten, kein Server. Token: <code>vorschau</code></span>
+  <span class="row">
+    <button id="v-angriff" type="button">Angriff ausloesen</button>
+    <button id="v-netz" type="button">Netz weg</button>
+    <button id="v-neustart" type="button">App neu starten</button>
+    <button id="v-vergessen" type="button">Alles vergessen</button>
+  </span>
+</div>
+"""
+
+_PREVIEW_FOOTER = """<div class="erklaerung">
+  <h2>Was hier gerade passiert</h2>
+  <p>Das ist nicht das Bild einer Anwendung, sondern die Anwendung. Es
+     fehlt nur der Server: Die Seite fragt wie immer unter <code>/api/</code>
+     nach, und geantwortet wird ihr aus einer erfundenen Lage im
+     Speicher dieses Browsers. Alles andere ist derselbe Code, der auf
+     dem Server ausgeliefert wird.</p>
+
+  <h2>Wie der Schutz aufgebaut ist</h2>
+  <p>Die Arbeit macht ein Dienst auf dem Server, den LoginShield schuetzt
+     - nicht das Tablet. Er zaehlt Fehlversuche, faellt jemand auf einen
+     Koederpfad herein, sperrt die Adresse mit ansteigender Dauer und
+     schreibt jedes Ereignis in eine Datenbank. Diese Seite liest sie und
+     darf Sperren aufheben.</p>
+  <ul>
+    <li><strong>Anmeldung.</strong> Ohne Token kommt genau diese Seite mit
+        Status 401 und fragt nach ihm. Sie enthaelt keine Daten - die
+        liegen hinter <code>/api/</code>.</li>
+    <li><strong>Der Token bleibt auf dem Geraet</strong> (in
+        <code>localStorage</code>) und ueberlebt damit, dass iOS die App
+        aus dem Speicher wirft. <em>App neu starten</em> oben fuehrt das
+        vor: Es geht ohne Nachfrage weiter. <em>Alles vergessen</em>
+        loescht ihn, dann ist wieder der erste Start.</li>
+    <li><strong>Aendernde Aufrufe</strong> - sperren, entsperren, Allowlist -
+        schicken den Token in der Kopfzeile <code>X-Auth-Token</code>, nie
+        in der Adresse. Eine fremde Seite kann diese Kopfzeile nicht
+        setzen; damit ist CSRF ausgeschlossen.</li>
+    <li><strong>Ohne Verbindung</strong> bleibt der letzte Stand stehen,
+        aber ein rotes Band sagt, dass er alt ist. <em>Netz weg</em> zeigt
+        es.</li>
+    <li><strong>Im Hintergrund</strong> fragt die App nichts ab; kommt sie
+        nach vorn, laedt sie sofort neu.</li>
+  </ul>
+
+  <h2>Was hier anders ist als in der frueheren Vorschau</h2>
+  <p>Die aeltere Vorschau (<code>demo.html</code>) zeigt den <em>Angriff</em>:
+     Man loest Brute-Force, Password-Spraying oder einen Honeypot-Scan aus
+     und sieht zu, wie die Sperre zuschnappt. Sie ist von Hand gebaut und
+     ahmt die Oberflaeche nach.</p>
+  <p>Diese hier zeigt die <em>App auf dem iPad</em> und ist aus dem
+     Programm selbst erzeugt. Deshalb kann sie zeigen, was eine Nachbildung
+     nicht zeigen koennte: den Anmeldebildschirm, den Kaltstart, das
+     Verbindungsband, die zwei Spalten im Querformat.</p>
+
+  <h2>Auf dem iPad ablegen</h2>
+  <p>In Safari <em>Teilen &rarr; Zum Home-Bildschirm</em>. Die Vorschau
+     startet dann ohne Browserleisten, mit eigenem Symbol - wie die
+     richtige App. Nur schuetzt sie nichts: Keine App auf einem iPad kann
+     das iPad schuetzen, und diese hier haengt an keinem Server. Sie ist
+     zum Ansehen da.</p>
+</div>
+"""
+
+_PREVIEW_SCRIPT = """<script>
+/* Der Server, den es hier nicht gibt.
+ *
+ * Beantwortet die Aufrufe unter /api/ aus einer erfundenen Lage im
+ * Speicher. Laeuft vor dem Skript der Anwendung, damit die es schon
+ * vorfindet - die Anwendung selbst weiss von alldem nichts.
+ */
+(function () {
+  "use strict";
+
+  var TOKEN = "__TOKEN__";
+  var VERSION = "__VERSION__";
+  var erreichbar = true;
+
+  // -- Die erfundene Lage ----------------------------------------------
+  var n0 = Math.floor(Date.now() / 1000);
+  var konten = ["user:a2935c74e1", "user:55579b5578", "user:c31f0ab992"];
+  var ereignisse = [];
+  var allowlist = [
+    {cidr: "127.0.0.1", note: "localhost"},
+    {cidr: "192.168.1.0/24", note: "eigenes Netz"}
+  ];
+  var sperren = [
+    {ip: "203.0.113.0/24", is_network: true, reason: "subnet_abuse", strikes: 0,
+     detail: "4 gesperrte Adressen in 3600s", bis: n0 + 6 * 3600},
+    {ip: "203.0.113.7", is_network: false, reason: "brute_force_ip", strikes: 2,
+     detail: "24 Fehlversuche in 300s", bis: n0 + 28 * 60},
+    {ip: "198.51.100.23", is_network: false, reason: "honeypot", strikes: 1,
+     detail: "Koederpfad /wp-admin.php", bis: n0 + 5 * 3600 + 54 * 60}
+  ];
+
+  function ereignis(vorher, art, ip, konto, pfad, quelle, text) {
+    ereignisse.push({ts: n0 - vorher, event: art, ip: ip, identity: konto || "",
+                     route: pfad || "", source: quelle, detail: text || ""});
+  }
+
+  var i;
+  // Ein Durchprobieren, das gerade eben zur Sperre gefuehrt hat.
+  for (i = 0; i < 24; i++) {
+    ereignis(60 + i * 28, "login_failure", "203.0.113.7", konten[i % 3],
+             "/login", "app", "");
+  }
+  // Password Spraying: viele Konten, je ein Versuch, langsam.
+  for (i = 0; i < 9; i++) {
+    ereignis(900 + i * 260, "login_failure", "203.0.113.19",
+             "user:" + (813 + i * 137), "/login", "app", "");
+  }
+  // Wer auf einen Koederpfad hereinfaellt, sucht nicht nach dem Login.
+  var koeder = ["/wp-admin.php", "/.env", "/phpmyadmin/"];
+  for (i = 0; i < 3; i++) {
+    ereignis(300 + i * 90, "honeypot", "198.51.100.23", "", koeder[i],
+             "honeypot", "Koederpfad");
+  }
+  for (i = 0; i < 6; i++) {
+    ereignis(120 + i * 30, "denied", "198.51.100.23", "", "/login",
+             "middleware", "gesperrt");
+  }
+  // Aelter als 24 Stunden: sichtbar erst im Blick auf sieben Tage.
+  for (i = 0; i < 14; i++) {
+    ereignis(2 * 86400 + i * 400, "login_failure", "192.0.2.44",
+             konten[i % 3], "/login", "app", "");
+  }
+  // Und der Normalfall, damit die Zahlen nicht nur aus Angriff bestehen.
+  for (i = 0; i < 6; i++) {
+    ereignis(3600 * (7 + i * 11), "login_success", "192.168.1.24", konten[0],
+             "/login", "app", "");
+  }
+
+  function jetzt() { return Math.floor(Date.now() / 1000); }
+
+  function offeneSperren() {
+    var n = jetzt();
+    return sperren.filter(function (s) { return s.bis > n; })
+      .map(function (s) {
+        return {ip: s.ip, is_network: s.is_network, reason: s.reason,
+                strikes: s.strikes, detail: s.detail, active: true,
+                remaining: s.bis - n};
+      });
+  }
+
+  function seitDann(seit) {
+    return ereignisse.filter(function (e) { return e.ts >= seit; });
+  }
+
+  function auffaellige(seit) {
+    var proAdresse = {};
+    seitDann(seit).forEach(function (e) {
+      if (e.event !== "login_failure") { return; }
+      var eintrag = proAdresse[e.ip];
+      if (!eintrag) {
+        eintrag = proAdresse[e.ip] = {failures: 0, konten: {}, last_seen: 0};
+      }
+      eintrag.failures += 1;
+      if (e.identity) { eintrag.konten[e.identity] = true; }
+      if (e.ts > eintrag.last_seen) { eintrag.last_seen = e.ts; }
+    });
+    return Object.keys(proAdresse).map(function (ip) {
+      var e = proAdresse[ip];
+      return {ip: ip, failures: e.failures,
+              identities: Object.keys(e.konten).length,
+              last_seen: e.last_seen};
+    }).sort(function (a, b) { return b.failures - a.failures; }).slice(0, 10);
+  }
+
+  function verlauf(seit, n) {
+    var eimer = [];
+    var breite = (n - seit) / 32;
+    for (var k = 0; k < 32; k++) {
+      var start = seit + k * breite;
+      var ende = start + breite;
+      var drin = ereignisse.filter(function (e) {
+        return e.ts >= start && e.ts < ende;
+      });
+      eimer.push({
+        start: Math.round(start),
+        failures: drin.filter(function (e) { return e.event === "login_failure"; }).length,
+        denied: drin.filter(function (e) { return e.event === "denied"; }).length
+      });
+    }
+    return eimer;
+  }
+
+  function zaehle(liste, art) {
+    return liste.filter(function (e) { return e.event === art; }).length;
+  }
+
+  function zusammenfassung(stunden) {
+    var n = jetzt();
+    var seit = n - stunden * 3600;
+    var teil = seitDann(seit);
+    var adressen = {};
+    teil.forEach(function (e) {
+      if (e.event === "login_failure") { adressen[e.ip] = true; }
+    });
+    return {
+      version: VERSION, now: n, hours: stunden, refresh_seconds: 20,
+      mutations: true,
+      stats: {
+        failures: zaehle(teil, "login_failure"),
+        attacking_ips: Object.keys(adressen).length,
+        active_blocks: offeneSperren().length,
+        honeypot: zaehle(teil, "honeypot"),
+        denied: zaehle(teil, "denied"),
+        successes: zaehle(teil, "login_success")
+      },
+      top_offenders: auffaellige(seit),
+      timeline: verlauf(seit, n),
+      blocks: offeneSperren(),
+      allowlist: allowlist,
+      anomaly: {
+        ready: true,
+        baseline: {events: 4812, addresses: 96},
+        "global": {score: 34, summary: "erhoehte Fehlerquote, sonst wie sonst"},
+        reports: [{
+          ip: "203.0.113.19", score: 71, verdict: "kritisch",
+          summary: "9 Konten in 40 Minuten, Adresse nie zuvor gesehen, kein Erfolg"
+        }]
+      }
+    };
+  }
+
+  function dateien() {
+    return {
+      malware_enabled: true, scan_uploads: true, action: "quarantine",
+      clamav: "/usr/bin/clamscan",
+      integrity: {enabled: true, ready: true, reason: "", files: 1284,
+                  paths: ["/var/www"], interval: 900},
+      last_report: {
+        verdict: "kritisch",
+        changes: [
+          {kind: "neu", severity: 10,
+           path: "/var/www/html/wp-content/uploads/2026/09/th.php",
+           description: "PHP im Upload-Ordner, fuehrt uebergebenen Text aus"},
+          {kind: "geaendert", severity: 6, path: "/var/www/html/index.php",
+           description: "Inhalt weicht von der Grundlage ab"}
+        ]
+      },
+      quarantine: [{id: "q-8fa1", ts: n0 - 400, summary: "Webshell",
+                    original: "/var/www/html/wp-content/uploads/2026/09/th.php"}]
+    };
+  }
+
+  // -- Aendernde Aufrufe -----------------------------------------------
+  function sperre(daten) {
+    var ip = String(daten.ip || "").trim();
+    if (!ip) { return {error: "IP fehlt"}; }
+    sperren = sperren.filter(function (s) { return s.ip !== ip; });
+    sperren.push({ip: ip, is_network: ip.indexOf("/") > -1,
+                  reason: String(daten.reason || "manual"), strikes: 1,
+                  detail: "von Hand gesperrt",
+                  bis: jetzt() + (Number(daten.minutes) || 60) * 60});
+    return {ok: true};
+  }
+
+  function entsperre(daten) {
+    var ip = String(daten.ip || "").trim();
+    var vorher = sperren.length;
+    sperren = sperren.filter(function (s) { return s.ip !== ip; });
+    return {ok: sperren.length < vorher, ip: ip};
+  }
+
+  function erlaube(daten) {
+    var cidr = String(daten.cidr || "").trim();
+    var bekannt = allowlist.some(function (e) { return e.cidr === cidr; });
+    if (cidr && !bekannt) {
+      allowlist.push({cidr: cidr, note: String(daten.note || "")});
+    }
+    return {ok: true, cidr: cidr};
+  }
+
+  function entferne(daten) {
+    var cidr = String(daten.cidr || "").trim();
+    var vorher = allowlist.length;
+    allowlist = allowlist.filter(function (e) { return e.cidr !== cidr; });
+    return {ok: allowlist.length < vorher, cidr: cidr};
+  }
+
+  // -- Der vorgetaeuschte Server ---------------------------------------
+  function frage(adresse, name, standard) {
+    var teil = String(adresse).split("?")[1] || "";
+    var wert = new URLSearchParams(teil).get(name);
+    return wert === null ? standard : wert;
+  }
+
+  function antwort(status, daten) {
+    return {
+      status: status,
+      ok: status >= 200 && status < 300,
+      json: function () { return Promise.resolve(daten); }
+    };
+  }
+
+  function ergebnis(weg, adresse, daten) {
+    if (weg === "/api/session") {
+      return {ok: true, version: VERSION, mutations: true, token_required: true};
+    }
+    if (weg === "/api/summary") {
+      return zusammenfassung(Number(frage(adresse, "hours", "24")) || 24);
+    }
+    if (weg === "/api/attempts") {
+      var art = frage(adresse, "event", "");
+      var liste = ereignisse.slice().sort(function (a, b) { return b.ts - a.ts; });
+      if (art) {
+        liste = liste.filter(function (e) { return e.event === art; });
+      }
+      return {attempts: liste.slice(0, 100), now: jetzt()};
+    }
+    if (weg === "/api/files") { return dateien(); }
+    if (weg === "/api/block") { return sperre(daten); }
+    if (weg === "/api/unblock") { return entsperre(daten); }
+    if (weg === "/api/allow") { return erlaube(daten); }
+    if (weg === "/api/allow/remove") { return entferne(daten); }
+    return {error: "not_found"};
+  }
+
+  window.fetch = function (adresse, optionen) {
+    optionen = optionen || {};
+    var kopf = (optionen.headers || {})["X-Auth-Token"] || "";
+    var weg = String(adresse).split("?")[0];
+    var daten = {};
+    try { daten = JSON.parse(optionen.body || "{}"); } catch (e) { daten = {}; }
+    return new Promise(function (erfuellen, ablehnen) {
+      // Etwas Verzoegerung, damit es sich anfuehlt wie ein Netz.
+      setTimeout(function () {
+        if (!erreichbar) {
+          // So scheitert fetch wirklich: kein Statuscode, keine Antwort.
+          ablehnen(new TypeError("Failed to fetch"));
+          return;
+        }
+        if (kopf !== TOKEN) {
+          erfuellen(antwort(401, {error: "unauthorized"}));
+          return;
+        }
+        erfuellen(antwort(200, ergebnis(weg, adresse, daten)));
+      }, 140);
+    });
+  };
+
+  // -- Die Knoepfe der Vorfuehrung -------------------------------------
+  // Sie fassen die Anwendung nicht an, sondern druecken ihre eigenen
+  // Schalter - so, wie ein Finger es taete.
+  function anstossen() {
+    var lage = document.querySelector("main");
+    var knopf = document.getElementById(
+      lage && !lage.hidden ? "refresh" : "offline-retry");
+    if (knopf) { knopf.click(); }
+  }
+
+  document.getElementById("v-angriff").addEventListener("click", function () {
+    var ip = "203.0.113." + (40 + Math.floor(Math.random() * 200));
+    var n = jetzt();
+    for (var k = 0; k < 12; k++) {
+      ereignisse.push({ts: n - k * 9, event: "login_failure", ip: ip,
+                       identity: konten[k % 3], route: "/login",
+                       source: "app", detail: ""});
+    }
+    sperren.push({ip: ip, is_network: false, reason: "brute_force_ip",
+                  strikes: 1, detail: "12 Fehlversuche in 300s",
+                  bis: n + 15 * 60});
+    anstossen();
+  });
+
+  var netz = document.getElementById("v-netz");
+  netz.addEventListener("click", function () {
+    erreichbar = !erreichbar;
+    netz.textContent = erreichbar ? "Netz weg" : "Netz da";
+    anstossen();
+  });
+
+  document.getElementById("v-neustart").addEventListener("click", function () {
+    location.reload();
+  });
+
+  document.getElementById("v-vergessen").addEventListener("click", function () {
+    try { localStorage.removeItem("ls_token"); } catch (fehler) { /* egal */ }
+    location.reload();
+  });
+})();
+</script>"""
+
+
+def _ersetze(seite: str, alt: str, neu: str) -> str:
+    """Wie ``str.replace``, aber es faellt auf, wenn die Stelle wegfaellt."""
+    if seite.count(alt) != 1:
+        raise RuntimeError(
+            "Die Vorschau findet in der Seite nicht mehr genau einmal: "
+            + alt[:60]
+        )
+    return seite.replace(alt, neu)
+
+
+def preview_html(token: str = PREVIEW_TOKEN) -> str:
+    """Dieselbe Seite als einzelne Datei, mit vorgetaeuschtem Server.
+
+    Alles, was zum Server gehoert, wird ersetzt: das Symbol und die
+    Beschreibung liegen dort als eigene Adressen, hier muessen sie in die
+    Datei. Der Rest - Anmeldung, Token auf dem Geraet, Verbindungsband,
+    die zwei Spalten - bleibt Zeile fuer Zeile derselbe Code.
+    """
+    import base64
+
+    symbol = ("data:image/png;base64,"
+              + base64.b64encode(apple_touch_icon()).decode("ascii"))
+    hinweis = ("<!-- Erzeugt aus loginshield/dashboard.py "
+               "(preview_html). Nicht von Hand aendern. -->")
+
+    seite = INDEX_HTML
+    seite = _ersetze(seite, "<!doctype html>", "<!doctype html>\n" + hinweis)
+    seite = _ersetze(seite,
+                     '<link rel="apple-touch-icon" href="apple-touch-icon.png">',
+                     '<link rel="apple-touch-icon" href="%s">' % symbol)
+    seite = _ersetze(seite,
+                     '<link rel="icon" href="apple-touch-icon.png" type="image/png">',
+                     '<link rel="icon" href="%s" type="image/png">' % symbol)
+    # Das Manifest ist eine eigene Adresse beim Server. Eine einzelne
+    # Datei hat keine - der Verweis ginge ins Leere.
+    seite = _ersetze(seite, '<link rel="manifest" href="manifest.webmanifest">\n', "")
+    seite = _ersetze(seite, "<title>LoginShield</title>",
+                     "<title>LoginShield - Vorschau</title>")
+    seite = _ersetze(seite, "</style>\n</head>", _PREVIEW_STYLE + "</style>\n</head>")
+    seite = _ersetze(seite, "<body>\n<header>", "<body>\n" + _PREVIEW_BANNER + "<header>")
+    seite = _ersetze(seite, '</main>\n<div id="toast"></div>',
+                     "</main>\n" + _PREVIEW_FOOTER + '<div id="toast"></div>')
+    seite = _ersetze(seite, '<div id="toast"></div>\n\n<script>',
+                     '<div id="toast"></div>\n\n'
+                     + _PREVIEW_SCRIPT.replace("__TOKEN__", token)
+                                      .replace("__VERSION__", __version__)
+                     + "\n<script>")
+    seite = seite.replace("<code>vorschau</code>", "<code>%s</code>" % token)
+    return seite

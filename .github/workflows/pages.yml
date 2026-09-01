@@ -12,6 +12,7 @@ on:
     branches:
       - main
       - claude/app-hack-protection-hi30nk
+      - claude/ipad-app-hack-protection-r4h97p
     paths:
       - "docs/**"
       - ".github/workflows/pages.yml"
@@ -42,6 +43,10 @@ jobs:
           mkdir -p _site
           cp docs/demo.html _site/index.html
           cp docs/demo.html _site/demo.html
+          # Die App auf dem iPad: dieselbe Seite wie auf dem Server, nur
+          # mit vorgetaeuschtem Server. Erzeugt aus dem Programm selbst
+          # (loginshield/dashboard.py, preview_html).
+          cp docs/ipad.html _site/ipad.html
           cp docs/dashboard.png _site/dashboard.png
 
       - uses: actions/configure-pages@v5

@@ -12,23 +12,37 @@ Kommandozeile.
 
 ![Dashboard](docs/dashboard.png)
 
-### Klickbare Vorschau
+### Zwei klickbare Vorschauen
 
-[`docs/demo.html`](docs/demo.html) ist eine bedienbare Version dieser
-Oberfläche &mdash; einzelne Datei, keine Installation. Herunterladen und
-doppelklicken, dann einen Angriff auslösen und zusehen, wie die Sperre
-zuschnappt.
+Beide sind einzelne Dateien: herunterladen, doppelklicken, fertig. Keine
+Installation, kein Server.
 
-Über GitHub Pages wird sie automatisch veröffentlicht, sobald du unter
+| Datei | Zeigt |
+|---|---|
+| [`docs/demo.html`](docs/demo.html) | **Den Angriff.** Brute-Force, Password&nbsp;Spraying oder einen Honeypot-Scan auslösen und zusehen, wie die Sperre zuschnappt. |
+| [`docs/ipad.html`](docs/ipad.html) | **Die App auf dem iPad.** Anmeldung, Kaltstart, Verbindungsband, zwei Spalten im Querformat – Token: `vorschau`. |
+
+Die zweite ist keine Nachbildung: Es ist dieselbe Seite, die der Server
+ausliefert, nur mit einem vorgetäuschten Server dahinter. Sie wird aus dem
+Programm selbst erzeugt (`preview_html()` in `loginshield/dashboard.py`),
+damit sie nicht auseinanderlaufen können – ein Test wacht darüber:
+
+```bash
+python -c "from loginshield.dashboard import preview_html; \
+           open('docs/ipad.html','w').write(preview_html())"
+```
+
+Über GitHub Pages werden beide automatisch veröffentlicht, sobald du unter
 *Settings → Pages → Source* einmalig **GitHub Actions** auswählst:
-`https://levirob2015.github.io/L-vi/`
+`https://levirob2015.github.io/L-vi/` und
+`https://levirob2015.github.io/L-vi/ipad.html`
 
 **Auf dem iPad:** Die Seite in Safari öffnen und über *Teilen → Zum
 Home-Bildschirm* ablegen – sie bekommt dann ein eigenes Symbol und startet
-ohne Browserleiste, wie eine App. Das hier ist die Vorschau mit erfundenen
-Daten; für die echte Anzeige des eigenen Servers siehe [Die App auf dem
-iPhone und iPad](#die-app-auf-dem-iphone-und-ipad). Die Schutzsoftware
-selbst läuft dort nicht: sie schützt einen Server, kein Tablet.
+ohne Browserleiste, wie eine App. Es sind erfundene Daten; für die Anzeige
+des eigenen Servers siehe [Die App auf dem iPhone und
+iPad](#die-app-auf-dem-iphone-und-ipad). Die Schutzsoftware selbst läuft
+dort nicht: sie schützt einen Server, kein Tablet.
 
 ---
 
@@ -1000,6 +1014,11 @@ Was aufs iPad gehört, ist die **Bedienoberfläche**: nachsehen, wer gerade
 angreift, und eine Sperre aufheben, ohne am Rechner zu sitzen. Genau dafür
 ist das Dashboard eingerichtet.
 
+**Vorher ansehen, ohne etwas einzurichten:**
+[`docs/ipad.html`](docs/ipad.html) ist genau diese App mit vorgetäuschtem
+Server – Token `vorschau`. Vom Home-Bildschirm gestartet verhält sie sich
+wie das Original, inklusive Kaltstart und Verbindungsverlust.
+
 ### Einrichten – einmal, drei Schritte
 
 ```bash
@@ -1358,6 +1377,8 @@ loginshield/
   filescan.py    Webshells, getarnte Dateien, ClamAV-Anbindung, Quarantäne
   integrity.py   Fingerabdrücke: bemerkt neue, geänderte, gelöschte Dateien
   cli.py         Kommandozeile
+docs/demo.html   Vorschau: der Angriff (von Hand gebaut)
+docs/ipad.html   Vorschau: die App (erzeugt aus dashboard.py)
 deploy/          systemd-Unit für den Dauerbetrieb
 examples/        lauffähige Beispielanwendung
 tests/           Testsuite

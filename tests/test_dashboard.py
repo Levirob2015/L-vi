@@ -449,3 +449,78 @@ def test_scanner_bekommt_nicht_die_ganze_seite(dashboard):
     koerper = exc.value.read()
     assert len(koerper) < 200
     assert exc.value.headers.get("Content-Type").startswith("text/plain")
+
+
+# -- Die Vorschau --------------------------------------------------------
+# Sie ist keine Nachbildung, sondern dieselbe Seite mit einem
+# vorgetaeuschten Server. Deshalb muss sie mitwandern, wenn sich die
+# Seite aendert - sonst zeigt die Vorschau bald etwas, das es nicht gibt.
+def test_vorschau_ist_die_seite_selbst():
+    from loginshield.dashboard import INDEX_HTML, preview_html
+
+    seite = preview_html()
+    # Ein paar Stellen, an denen sich Nachbildung und Original trennen
+    # wuerden - hier sind sie Zeile fuer Zeile dieselben.
+    for stueck in ('id="login-token"', 'id="offline"', 'id="logout"',
+                   'class="paar"', "function starteTimer()",
+                   "localStorage.setItem(TOKEN_SCHLUESSEL"):
+        assert stueck in INDEX_HTML
+        assert stueck in seite
+
+
+def test_vorschau_kommt_ohne_server_aus():
+    """Als einzelne Datei darf nichts auf eine Adresse daneben zeigen."""
+    from loginshield.dashboard import preview_html
+
+    seite = preview_html()
+    assert 'href="apple-touch-icon.png"' not in seite
+    assert "manifest.webmanifest" not in seite
+    # Das Symbol steckt stattdessen in der Datei.
+    assert "data:image/png;base64," in seite
+    assert "window.fetch = function" in seite
+
+
+def test_vorschau_nimmt_nur_ihren_token():
+    from loginshield.dashboard import PREVIEW_TOKEN, preview_html
+
+    seite = preview_html()
+    assert 'var TOKEN = "%s"' % PREVIEW_TOKEN in seite
+    assert "<code>%s</code>" % PREVIEW_TOKEN in seite
+
+
+def test_vorschau_sagt_was_sie_ist():
+    """Ohne das haelt sie jemand fuer eine laufende Ueberwachung."""
+    from loginshield.dashboard import preview_html
+
+    seite = preview_html()
+    assert "Erfundene Daten, kein Server" in seite
+    assert "Keine App auf einem iPad kann" in seite
+
+
+def test_vorschau_meldet_sich_wenn_die_seite_umgebaut_wird():
+    """Eine verschobene Stelle soll auffallen, nicht still durchgehen."""
+    import loginshield.dashboard as modul
+
+    original = modul.INDEX_HTML
+    try:
+        modul.INDEX_HTML = original.replace('<link rel="manifest"'
+                                            ' href="manifest.webmanifest">\n', "")
+        with pytest.raises(RuntimeError, match="nicht mehr genau einmal"):
+            modul.preview_html()
+    finally:
+        modul.INDEX_HTML = original
+
+
+def test_die_abgelegte_vorschau_ist_aktuell():
+    """docs/ipad.html wird erzeugt, nicht von Hand gepflegt."""
+    import pathlib
+
+    from loginshield.dashboard import preview_html
+
+    datei = pathlib.Path(__file__).resolve().parents[1] / "docs" / "ipad.html"
+    assert datei.exists(), "docs/ipad.html fehlt"
+    assert datei.read_text(encoding="utf-8") == preview_html(), (
+        "docs/ipad.html ist nicht mehr auf dem Stand der Seite. Neu erzeugen:\n"
+        "  python -c \"from loginshield.dashboard import preview_html; "
+        "open('docs/ipad.html','w').write(preview_html())\""
+    )
