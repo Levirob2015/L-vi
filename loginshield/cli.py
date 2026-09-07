@@ -182,6 +182,7 @@ realtime:
   # - /var/www/uploads
   interval: 5             # Abstand zwischen zwei Durchgaengen (Sekunden)
   settle_seconds: 2       # so lange muss eine Datei ruhen (halbe Downloads)
+  full_rescan_interval: 0 # zusaetzlich alles neu pruefen (0 = aus, sonst Sek.)
   action: report          # report | quarantine
 
 # Dateiveraenderungen ueberwachen - die wirksamste Erkennung NACH einem
@@ -380,6 +381,22 @@ def build_parser() -> argparse.ArgumentParser:
     integrity.add_argument("--json", action="store_true")
     integrity.set_defaults(handler=cmd_integrity)
 
+    schutz = subparsers.add_parser(
+        "schutz",
+        help="Begruessung mit Ja/Nein - den Gratisschutz einschalten",
+    )
+    schutz.add_argument("--path", action="append", default=[],
+                        help="Was geschuetzt werden soll (wiederholbar)")
+    schutz.add_argument("--ja", action="store_true",
+                        help="Ohne Rueckfrage mit Ja beantworten")
+    schutz.add_argument("--nein", action="store_true",
+                        help="Ohne Rueckfrage mit Nein beantworten")
+    schutz.add_argument("--intervall", type=float, default=60.0,
+                        help="Wie oft der Rechner geprueft wird (Sekunden)")
+    schutz.add_argument("--start", action="store_true",
+                        help="Bei Ja gleich dauerhaft weiterlaufen")
+    schutz.set_defaults(handler=cmd_schutz)
+
     waechter = subparsers.add_parser(
         "waechter",
         help="Neue Dateien pruefen, sobald sie auftauchen (Echtzeitschutz)",
@@ -388,6 +405,9 @@ def build_parser() -> argparse.ArgumentParser:
                           help="Zu ueberwachendes Verzeichnis (wiederholbar)")
     waechter.add_argument("--interval", type=float, default=None,
                           help="Abstand zwischen zwei Durchgaengen in Sekunden")
+    waechter.add_argument("--rescan", type=float, default=None, metavar="SEKUNDEN",
+                          help="Zusaetzlich in diesem Abstand alles neu pruefen "
+                               "(fuer frisch geholte Signaturen)")
     waechter.add_argument("--quarantine", action="store_true",
                           help="Funde beiseitelegen statt nur melden")
     waechter.add_argument("--scan-existing", action="store_true",
@@ -1377,6 +1397,117 @@ def cmd_integrity(args) -> int:
         guard.close()
 
 
+def cmd_schutz(args) -> int:
+    """Die Begruessung mit Ja/Nein - der freundliche Weg zum Schutz.
+
+    Kein Programm draengt sich hier auf. Es fragt, und der Mensch am
+    Rechner entscheidet. Ja schaltet den Schutz ein, Nein tut nichts -
+    genau das ist der Unterschied zwischen Schutz und Schaedling: die
+    Einladung.
+    """
+    from .filescan import EICAR
+
+    print()
+    print("  +--------------------------------------------------+")
+    print("  |                                                  |")
+    print("  |   Ich bin Antivirus.                             |")
+    print("  |   Ein Schutz fuer diesen Rechner.                |")
+    print("  |                                                  |")
+    print("  |   Moechten Sie einen Gratisschutz haben?         |")
+    print("  |                                                  |")
+    print("  |   Ich pruefe still im Hintergrund auf Viren      |")
+    print("  |   und Hacker - und lasse Ihre Dateien in Ruhe.   |")
+    print("  |                                                  |")
+    print("  |        [ J ] Ja, gerne        [ N ] Nein         |")
+    print("  |                                                  |")
+    print("  +--------------------------------------------------+")
+    print()
+
+    # Die Antwort: aus einem Schalter, sonst gefragt.
+    if args.nein:
+        antwort = "n"
+    elif args.ja:
+        antwort = "j"
+    else:
+        try:
+            eingabe = input("  Ihre Wahl (J/N): ").strip().lower()
+        except EOFError:
+            # Kein Mensch am Terminal (Cron, Pipe) - ohne ausdrueckliches
+            # Ja wird nichts eingeschaltet. Schweigen ist kein Ja.
+            print("  Keine Antwort - es wird nichts eingeschaltet.")
+            print("  (Fuer den unbeaufsichtigten Betrieb: --ja)")
+            return 0
+        antwort = "j" if eingabe[:1] in ("j", "y") else "n"
+
+    if antwort != "j":
+        print()
+        print("  Alles klar - es wird nichts installiert und nichts geprueft.")
+        print("  Sie koennen jederzeit wiederkommen:  loginshield schutz")
+        print()
+        return 0
+
+    guard = _guard(args)
+    try:
+        print()
+        print("  Danke. Zuerst der Beweis, dass der Schutz wirklich anschlaegt")
+        print("  - mit einer harmlosen Testdatei:\n")
+        # Nicht behaupten, dass geschuetzt wird - zeigen. Wenn schon die
+        # Testdatei durchginge, waere alles Weitere wertlos.
+        if _signaturen_test(guard, EICAR) != 0:
+            print("\n  Der Selbsttest ist fehlgeschlagen - bitte oben nachsehen.")
+            return 1
+
+        pfade = list(args.path) or list(guard.config.realtime.paths)
+        if not pfade:
+            print()
+            print("  Der Schutz gegen Hacker laeuft ab jetzt im Hintergrund.")
+            print("  Damit auch Dateien ueberwacht werden, sagen Sie noch,")
+            print("  welcher Ordner geschuetzt werden soll:")
+            print("      loginshield schutz --path <Ordner> --start")
+            return 0
+
+        fehlend = [p for p in pfade if not os.path.exists(p)]
+        if fehlend:
+            print("\n  Gibt es nicht: " + ", ".join(fehlend))
+            return 1
+
+        einstellung = guard.config.realtime
+        einstellung.enabled = True
+        einstellung.paths = pfade
+        einstellung.interval = max(1.0, args.intervall)
+        einstellung.action = "quarantine"
+
+        print()
+        print(f"  Geschuetzt wird ab jetzt: {', '.join(pfade)}")
+        print(f"  Geprueft wird alle {einstellung.interval:g} Sekunden, still")
+        print("  im Hintergrund. Gefundenes wird beiseitegelegt, nie geloescht.")
+
+        if not args.start:
+            print()
+            print("  So bleibt der Schutz dauerhaft an:")
+            print(f"      loginshield waechter --path {pfade[0]} --quarantine")
+            print("  (oder in der Konfiguration realtime.enabled: true setzen)")
+            return 0
+
+        print("  Beenden mit Strg-C.\n")
+
+        def melden(ereignis):
+            zeit = time.strftime("%H:%M:%S")
+            print(f"  [{zeit}] Schadsoftware gefunden und beiseitegelegt: "
+                  f"{os.path.basename(ereignis.path)}")
+
+        guard.realtime.on_event = melden
+        try:
+            guard.realtime.run()
+        except KeyboardInterrupt:
+            pass
+        print(f"\n  Beendet. {guard.realtime.stats.geprueft} Datei(en) geprueft, "
+              f"{guard.realtime.stats.funde} Fund(e).")
+        return 0
+    finally:
+        guard.close()
+
+
 def cmd_waechter(args) -> int:
     """Der Echtzeitschutz: sieht nach, was neu dazukommt."""
     guard = _guard(args)
@@ -1390,6 +1521,8 @@ def cmd_waechter(args) -> int:
             einstellung.interval = args.interval
         if args.quarantine:
             einstellung.action = "quarantine"
+        if args.rescan is not None:
+            einstellung.full_rescan_interval = args.rescan
         if args.scan_existing:
             einstellung.scan_existing = True
         if args.once:

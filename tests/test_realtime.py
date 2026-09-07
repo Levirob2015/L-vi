@@ -81,6 +81,48 @@ def test_geaenderte_datei_wird_erneut_geprueft(tmp_path, scanner, clock):
     assert len(funde) == 1 and funde[0].path == pfad
 
 
+def test_vollpruefung_findet_was_eine_neue_signatur_kennt(tmp_path, scanner, clock):
+    """Der Sinn der Vollpruefung.
+
+    Eine Datei, die gestern sauber war, kann heute als bekannt schadhaft
+    gelten - weil eine frisch geholte Signaturliste sie jetzt kennt. Ohne
+    Vollpruefung fiele das erst auf, wenn sich die Datei aendert; sie
+    aendert sich aber nicht.
+    """
+    import hashlib
+
+    waechter = _waechter(tmp_path, scanner, clock, settle_seconds=0,
+                         full_rescan_interval=100)
+    inhalt = b"war gestern noch harmlos"
+    _ablegen(waechter.paths[0], "schlaefer.bin", inhalt, clock=clock)
+
+    # Erster Blick: die Signatur kennt die Datei noch nicht.
+    assert waechter.poll_once() == []
+
+    # Jetzt kommt die neue Signatur - die Datei selbst bleibt unveraendert.
+    scanner.signatures.add_zeile(
+        f"{hashlib.sha256(inhalt).hexdigest()}  Spaet.Erkannt")
+
+    # Ein normaler Durchgang sieht nichts Veraendertes.
+    clock.advance(10)
+    assert waechter.poll_once() == []
+
+    # Sobald die Vollpruefung faellig ist, faellt sie auf.
+    clock.advance(100)
+    funde = waechter.poll_once()
+    assert len(funde) == 1
+    assert funde[0].path.endswith("schlaefer.bin")
+    assert waechter.stats.vollscans == 1
+
+
+def test_ohne_intervall_keine_vollpruefung(tmp_path, scanner, clock):
+    waechter = _waechter(tmp_path, scanner, clock, settle_seconds=0)
+    waechter.poll_once()
+    clock.advance(100000)
+    waechter.poll_once()
+    assert waechter.stats.vollscans == 0
+
+
 def test_bestand_wird_nur_gemerkt_nicht_geprueft(tmp_path, scanner, clock):
     """Beim Einschalten nicht erst die ganze Platte durchgehen."""
     waechter = _waechter(tmp_path, scanner, clock, settle_seconds=0)

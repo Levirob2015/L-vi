@@ -978,6 +978,26 @@ hier gelöst sind:
 Ohne `--path` und ohne Konfiguration läuft er nicht: Ein Wächter, der
 ungefragt über fremde Verzeichnisse geht, kostet Leistung und überrascht.
 
+**Wie oft ist oft genug?** Der Wächter darf ruhig alle paar Sekunden nachsehen
+(`interval`) – er prüft ja nur, was sich seit dem letzten Mal *verändert* hat,
+und das ist billig. Eine neue Datei fällt so binnen Sekunden auf, ohne dass
+jemand etwas merkt. Was man **nicht** alle zehn Sekunden tun sollte, ist die
+ganze Festplatte am Stück durchzurechnen – das würde den Rechner spürbar
+bremsen, genau das, was du vermeiden willst. Dafür gibt es einen eigenen,
+längeren Takt:
+
+```yaml
+realtime:
+  interval: 5               # alle 5s nach Veränderungen sehen (billig)
+  full_rescan_interval: 3600 # einmal pro Stunde wirklich alles prüfen
+```
+
+Die Vollprüfung ist für einen bestimmten Fall da: Eine Datei, die gestern
+sauber war, kann heute als bekannt schädlich gelten – weil du inzwischen eine
+neue Signaturliste geholt hast. Die Datei selbst ändert sich dabei nicht, also
+würde der normale Durchgang sie übersehen. Die Vollprüfung sieht sie sich
+trotzdem wieder an.
+
 ### Gefunden – und dann?
 
 Voreingestellt wird nur **gemeldet**. Verschoben wird erst auf Ansage:
@@ -995,11 +1015,38 @@ loginshield quarantine --list
 loginshield quarantine --restore <ID>
 ```
 
+### Der freundliche Einstieg: fragen, bevor man etwas tut
+
+Ein Schutz drängt sich nicht auf – er fragt. `loginshield schutz` zeigt eine
+Begrüßung mit **Ja/Nein**: Bei *Ja* wird eingerichtet, bei *Nein* passiert
+nichts. Genau das ist der Unterschied zu einem Schädling: die Einladung. Kein
+Programm darf sich ungefragt auf einen fremden Rechner kopieren – das ist
+strafbar (§ 303a/b StGB), und jeder echte Virenschutz würde es blockieren. Der
+Nutzer holt sich den Schutz, statt dass er sich hineinschleicht.
+
+```bash
+loginshield schutz --path ~/Downloads
+```
+
+```
+  +--------------------------------------------------+
+  |   Ich bin Antivirus.                             |
+  |   Ein Schutz fuer diesen Rechner.                |
+  |   Moechten Sie einen Gratisschutz haben?         |
+  |        [ J ] Ja, gerne        [ N ] Nein         |
+  +--------------------------------------------------+
+```
+
+Bei *Ja* wird zuerst mit der harmlosen EICAR-Testdatei **vorgeführt**, dass der
+Schutz wirklich anschlägt – erst zeigen, dann behaupten –, und dann läuft er
+still im Hintergrund. Mit `--start` bleibt er dauerhaft an.
+
 ---
 
 ## Kommandozeile
 
 ```
+loginshield schutz [--path ORDNER]     Begruessung mit Ja/Nein, Schutz anschalten
 loginshield init                       Konfiguration + Token anlegen
 loginshield serve [--watch]            Dashboard starten
 loginshield watch --path DATEI         Logdateien mitlesen

@@ -395,6 +395,13 @@ class RealtimeConfig:
     settle_seconds: float = 2.0
     #: Beim Start alles Vorhandene pruefen statt es nur zu merken.
     scan_existing: bool = False
+    #: Zusaetzlich in diesem Abstand *alles* erneut pruefen, nicht nur das
+    #: Veraenderte (Sekunden, 0 = aus). Der Sinn ist nicht, dieselbe Datei
+    #: staendig neu anzusehen - das faengt schon der normale Durchgang.
+    #: Der Sinn ist eine frisch geholte Signaturliste: Eine Datei, die
+    #: gestern sauber war, kann heute als bekannt schadhaft gelten. Ohne
+    #: Vollpruefung fiele das erst auf, wenn sich die Datei aendert.
+    full_rescan_interval: float = 0.0
     #: report = nur melden, quarantine = zusaetzlich beiseitelegen
     action: str = "report"
     #: Obergrenze fuer die Zahl der Pruefungen je Durchgang. Wer 10.000
@@ -425,6 +432,9 @@ class RealtimeConfig:
             raise ConfigError("realtime.max_files_per_cycle muss mindestens 1 sein")
         if self.max_index < 1:
             raise ConfigError("realtime.max_index muss mindestens 1 sein")
+        if self.full_rescan_interval < 0:
+            raise ConfigError(
+                "realtime.full_rescan_interval darf nicht negativ sein")
 
 
 @dataclass

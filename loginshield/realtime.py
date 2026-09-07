@@ -75,6 +75,7 @@ class WatchEvent:
 @dataclass
 class WatchStats:
     zyklen: int = 0
+    vollscans: int = 0
     gesehen: int = 0
     geprueft: int = 0
     funde: int = 0
@@ -84,7 +85,8 @@ class WatchStats:
 
     def as_dict(self) -> dict:
         return {
-            "zyklen": self.zyklen, "gesehen": self.gesehen,
+            "zyklen": self.zyklen, "vollscans": self.vollscans,
+            "gesehen": self.gesehen,
             "geprueft": self.geprueft, "funde": self.funde,
             "quarantaene": self.quarantaene,
             "zurueckgestellt": self.zurueckgestellt,
@@ -112,6 +114,8 @@ class RealtimeGuard:
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._angelernt = False
+        #: Wann zuletzt *alles* geprueft wurde (nicht nur Veraendertes).
+        self._letzter_vollscan = 0.0
 
     # ------------------------------------------------------------------
     @property
@@ -157,6 +161,22 @@ class RealtimeGuard:
         self.stats.zyklen += 1
         self.stats.letzter_lauf = jetzt
 
+        # Ist eine Vollpruefung faellig? Dann zaehlt diesmal nicht nur, was
+        # sich geaendert hat - jede Datei wird erneut angesehen. Der
+        # Zeitpunkt wird gleich gesetzt, nicht erst am Ende: Ein langer
+        # Durchgang soll nicht sofort den naechsten ausloesen.
+        if self._letzter_vollscan == 0.0:
+            # Erster richtiger Durchgang: der Abstand zaehlt ab jetzt, nicht
+            # ab dem Anfang der Zeitrechnung. Sonst waere gleich beim ersten
+            # Mal eine Vollpruefung faellig.
+            self._letzter_vollscan = jetzt
+        vollscan = (self.config.full_rescan_interval > 0
+                    and jetzt - self._letzter_vollscan
+                    >= self.config.full_rescan_interval)
+        if vollscan:
+            self._letzter_vollscan = jetzt
+            self.stats.vollscans += 1
+
         funde: List[WatchEvent] = []
         gesehen: Dict[str, Tuple[float, int]] = {}
         #: Alles, was in diesem Durchgang ueberhaupt dalag - auch das
@@ -169,7 +189,7 @@ class RealtimeGuard:
             vorhanden.add(pfad)
             gesehen[pfad] = zustand
             self.stats.gesehen += 1
-            if self._bekannt.get(pfad) == zustand:
+            if not vollscan and self._bekannt.get(pfad) == zustand:
                 continue                      # unveraendert
             if geprueft >= self.config.max_files_per_cycle:
                 # Nicht als bekannt merken: beim naechsten Durchgang dran.
