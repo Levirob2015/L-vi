@@ -30,6 +30,7 @@ from .firewall import Firewall
 from .honeypot import Honeypot
 from .anomaly import AnomalyDetector
 from .filescan import FileScanner, Quarantine
+from .realtime import RealtimeGuard
 from .integrity import IntegrityMonitor
 from .notify import Notifier
 from .requestfilter import RequestFilter
@@ -85,6 +86,13 @@ class Guard:
         #: Dateipruefung und Quarantaene.
         self.filescan = FileScanner(self.config.malware, self)
         self.quarantine = Quarantine(self.config.malware.quarantine_dir)
+        #: Der Waechter: prueft neue Dateien, sobald sie auftauchen.
+        #: Er laeuft erst, wenn ihn jemand startet - siehe
+        #: :meth:`RealtimeGuard.start` und ``loginshield waechter``.
+        self.realtime = RealtimeGuard(
+            self.config.realtime, self.filescan, self.quarantine,
+            on_event=self._waechter_fund, clock=self.clock,
+        )
         #: Ueberwachung von Dateiveraenderungen.
         self.integrity = IntegrityMonitor(self.config.integrity, self)
         #: Sagt Bescheid, statt darauf zu warten, dass jemand nachsieht.
@@ -579,6 +587,23 @@ class Guard:
                        f"{sauber(result.summary, 120)}",
             )
         return {"result": result, "quarantined": verschoben}
+
+    def _waechter_fund(self, ereignis) -> None:
+        """Ein Fund des Waechters - dieselbe Meldung wie bei der Dateiwache.
+
+        Schwere 10: Es liegt etwas auf dem Rechner, das nicht dorthin
+        gehoert. Diese Meldung soll durch jede Einstellung hindurchkommen.
+        """
+        datei = sauber(ereignis.path, 200)
+        self.notifier.notify(
+            "Schadcode gefunden",
+            f"Datei: {datei}\n"
+            f"Befund: {sauber(ereignis.summary, 200)}\n"
+            + ("Die Datei liegt jetzt in der Quarantaene.\n"
+               if ereignis.action == "quarantaene" else
+               "Die Datei liegt unveraendert an ihrem Platz.\n"),
+            schwere=10, kennung="datei:schadcode",
+        )
 
     def record_request(self, ip: Optional[str], *, route: str = "",
                        user_agent: str = "", source: str = "app") -> None:

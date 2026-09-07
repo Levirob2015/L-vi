@@ -815,11 +815,13 @@ Nach einem erfolgreichen Einbruch legt ein Angreifer fast immer eine Datei ab �
 eine **Webshell**, ein kleines Skript, über das sich der Server fernsteuern
 lässt. Das ist der Punkt, an dem eine Sperre auf IP-Ebene zu spät kommt.
 
-**Was hier nicht passiert:** Es wird kein eigener Virenscanner gebaut. Eine
-Erkennungsmaschine ohne gepflegte Signaturdatenbank, ohne Aktualisierung, die
-trotzdem „Virenschutz“ behauptet, wäre unehrlich – und gefährlicher als gar
-keine, weil man sich darauf verlässt. Stattdessen drei Dinge, die auf einem
-Webserver wirklich zählen:
+**Was hier nicht passiert:** Es wird **keine eigene Signaturliste erfunden**.
+Eine solche Liste zu pflegen ist die Arbeit eines Virenschutzherstellers –
+täglich neue Muster, rund um die Uhr. Eine selbstgebaute Liste mit zwanzig
+Einträgen „Virenschutz“ zu nennen, wäre unehrlich und gefährlicher als gar
+keiner, weil man sich darauf verlässt. Der **Mechanismus** gehört hierher, die
+Liste nicht – sie wird gelesen, nicht erdacht (siehe *Signaturen* weiter
+unten). Dazu kommen vier Dinge, die auf einem Server wirklich zählen:
 
 ### 1. Webshells erkennen
 
@@ -881,6 +883,101 @@ Neue Datei, geänderte Datei, gelöschte Datei – alle drei fallen auf, wenn ma
 weiß, wie es vorher aussah. Am schwersten wiegt eine **neue Skriptdatei in
 einem Upload-Verzeichnis**: dort gehören Bilder hin, keine Programme.
 
+### 4. Signaturen: bekannte Schadsoftware am Fingerabdruck
+
+Jede Datei lässt sich durch eine Rechenvorschrift schicken (SHA-256), die aus
+beliebig vielen Bytes einen kurzen, eindeutigen Wert macht – einen
+Fingerabdruck. Steht er in der Liste, ist die Datei **genau** die bekannte
+Schadsoftware: kein Verdacht, kein Punktesystem, sondern ein Treffer.
+
+```bash
+loginshield signaturen               # Was ist da? Woher? Wie alt?
+loginshield signaturen --test        # Schlägt der Schutz überhaupt an?
+```
+
+`--test` ist der einzige ehrliche Weg, einen Virenschutz zu prüfen: nicht
+fragen, ob er läuft, sondern ihm etwas hinlegen, das er finden **muss**. Dazu
+gibt es die EICAR-Testdatei – eine Zeichenkette, auf die sich die Hersteller
+geeinigt haben. Sie ist völlig harmlos und wird nach dem Test sofort wieder
+gelöscht.
+
+```
+Testdatei angelegt (EICAR - harmlos, kein Schadcode).
+
+ERKANNT: schadhaft, 10 Punkte
+  ueber: eicar
+
+Die Pruefkette funktioniert.
+```
+
+Echte Signaturen kommen von außen – auf zwei Wegen:
+
+```bash
+# 1. ClamAV installieren; seine gepflegten Signaturen werden mitbenutzt
+sudo apt install clamav
+
+# 2. Eine Liste holen (nur https, und nur von einer Quelle, der du traust)
+loginshield signaturen --update https://beispiel.de/liste.hsb
+```
+
+Gelesen werden die üblichen Formate, auch das von ClamAV
+(`hash:größe:name`, `.hdb`/`.hsb`). Beim Aktualisieren wird die neue Liste
+erst danebengelegt und gelesen – **eine leere oder kaputte Antwort ersetzt die
+bewährte Liste nicht**, sonst würde eine fehlgeschlagene Aktualisierung den
+Schutz still abschalten.
+
+Umgekehrt geht es auch. Wird eine eigene Datei zu Unrecht gemeldet, gibt man
+sie frei, statt die Regel für alle abzuschalten:
+
+```bash
+loginshield signaturen --allow /pfad/zu/meinem/werkzeug.sh
+```
+
+### 5. Der Wächter: prüfen, sobald etwas ankommt
+
+Ein Scan, den jemand von Hand startet, findet Schadsoftware erst Tage später.
+Der Wächter sieht alle paar Sekunden nach und prüft, was **neu ist oder sich
+geändert hat**:
+
+```bash
+loginshield waechter --path /var/www/uploads --quarantine
+```
+
+```
+Waechter ueber: /var/www/uploads
+Durchgang alle 5s, Funde werden beiseitegelegt
+
+[17:57:13] SCHADHAFT: /var/www/uploads/rechnung.pdf.php -> Quarantaene
+           Code aus einer Anfrage wird direkt ausgefuehrt
+```
+
+Im Dauerbetrieb gehört er in die Konfiguration, dann läuft er im Dienst mit:
+
+```yaml
+realtime:
+  enabled: true
+  paths: [/var/www/uploads]
+  interval: 5             # Abstand zwischen zwei Durchgängen
+  settle_seconds: 2       # so lange muss eine Datei ruhen
+  action: quarantine
+```
+
+Drei Dinge, an denen ein solcher Wächter in der Praxis scheitert, und wie sie
+hier gelöst sind:
+
+* **Halbe Dateien.** Ein Upload ist beim ersten Blick oft noch nicht fertig.
+  Geprüft wird erst, wenn eine Datei sich `settle_seconds` lang nicht mehr
+  verändert hat – sonst prüft man das erste Drittel und meldet „sauber“.
+* **Immer wieder dasselbe.** Jede Datei wird mit Zeitstempel und Größe
+  gemerkt; geprüft wird nur, was neu oder anders ist.
+* **Der Speicher.** Das Verzeichnis der gemerkten Dateien wächst mit fremden
+  Daten – also hat es eine Obergrenze, verschwundene Dateien fallen heraus,
+  und je Durchgang wird höchstens `max_files_per_cycle` geprüft. Wer 10.000
+  Dateien auf einmal auspackt, legt den Server nicht lahm.
+
+Ohne `--path` und ohne Konfiguration läuft er nicht: Ein Wächter, der
+ungefragt über fremde Verzeichnisse geht, kostet Leistung und überrascht.
+
 ### Gefunden – und dann?
 
 Voreingestellt wird nur **gemeldet**. Verschoben wird erst auf Ansage:
@@ -915,6 +1012,11 @@ loginshield firewall --sync            Sperren in die Firewall schreiben
 loginshield firewall --selftest        prueft die Anbindung an einer Testadresse
 loginshield firewall --limit-probe     Verbindungsbremse aus dem Verkehr ablesen
 loginshield scan --path VERZEICHNIS    Dateien auf Schadcode pruefen
+loginshield waechter --path VERZ.      neue Dateien sofort pruefen (Echtzeit)
+loginshield signaturen                 Stand der Signaturen anzeigen
+loginshield signaturen --test          pruefen, ob der Schutz anschlaegt
+loginshield signaturen --update QUELLE Signaturliste holen (nur https)
+loginshield signaturen --allow DATEI   Datei freigeben (bei einem Fehlalarm)
 loginshield integrity --learn          Zustand der Dateien festhalten
 loginshield integrity                  auf Veraenderungen pruefen
 loginshield quarantine --list          beiseitegelegte Dateien anzeigen
@@ -988,6 +1090,13 @@ läuft nicht auf iOS.** Er gehört auf den Server, auf dem deine Anwendung
 liegt. iOS lässt keine Dienste im Hintergrund laufen, hat keine
 Systemrechte und keine Firewall, an die sich ein Programm hängen könnte.
 Ein iPhone kann einen Server nicht verteidigen.
+
+Dasselbe gilt für **Virenschutz auf dem iPad selbst**, und zwar für jedes
+Programm, nicht nur für dieses: Auf iOS darf keine App die Dateien einer
+anderen App lesen. Ein „Virenscanner“ aus dem App Store kann dort also gar
+nicht scannen – er sieht nur seinen eigenen Ordner. Was auf einem iPad
+wirklich schützt, sind Updates, keine Jailbreaks und Vorsicht bei Links; ein
+Programm, das mehr verspricht, kann es auf iOS technisch nicht halten.
 
 Was aufs iPhone gehört, ist die **Bedienoberfläche**: nachsehen, wer gerade
 angreift, und eine Sperre aufheben, ohne am Rechner zu sitzen. Genau dafür
