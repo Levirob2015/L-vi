@@ -171,6 +171,8 @@ malware:
   signatures: true        # Fingerabdruecke bekannter Schadsoftware pruefen
   signature_dir: signatures   # Listen hier ablegen (auch ClamAV .hdb/.hsb)
   allowlist_files: []     # Fingerabdruecke, die immer als sauber gelten
+  learning: true          # lernende Erkennung: was aus der Reihe faellt
+                          #   loginshield erkennung --learn --path /var/www
 
 # Der Waechter: prueft neue Dateien, sobald sie auftauchen, statt erst
 # beim naechsten Scan. Fuer Verzeichnisse gedacht, in denen Fremdes
@@ -183,6 +185,7 @@ realtime:
   interval: 5             # Abstand zwischen zwei Durchgaengen (Sekunden)
   settle_seconds: 2       # so lange muss eine Datei ruhen (halbe Downloads)
   full_rescan_interval: 0 # zusaetzlich alles neu pruefen (0 = aus, sonst Sek.)
+  selftest_interval: 3600 # sich selbst pruefen: greift der Schutz noch?
   action: report          # report | quarantine
 
 # Dateiveraenderungen ueberwachen - die wirksamste Erkennung NACH einem
@@ -417,6 +420,23 @@ def build_parser() -> argparse.ArgumentParser:
                                "Bestand, dann beenden (fuer Cron)")
     waechter.add_argument("--json", action="store_true")
     waechter.set_defaults(handler=cmd_waechter)
+
+    erkennung = subparsers.add_parser(
+        "erkennung",
+        help="Lernende Erkennung: findet Schaedlinge, die niemand kennt",
+    )
+    erkennung_aktion = erkennung.add_mutually_exclusive_group()
+    erkennung_aktion.add_argument("--learn", action="store_true",
+                                  help="Lernen, wie die Dateien hier aussehen "
+                                       "(nur auf einem sauberen System!)")
+    erkennung_aktion.add_argument("--status", action="store_true",
+                                  help="Was ist gelernt? (Standard)")
+    erkennung_aktion.add_argument("--test", metavar="DATEI",
+                                  help="Eine einzelne Datei bewerten lassen")
+    erkennung.add_argument("--path", action="append", default=[],
+                           help="Woraus gelernt wird (wiederholbar)")
+    erkennung.add_argument("--json", action="store_true")
+    erkennung.set_defaults(handler=cmd_erkennung)
 
     signaturen = subparsers.add_parser(
         "signaturen",
@@ -1156,10 +1176,36 @@ def _doctor_dateien(config, guard, pruefe) -> None:
                    "loginshield signaturen --update <https-Adresse einer "
                    "Liste> oder ClamAV installieren")
 
+        klassifikator = guard.filescan.klassifikator
+        if klassifikator is None:
+            pruefe(bereich, INFO, "Lernende Erkennung ist abgeschaltet",
+                   "malware.learning: true")
+        elif klassifikator.bereit:
+            stand = klassifikator.status()
+            pruefe(bereich, GUT,
+                   f"Lernende Erkennung bereit ({stand['dateien']} Dateien "
+                   f"gelernt)")
+        else:
+            pruefe(bereich, INFO,
+                   "Lernende Erkennung hat noch nichts gelernt - sie prueft "
+                   "vorerst nur auf gepackten Inhalt",
+                   "loginshield erkennung --learn --path /var/www (nur auf "
+                   "einem sauberen System)")
+
         if config.realtime.enabled:
             pruefe(bereich, GUT,
                    f"Waechter eingerichtet fuer "
                    f"{', '.join(config.realtime.paths)}")
+            if config.realtime.selftest_interval:
+                pruefe(bereich, GUT,
+                       f"Selbsttest alle "
+                       f"{_fmt_duration(config.realtime.selftest_interval)} - "
+                       f"ein stiller Ausfall faellt auf")
+            else:
+                pruefe(bereich, WARNUNG,
+                       "Kein Selbsttest - ein Schutz, der still aufhoert zu "
+                       "pruefen, faellt niemandem auf",
+                       "realtime.selftest_interval: 3600")
         else:
             pruefe(bereich, INFO,
                    "Kein Waechter - neue Dateien fallen erst beim naechsten "
@@ -1603,6 +1649,97 @@ def cmd_waechter(args) -> int:
         print()
         print(_table(rows, ["Bewertung", "Datei", "Umgang", "Begruendung"]))
         return 1
+    finally:
+        guard.close()
+
+
+def cmd_erkennung(args) -> int:
+    """Die lernende Erkennung: lernen, nachsehen, ausprobieren."""
+    guard = _guard(args)
+    try:
+        klassifikator = guard.filescan.klassifikator
+        if klassifikator is None:
+            print("Die lernende Erkennung ist abgeschaltet "
+                  "(malware.learning).", file=sys.stderr)
+            return 1
+
+        if args.test:
+            try:
+                with open(args.test, "rb") as handle:
+                    daten = handle.read(1_048_576)
+            except OSError as exc:
+                print(f"Nicht lesbar: {exc}", file=sys.stderr)
+                return 1
+            befund = klassifikator.bewerten(daten, args.test)
+            if args.json:
+                print(json.dumps(befund.as_dict(), indent=2, ensure_ascii=False))
+                return 1 if befund.auffaellig else 0
+            print(f"Datei:     {args.test}")
+            print(f"Art:       {befund.klasse}")
+            print(f"Punkte:    {befund.punkte}")
+            if not befund.signale:
+                print("Urteil:    unauffaellig"
+                      + (f" ({befund.grund})" if befund.grund else ""))
+                return 0
+            print("Auffaellig:")
+            for signal in befund.signale:
+                print(f"  - {signal.beschreibung}")
+            print(f"\n{befund.grund}")
+            print("\nDas allein legt nichts beiseite - eine Abweichung ist ein "
+                  "Verdacht,\nkein Beweis. Erst zusammen mit einem Merkmal "
+                  "wird ein Urteil daraus.")
+            return 1
+
+        if args.learn:
+            pfade = args.path or ["."]
+            fehlend = [p for p in pfade if not os.path.exists(p)]
+            if fehlend:
+                print("Gibt es nicht: " + ", ".join(fehlend), file=sys.stderr)
+                return 1
+            print("Achtung: nur auf einem System lernen, das sauber ist.")
+            print("Nach einem Einbruch gilt die Webshell sonst als normal.\n")
+            grundlinie = klassifikator.lernen(
+                pfade, skip_dirs=guard.config.malware.skip_dirs)
+            print(f"Gelernt aus {grundlinie.dateien} Datei(en) in "
+                  f"{', '.join(pfade)}:\n")
+            rows = [
+                [name, klasse.dateien,
+                 "ja" if klasse.belastbar else "zu wenig",
+                 f"{klasse.werte.get('entropie', {}).get('median', 0):.2f}"]
+                for name, klasse in sorted(grundlinie.klassen.items())
+            ]
+            print(_table(rows, ["Dateiart", "Dateien", "Belastbar",
+                                "Entropie"]))
+            if not any(k.belastbar for k in grundlinie.klassen.values()):
+                print("\nNoch keine Dateiart mit genug Beispielen - es wird "
+                      "vorerst nur\nauf gepackten Inhalt geprueft. Mehr Pfade "
+                      "angeben hilft.")
+            return 0
+
+        status = klassifikator.status()
+        if args.json:
+            print(json.dumps(status, indent=2, ensure_ascii=False))
+            return 0 if status["bereit"] else 1
+        if not status["dateien"]:
+            print("Es wurde noch nichts gelernt.")
+            print("\nDie lernende Erkennung vergleicht eine Datei mit dem, was")
+            print("auf diesem Rechner sonst so liegt. Dafuer muss sie erst")
+            print("einmal hinsehen duerfen:")
+            print("    loginshield erkennung --learn --path /var/www")
+            print("\nOhne Grundlinie prueft sie nur auf gepackten Inhalt -")
+            print("das geht auch ohne zu lernen.")
+            return 1
+        print(f"Gelernt aus:  {status['dateien']} Dateien")
+        print("Stand:        " + time.strftime(
+            "%d.%m.%Y %H:%M", time.localtime(status.get("created_ts", 0))))
+        print(f"Urteilsfaehig: {'ja' if status['bereit'] else 'nein'}")
+        if status["grund"]:
+            print(f"              {status['grund']}")
+        print()
+        rows = [[name, werte["dateien"], "ja" if werte["belastbar"] else "nein"]
+                for name, werte in sorted(status["klassen"].items())]
+        print(_table(rows, ["Dateiart", "Gelernt", "Belastbar"]))
+        return 0 if status["bereit"] else 1
     finally:
         guard.close()
 

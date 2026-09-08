@@ -34,13 +34,16 @@ from __future__ import annotations
 
 import logging
 import os
+import tempfile
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Tuple
 
 from .config import RealtimeConfig
 from .models import sauber
+from .signatures import EICAR
 
 log = logging.getLogger("loginshield.realtime")
 
@@ -76,6 +79,9 @@ class WatchEvent:
 class WatchStats:
     zyklen: int = 0
     vollscans: int = 0
+    selbsttests: int = 0
+    #: Ergebnis des letzten Selbsttests. None = noch keiner gelaufen.
+    selbsttest_ok: Optional[bool] = None
     gesehen: int = 0
     geprueft: int = 0
     funde: int = 0
@@ -86,6 +92,8 @@ class WatchStats:
     def as_dict(self) -> dict:
         return {
             "zyklen": self.zyklen, "vollscans": self.vollscans,
+            "selbsttests": self.selbsttests,
+            "selbsttest_ok": self.selbsttest_ok,
             "gesehen": self.gesehen,
             "geprueft": self.geprueft, "funde": self.funde,
             "quarantaene": self.quarantaene,
@@ -100,11 +108,14 @@ class RealtimeGuard:
     def __init__(self, config: Optional[RealtimeConfig] = None,
                  scanner=None, quarantine=None, *,
                  on_event: Optional[Callable[[WatchEvent], None]] = None,
+                 on_selftest_failed: Optional[Callable[[object], None]] = None,
                  clock: Callable[[], float] = time.time) -> None:
         self.config = config or RealtimeConfig()
         self.scanner = scanner
         self.quarantine = quarantine
         self.on_event = on_event
+        #: Wird gerufen, wenn der Selbsttest **nicht** anschlaegt.
+        self.on_selftest_failed = on_selftest_failed
         self.clock = clock
         self.stats = WatchStats()
         #: Pfad -> (Zeitstempel, Groesse) beim letzten Blick.
@@ -116,6 +127,8 @@ class RealtimeGuard:
         self._angelernt = False
         #: Wann zuletzt *alles* geprueft wurde (nicht nur Veraendertes).
         self._letzter_vollscan = 0.0
+        #: Wann sich der Waechter zuletzt selbst geprueft hat.
+        self._letzter_selbsttest = 0.0
 
     # ------------------------------------------------------------------
     @property
@@ -176,6 +189,16 @@ class RealtimeGuard:
         if vollscan:
             self._letzter_vollscan = jetzt
             self.stats.vollscans += 1
+
+        # Und ist ein Selbsttest faellig? Derselbe Gedanke wie oben: Der
+        # Abstand zaehlt ab dem ersten Durchgang. Beim allerersten wird
+        # aber sofort geprueft - wenn der Schutz gar nicht greift, soll
+        # das nicht erst in einer Stunde auffallen.
+        if self.config.selftest_interval > 0 and (
+                jetzt - self._letzter_selbsttest
+                >= self.config.selftest_interval
+                or self.stats.selbsttests == 0):
+            self.selbsttest(jetzt)
 
         funde: List[WatchEvent] = []
         gesehen: Dict[str, Tuple[float, int]] = {}
@@ -284,6 +307,87 @@ class RealtimeGuard:
         return ereignis
 
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Selbsttest
+    # ------------------------------------------------------------------
+    def selbsttest(self, jetzt: Optional[float] = None) -> Optional[bool]:
+        """Prueft, ob der Schutz ueberhaupt noch anschlaegt.
+
+        Der schlimmste Fall dieses Programms ist nicht ein Schaedling, der
+        durchkommt - es ist ein Waechter, der laeuft, nichts meldet und
+        dabei laengst nichts mehr prueft. Eine leergelaufene
+        Signaturliste, ein ``enabled: false`` nach einem Neustart, ein
+        Verzeichnis ohne Leserecht: Von aussen sieht all das aus wie
+        "alles ruhig".
+
+        Deshalb wird nicht gefragt, ob der Schutz laeuft, sondern es wird
+        ihm etwas hingelegt, das er finden **muss**: die EICAR-Testdatei.
+        Sie ist harmlos - eine Zeichenkette, auf die sich die Hersteller
+        geeinigt haben - und liegt bewusst *in* einem ueberwachten
+        Verzeichnis. So wird auch geprueft, ob dort ueberhaupt gelesen
+        werden darf.
+
+        Rueckgabe: ``True`` erkannt, ``False`` nicht erkannt (das ist der
+        Alarm), ``None`` wenn der Test nicht durchfuehrbar war.
+        """
+        if self.scanner is None:
+            return None
+        ordner = next((p for p in self.paths if os.path.isdir(p)), None)
+        if ordner is None:
+            return None
+
+        jetzt = self.clock() if jetzt is None else jetzt
+        self._letzter_selbsttest = jetzt
+        self.stats.selbsttests += 1
+
+        erkannt, ergebnis = pruefkette(self.scanner, ordner)
+        if erkannt is None:
+            # Im ueberwachten Ordner liess sich nichts ablegen. Das ist
+            # kein Fehler: Ein Verzeichnis, das man lesen, aber nicht
+            # beschreiben darf, ist ein voellig gewoehnlicher Fall.
+            #
+            # Frueher endete der Selbsttest hier - und weil der Abstand
+            # oben schon verbraucht war, lief er nie wieder an: Die
+            # Pruefung der Pruefung war still gestorben, waehrend
+            # 'doctor' weiter meldete, es werde stuendlich geprueft.
+            # Also wird ausgewichen: Was sich im Ordner nicht pruefen
+            # laesst, laesst sich immer noch woanders pruefen.
+            log.info("Selbsttest weicht aus: in %s laesst sich nichts "
+                     "ablegen - geprueft wird die Erkennung selbst",
+                     sauber(ordner, 200))
+            erkannt, ergebnis = pruefkette(self.scanner, None)
+        if erkannt is None:
+            # Auch das ging nicht - dann stimmt etwas Grundsaetzliches
+            # nicht, und das ist eine Meldung wert.
+            log.error("Selbsttest nicht durchfuehrbar: Es liess sich "
+                      "nirgends eine Testdatei anlegen.")
+            self.stats.selbsttest_ok = False
+            if self.on_selftest_failed is not None:
+                try:
+                    self.on_selftest_failed(None)
+                except Exception as exc:    # pragma: no cover - fremder Code
+                    log.warning("Selbsttest-Meldung fehlgeschlagen: %s", exc)
+            return None
+
+        self.stats.selbsttest_ok = erkannt
+        if erkannt:
+            log.info("Selbsttest bestanden: der Schutz greift.")
+        else:
+            # Das Schwerste, was hier gemeldet werden kann. Nicht "es
+            # wurde etwas gefunden", sondern "es wird nichts mehr
+            # gefunden" - und niemand haette es bemerkt.
+            log.error(
+                "SELBSTTEST FEHLGESCHLAGEN: Die Testdatei wurde nicht "
+                "erkannt. Der Waechter laeuft, prueft aber nicht mehr "
+                "wirksam. Nachsehen: malware.enabled, malware.signatures.",
+            )
+            if self.on_selftest_failed is not None:
+                try:
+                    self.on_selftest_failed(ergebnis)
+                except Exception as exc:    # pragma: no cover - fremder Code
+                    log.warning("Selbsttest-Meldung fehlgeschlagen: %s", exc)
+        return erkannt
+
     def _durchgehen(self):
         """Liefert (Pfad, (Zeitstempel, Groesse)) fuer alle Dateien."""
         ueberspringen = set(self.config.skip_dirs)
@@ -357,6 +461,86 @@ class RealtimeGuard:
         if self._thread is not None:
             self._thread.join(timeout=timeout)
             self._thread = None
+
+
+def pruefkette(scanner, ordner: Optional[str] = None):
+    """Legt die EICAR-Testdatei hin und sieht nach, ob sie auffaellt.
+
+    Der einzige ehrliche Weg, einen Virenschutz zu pruefen: nicht fragen,
+    ob er laeuft, sondern ihm etwas hinlegen, das er finden **muss**.
+
+    ``ordner`` ist das ueberwachte Verzeichnis. Dort zu pruefen ist mehr
+    wert als irgendwo: Es zeigt nebenbei, ob dort ueberhaupt gelesen und
+    geschrieben werden darf. Ohne Angabe wird ein voruebergehender Ordner
+    genommen - dann ist es nur noch eine Pruefung der Erkennung selbst.
+
+    Rueckgabe ``(erkannt, ergebnis)``. ``erkannt`` ist ``None``, wenn der
+    Test nicht durchfuehrbar war - das ist kein Alarm, sondern eine
+    Auskunft.
+    """
+    if scanner is None:
+        return None, None
+
+    if ordner is None:
+        ordner = tempfile.mkdtemp(prefix="loginshield-selbsttest-")
+        pfad = ordner
+    else:
+        # Ein eigener Unterordner mit sprechendem Namen: Wer ihn im
+        # Dateimanager sieht, soll sofort verstehen, was das ist - und
+        # kein anderer Virenschutz soll denken, hier liege etwas Boeses
+        # herum. Deshalb wird er auch gleich wieder aufgeraeumt.
+        pfad = os.path.join(ordner, ".loginshield-selbsttest")
+
+    # Der Name ist fuer jeden Lauf ein anderer. Vorher hiess die Datei
+    # immer gleich - und zwei Selbsttests zur selben Zeit (der Waechter im
+    # Hintergrund und ein Klick auf der Schutzseite) raeumten sich
+    # gegenseitig die Datei weg. Der Verlierer fand dann nichts mehr und
+    # meldete "Der Virenschutz prueft nicht mehr": ein Fehlalarm der
+    # schwersten Stufe, ausgeloest von der Pruefung selbst. Gemessen
+    # waren es 135 solcher Meldungen bei 600 gleichzeitigen Laeufen.
+    kennung = f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    datei = os.path.join(pfad, f"eicar-testdatei-{kennung}.txt")
+
+    try:
+        os.makedirs(pfad, exist_ok=True)
+        with open(datei, "wb") as handle:
+            handle.write(EICAR)
+    except OSError as exc:
+        log.warning("Selbsttest nicht moeglich in %s: %s",
+                    sauber(ordner, 200), exc)
+        _aufraeumen(pfad, datei)
+        return None, None
+
+    # Vorbelegt, damit der Aufrufer auch dann etwas in der Hand hat, wenn
+    # die Pruefung selbst gescheitert ist - das ist ja gerade der Fall,
+    # um den es geht.
+    ergebnis = None
+    try:
+        ergebnis = scanner.scan_file(datei)
+        erkannt = scanner.is_malicious(ergebnis)
+    except OSError as exc:      # pragma: no cover - defensiv
+        log.warning("Selbsttest fehlgeschlagen: %s", exc)
+        erkannt = False
+    finally:
+        _aufraeumen(pfad, datei)
+    return erkannt, ergebnis
+
+
+def _aufraeumen(pfad: str, datei: str) -> None:
+    """Die eigene Testdatei bleibt nie liegen.
+
+    Ein anderer Virenschutz auf demselben Rechner wuerde sie sonst finden
+    und Alarm schlagen - voellig zu Recht.
+
+    Weggeraeumt wird nur die *eigene* Datei. Der Ordner verschwindet nur,
+    wenn er dabei leer wird: Laeuft gerade ein zweiter Selbsttest, liegt
+    dessen Datei noch darin, und ``rmdir`` scheitert - genau richtig.
+    """
+    for versuch in (lambda: os.unlink(datei), lambda: os.rmdir(pfad)):
+        try:
+            versuch()
+        except OSError:
+            pass
 
 
 def _zustand(pfad: str) -> Optional[Tuple[float, int]]:

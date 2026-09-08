@@ -348,6 +348,11 @@ class MalwareConfig:
     allowlist_files: List[str] = field(default_factory=list)
     #: Obergrenze fuer die Zahl der Signaturen im Speicher.
     max_signatures: int = 1_000_000
+    #: Lernende Erkennung: meldet Dateien, die aus der Reihe fallen, auch
+    #: wenn weder Signatur noch Muster sie kennen. Siehe
+    #: :mod:`loginshield.classifier`. Ohne gelernte Grundlinie greift nur
+    #: die Pruefung auf gepackten Inhalt - die braucht keine.
+    learning: bool = True
     disabled_rules: List[str] = field(default_factory=list)
     script_extensions: List[str] = field(default_factory=lambda: [
         ".php", ".phtml", ".php3", ".php4", ".php5", ".phar",
@@ -402,6 +407,13 @@ class RealtimeConfig:
     #: gestern sauber war, kann heute als bekannt schadhaft gelten. Ohne
     #: Vollpruefung fiele das erst auf, wenn sich die Datei aendert.
     full_rescan_interval: float = 0.0
+    #: Abstand des Selbsttests im laufenden Betrieb (Sekunden, 0 = aus).
+    #: Der schlimmste Fall ist nicht ein Schaedling, der durchkommt,
+    #: sondern ein Schutz, der *still* aufgehoert hat zu pruefen: Dann
+    #: verlaesst sich jemand auf etwas, das es nicht mehr gibt. Deshalb
+    #: legt sich der Waechter regelmaessig selbst die harmlose
+    #: EICAR-Testdatei hin und sieht nach, ob er sie noch findet.
+    selftest_interval: float = 3600.0
     #: report = nur melden, quarantine = zusaetzlich beiseitelegen
     action: str = "report"
     #: Obergrenze fuer die Zahl der Pruefungen je Durchgang. Wer 10.000
@@ -435,6 +447,9 @@ class RealtimeConfig:
         if self.full_rescan_interval < 0:
             raise ConfigError(
                 "realtime.full_rescan_interval darf nicht negativ sein")
+        if self.selftest_interval < 0:
+            raise ConfigError(
+                "realtime.selftest_interval darf nicht negativ sein")
 
 
 @dataclass

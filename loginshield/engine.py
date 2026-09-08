@@ -91,7 +91,9 @@ class Guard:
         #: :meth:`RealtimeGuard.start` und ``loginshield waechter``.
         self.realtime = RealtimeGuard(
             self.config.realtime, self.filescan, self.quarantine,
-            on_event=self._waechter_fund, clock=self.clock,
+            on_event=self._waechter_fund,
+            on_selftest_failed=self._selbsttest_fehlgeschlagen,
+            clock=self.clock,
         )
         #: Ueberwachung von Dateiveraenderungen.
         self.integrity = IntegrityMonitor(self.config.integrity, self)
@@ -603,6 +605,26 @@ class Guard:
                if ereignis.action == "quarantaene" else
                "Die Datei liegt unveraendert an ihrem Platz.\n"),
             schwere=10, kennung="datei:schadcode",
+        )
+
+    def _selbsttest_fehlgeschlagen(self, ergebnis=None) -> None:
+        """Der Waechter findet seine eigene Testdatei nicht mehr.
+
+        Schwere 10, und zwar aus einem anderen Grund als sonst: Hier ist
+        nichts passiert - und genau das ist das Problem. Wer glaubt,
+        geschuetzt zu sein, ohne es zu sein, ist schlechter dran als
+        jemand, der weiss, dass er ungeschuetzt ist.
+        """
+        self.notifier.notify(
+            "Der Virenschutz prueft nicht mehr",
+            "Der Waechter hat sich selbst geprueft und seine eigene "
+            "Testdatei nicht gefunden.\n\n"
+            "Das heisst: Er laeuft, meldet nichts - und wuerde auch "
+            "echte Schadsoftware nicht mehr melden.\n\n"
+            "Nachsehen: malware.enabled, malware.signatures, und ob die "
+            "ueberwachten Verzeichnisse noch lesbar sind.\n"
+            "Von Hand pruefen: loginshield signaturen --test\n",
+            schwere=10, kennung="waechter:selbsttest",
         )
 
     def record_request(self, ip: Optional[str], *, route: str = "",

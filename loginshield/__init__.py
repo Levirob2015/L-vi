@@ -29,6 +29,7 @@ from .config import (
     RuleConfig,
     load_config,
 )
+from .classifier import Klassifikator
 from .filescan import FileScanner, Quarantine, ScanResult
 from .firewall import Firewall
 from .honeypot import Honeypot
@@ -58,6 +59,7 @@ __all__ = [
     "Guard",
     "Honeypot",
     "HoneypotConfig",
+    "Klassifikator",
     "load_config",
     "LogSourceConfig",
     "Quarantine",

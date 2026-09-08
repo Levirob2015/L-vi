@@ -10,6 +10,13 @@ on:
   push:
     branches: ["**"]
   pull_request:
+  # Auch ohne Aenderung: Eine neue Python-Fassung oder eine geaenderte
+  # Standardbibliothek kann etwas zerbrechen, ohne dass hier jemand etwas
+  # anfasst. Ein Projekt, an dem gerade niemand arbeitet, soll das trotzdem
+  # erfahren - siehe auch dauertest.yml.
+  schedule:
+    - cron: "41 5 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read

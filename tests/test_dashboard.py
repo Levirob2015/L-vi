@@ -305,3 +305,91 @@ def test_symbol_wird_erst_bei_bedarf_erzeugt():
     assert erst[:8] == b"\x89PNG\r\n\x1a\n"
     # Danach behalten, nicht jedes Mal neu.
     assert modul.apple_touch_icon() is erst
+
+
+# -- Die Begruessung mit Ja/Nein -----------------------------------------
+def test_schutzseite_braucht_einen_token(dashboard):
+    """Wer die Seite aufruft, kann den Schutz einschalten - das ist eine
+    Aenderung am System, keine Anzeige."""
+    with pytest.raises(urllib.error.HTTPError) as fehler:
+        request(dashboard, "/schutz", token=None)
+    assert fehler.value.code == 401
+
+
+def test_schutzseite_zeigt_die_frage(dashboard):
+    status, body = request(dashboard, "/schutz")
+    assert status == 200
+    assert "Ich bin Antivirus".encode() in body
+    assert b"Ja, gerne" in body and b"Nein, danke" in body
+
+
+def test_nein_schaltet_nichts_ein(dashboard, guard):
+    """Nein heisst Nein - das ist der ganze Punkt der Frage."""
+    status, daten = json_request(dashboard, "/api/schutz", method="POST",
+                                 payload={"antwort": "nein"})
+    assert status == 200
+    assert daten["eingeschaltet"] is False
+    assert guard.config.realtime.enabled is False
+
+
+def test_ja_schaltet_ein_nachdem_der_selbsttest_bestanden_ist(
+        dashboard, guard, tmp_path):
+    """Erst der Beweis, dann der Schalter."""
+    wache = tmp_path / "wache"
+    wache.mkdir()
+    guard.config.realtime.paths = [str(wache)]
+    try:
+        status, daten = json_request(dashboard, "/api/schutz", method="POST",
+                                     payload={"antwort": "ja"})
+        assert status == 200
+        assert daten["selbsttest"] is True
+        assert daten["eingeschaltet"] is True
+        assert guard.config.realtime.enabled is True
+    finally:
+        guard.realtime.stop()
+
+
+def test_ja_schaltet_nichts_ein_wenn_der_schutz_nicht_greift(
+        dashboard, guard, tmp_path):
+    """Etwas einzuschalten, das nicht wirkt, waere schlimmer als es zu
+    lassen - dann verlaesst sich jemand darauf."""
+    wache = tmp_path / "wache"
+    wache.mkdir()
+    guard.config.realtime.paths = [str(wache)]
+    guard.config.malware.enabled = False        # der Schutz ist taub
+
+    status, daten = json_request(dashboard, "/api/schutz", method="POST",
+                                 payload={"antwort": "ja"})
+    assert status == 200
+    assert daten["selbsttest"] is False
+    assert daten["eingeschaltet"] is False
+    assert guard.config.realtime.enabled is False
+
+
+def test_ohne_verzeichnis_wird_nichts_eingeschaltet(dashboard, guard):
+    """Ohne Verzeichnis laesst sich der Waechter nicht an Ort und Stelle
+    pruefen - die Erkennung selbst aber sehr wohl.
+
+    Frueher stand hier trotzdem "eingeschaltet: true", und die Seite
+    meldete "Der Schutz ist an" - waehrend kein einziger Ordner beobachtet
+    wurde. Genau die Sorte Zusage, die dieses Projekt nicht macht.
+    """
+    guard.config.realtime.paths = []
+    status, daten = json_request(dashboard, "/api/schutz", method="POST",
+                                 payload={"antwort": "ja"})
+    assert status == 200
+    assert daten["selbsttest"] is True       # die Erkennung greift
+    assert daten["eingeschaltet"] is False   # ueberwacht wird trotzdem nichts
+    assert daten["pfade"] == []
+    assert guard.config.realtime.enabled is False
+
+
+def test_pfad_der_nicht_existiert_zaehlt_nicht(dashboard, guard, tmp_path):
+    """Ein Pfad in der Konfiguration, den niemand angelegt hat, ist
+    kein Schutz."""
+    guard.config.realtime.paths = [str(tmp_path / "gibtsnicht")]
+    status, daten = json_request(dashboard, "/api/schutz", method="POST",
+                                 payload={"antwort": "ja"})
+    assert status == 200
+    assert daten["eingeschaltet"] is False
+    assert guard.config.realtime.enabled is False

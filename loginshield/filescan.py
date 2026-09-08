@@ -46,6 +46,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from .classifier import Klassifikator
 from .config import MalwareConfig
 from .models import sauber
 from .signatures import (
@@ -262,13 +263,25 @@ class FileScanner:
     """Prueft Dateien und Dateiinhalte auf Merkmale von Schadcode."""
 
     def __init__(self, config: Optional[MalwareConfig] = None, guard=None,
-                 run=None, signatures: Optional[SignatureDB] = None) -> None:
+                 run=None, signatures: Optional[SignatureDB] = None,
+                 klassifikator: Optional[Klassifikator] = None) -> None:
         self.config = config or MalwareConfig()
         self.guard = guard
         self._run = run or _run_command
         self.signatures = (
             signatures if signatures is not None
             else self._signaturen_laden()
+        )
+        #: Die lernende Erkennung. Sie greift auch ohne Grundlinie - dann
+        #: allerdings nur mit der Pruefung auf gepackten Inhalt.
+        self.klassifikator = klassifikator if klassifikator is not None else (
+            # Der Deckel richtet sich nach der eingestellten Schwelle:
+            # Statistik allein soll nie ausreichen, um eine Datei
+            # beiseitezulegen - auch dann nicht, wenn jemand die Schwelle
+            # herunterdreht.
+            Klassifikator(guard=guard,
+                          max_punkte=self.config.block_score - 1)
+            if self.config.learning else None
         )
         aus = set(self.config.disabled_rules)
         self._rules = [
@@ -432,6 +445,20 @@ class FileScanner:
                     result.findings.append(fund)
 
         result.findings.extend(self._check_tarnung(probe, filename))
+
+        # Zum Schluss die lernende Erkennung: Sie kennt weder Signatur
+        # noch Muster, sondern nur den Vergleich mit dem, was hier sonst
+        # liegt. Ihre Punktzahl ist gedeckelt und reicht allein nie zum
+        # Beiseitelegen - sie gibt den Ausschlag, wenn ausserdem etwas
+        # gefunden wurde.
+        if self.klassifikator is not None:
+            befund = self.klassifikator.bewerten(probe, filename)
+            if befund.punkte:
+                result.findings.append(FileFinding(
+                    "unueblich", befund.punkte,
+                    sauber(befund.zusammenfassung, 160),
+                ))
+
         result.score = sum(f.severity for f in result.findings)
         return result
 

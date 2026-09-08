@@ -998,6 +998,86 @@ neue Signaturliste geholt hast. Die Datei selbst ändert sich dabei nicht, also
 würde der normale Durchgang sie übersehen. Die Vollprüfung sieht sie sich
 trotzdem wieder an.
 
+### 6. Die lernende Erkennung: Schädlinge finden, die niemand kennt
+
+Signatur und Muster haben dieselbe Grenze. Eine **Signatur** erkennt nur, was
+schon jemand gemeldet hat. Ein **Muster** erkennt nur, was jemand vorher
+beschrieben hat. Der Schädling, den es gestern noch nicht gab, kommt an beidem
+vorbei.
+
+Der dritte Weg fragt nicht „kenne ich dich?", sondern „bist du hier fremd?".
+Er lernt, wie die Dateien auf *diesem* Rechner aussehen, und meldet, was aus
+der Reihe fällt:
+
+```bash
+loginshield erkennung --learn --path /var/www   # nur auf einem sauberen System!
+loginshield erkennung                           # was ist gelernt?
+loginshield erkennung --test verdaechtig.php    # eine Datei bewerten lassen
+```
+
+Gemessen wird, was Schadcode beim Verstecken hinterlässt:
+
+* **Entropie** – ein Maß für Unordnung von 0 bis 8. Gewöhnlicher Quelltext
+  liegt bei 4 bis 5,5, verschlüsselter oder gepackter Inhalt bei 7,5 bis 8.
+  Eine `.php` mit Entropie 7,8 enthält keinen PHP-Quelltext mehr.
+* **Zeilenlänge** – verschleierter Code steht oft in *einer* Zeile mit 40.000
+  Zeichen.
+* **Lange base64-Blöcke** und der **Anteil lesbarer Zeichen**.
+
+Verglichen wird immer nur mit Dateien derselben Art: Ein Bild mit Entropie 7,9
+ist normal, eine `.php` mit 7,9 ist es nicht.
+
+**Ist das jetzt KI?** In dem Sinne, in dem es hier etwas nützt: ja. Es lernt
+unbeaufsichtigt aus Daten und erkennt Dinge, die ihm nie jemand beschrieben
+hat. Ein neuronales Netz ist es nicht, und das ist Absicht – dieselbe
+Entscheidung wie bei der Anomalie-Erkennung: Verzögerung bei jeder Prüfung,
+schwere Abhängigkeiten, keine Trainingsdaten, und vor allem Urteile, die
+niemand erklären kann. Wer hier wissen will, *warum* seine Datei aufgefallen
+ist, bekommt eine Antwort in Zahlen:
+
+```
+Auffaellig:
+  - laengste Zeile in Zeichen: 5374.00 statt sonst 87.50 bei Dateien dieser Art
+  - laengster base64- oder Hex-Block: 5336.00 statt sonst 19.00 bei Dateien dieser Art
+```
+
+Drei Grundsätze, dieselben wie bei der Anomalie-Erkennung:
+
+1. **Ohne genug Daten wird nicht geurteilt** – dann sagt es das, statt zu raten.
+2. **Statistik allein legt nichts beiseite.** Die Punktzahl ist gedeckelt und
+   bleibt *unter* der Schwelle für die Quarantäne. Eine Abweichung ist ein
+   Verdacht, kein Beweis – erst zusammen mit einem echten Merkmal wird ein
+   Urteil daraus.
+3. **Jedes Urteil ist begründet.**
+
+Was das in der Praxis heißt, zeigt die Gegenprobe: Beim ersten Versuch meldete
+das Verfahren **elf von 59** eigenen Projektdateien – weil es an sehr
+einheitlich formatiertem Quelltext gelernt hatte und jede etwas längere Zeile
+für eine Abweichung hielt. Seit jedes Merkmal einen Mindestspielraum zugebilligt
+bekommt, sind es **null von 55**, bei unveränderter Erkennung. Ein Verfahren,
+das jede fünfte eigene Datei meldet, wäre wertlos – auch wenn es jeden
+Schädling findet.
+
+### 7. Der Selbsttest: prüft der Schutz überhaupt noch?
+
+Der schlimmste Fall ist nicht ein Schädling, der durchkommt. Es ist ein
+Wächter, der läuft, nichts meldet – und längst nichts mehr prüft. Eine
+leergelaufene Signaturliste, ein `enabled: false` nach einem Neustart, ein
+Verzeichnis ohne Leserecht: Von außen sieht all das aus wie „alles ruhig".
+
+Deshalb legt sich der Wächter regelmäßig selbst die harmlose EICAR-Testdatei in
+ein überwachtes Verzeichnis und sieht nach, ob er sie noch findet:
+
+```yaml
+realtime:
+  selftest_interval: 3600   # jede Stunde (0 = aus)
+```
+
+Findet er sie nicht, ist das die schwerste Meldung, die dieses Programm kennt –
+schwerer als ein Fund. Denn hier ist nichts passiert, und genau das ist das
+Problem: Wer glaubt, geschützt zu sein, ohne es zu sein, ist schlechter dran
+als jemand, der weiß, dass er ungeschützt ist.
+
 ### Gefunden – und dann?
 
 Voreingestellt wird nur **gemeldet**. Verschoben wird erst auf Ansage:
@@ -1041,12 +1121,25 @@ Bei *Ja* wird zuerst mit der harmlosen EICAR-Testdatei **vorgeführt**, dass der
 Schutz wirklich anschlägt – erst zeigen, dann behaupten –, und dann läuft er
 still im Hintergrund. Mit `--start` bleibt er dauerhaft an.
 
+Dieselbe Frage gibt es auch mit richtigen Knöpfen zum Antippen, als Seite im
+Dashboard – auch vom iPhone aus:
+
+```
+http://<server>:8787/schutz?token=<dein-token>
+```
+
+Auch dort gilt: *Nein* tut nichts, und *Ja* schaltet erst ein, **nachdem** der
+Selbsttest gezeigt hat, dass der Schutz greift. Etwas einzuschalten, das nicht
+wirkt, wäre schlimmer als es zu lassen.
+
 ---
 
 ## Kommandozeile
 
 ```
 loginshield schutz [--path ORDNER]     Begruessung mit Ja/Nein, Schutz anschalten
+loginshield erkennung --learn          lernen, wie die Dateien hier aussehen
+loginshield erkennung --test DATEI     eine Datei bewerten lassen
 loginshield init                       Konfiguration + Token anlegen
 loginshield serve [--watch]            Dashboard starten
 loginshield watch --path DATEI         Logdateien mitlesen
@@ -1391,7 +1484,7 @@ Was das System **nicht** leistet, damit die Erwartung stimmt:
 
 ```bash
 pip install pytest
-python -m pytest -q      # 574 Tests
+python -m pytest -q      # 675 Tests
 ```
 
 Abgedeckt sind unter anderem: Erkennungsregeln und Eskalation, Honeypot in
@@ -1418,6 +1511,33 @@ done
 
 Dieselben Fassungen prüft auch die CI bei jedem Push
 (`.github/workflows/tests.yml`), einmal davon zusätzlich ohne PyYAML.
+
+### Der Dauertest: die Tests laufen von selbst weiter
+
+Tests bei jedem Push finden, was jemand gerade eingebaut hat. Sie finden
+nicht, was von außen kommt, während niemand am Projekt arbeitet: eine neue
+Python-Fassung, eine geänderte Standardbibliothek, ein Test, der nur *meistens*
+durchläuft. Deshalb läuft alles auch **von selbst** – alle sechs Stunden,
+ohne dass jemand etwas anfasst (`.github/workflows/dauertest.yml`):
+
+* Die gesamte Testsuite **fünfmal hintereinander**. Ein Test, der bei einem
+  von fünf Läufen scheitert, ist kaputt – er fällt hier auf statt irgendwann
+  bei jemand anderem.
+* Ein **Dauerlauf des Wächters**: Dem laufenden Wächter wird über mehrere
+  Sekunden ein Strom von Dateien hingeworfen, harmlose und schädliche
+  gemischt. Geprüft wird, dass nichts verlorengeht, nichts fälschlich
+  gemeldet wird, das Gedächtnis nicht mitwächst und der Selbsttest jedes Mal
+  anschlägt.
+* Der **EICAR-Selbsttest** und eine echte Webshell gegen die installierte
+  Fassung – der Test, der wirklich zählt: nicht fragen, ob der Schutz läuft,
+  sondern ihm etwas hinlegen, das er finden muss.
+
+Der Dauerlauf läuft nicht bei jedem gewöhnlichen Testlauf mit – Tests, die
+Minuten dauern, führt am Ende niemand mehr aus. Er läuft auf Ansage:
+
+```bash
+LOGINSHIELD_DAUERTEST=1 python -m pytest tests/test_dauerlauf.py -q
+```
 
 ### Was diese Tests bewusst *nicht* messen
 

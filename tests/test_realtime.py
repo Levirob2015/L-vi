@@ -307,3 +307,120 @@ def test_start_und_stop(tmp_path, scanner):
     finally:
         waechter.stop()
     assert waechter._thread is None
+
+
+# -- Der Selbsttest: prueft der Schutz ueberhaupt noch? -------------------
+def test_selbsttest_besteht_wenn_der_schutz_greift(tmp_path, scanner, clock):
+    waechter = _waechter(tmp_path, scanner, clock, settle_seconds=0)
+    assert waechter.selbsttest() is True
+    assert waechter.stats.selbsttest_ok is True
+
+
+def test_selbsttest_schlaegt_alarm_wenn_nichts_mehr_geprueft_wird(
+        tmp_path, scanner, clock):
+    """Der eigentliche Zweck: Ein Schutz, der still aufgehoert hat.
+
+    Hier abgeschaltet - im Betrieb waere es eine leergelaufene
+    Signaturliste oder ein 'enabled: false' nach einem Neustart. Von
+    aussen sieht beides aus wie 'alles ruhig'.
+    """
+    gemeldet = []
+    waechter = _waechter(tmp_path, scanner, clock, settle_seconds=0)
+    waechter.on_selftest_failed = gemeldet.append
+    scanner.config.enabled = False              # der Schutz ist jetzt taub
+
+    assert waechter.selbsttest() is False
+    assert waechter.stats.selbsttest_ok is False
+    assert len(gemeldet) == 1
+
+
+def test_selbsttest_laesst_nichts_liegen(tmp_path, scanner, clock):
+    """Die Testdatei darf nicht liegenbleiben - ein anderer Virenschutz
+    auf demselben Rechner wuerde sie sonst finden und Alarm schlagen."""
+    waechter = _waechter(tmp_path, scanner, clock, settle_seconds=0)
+    waechter.selbsttest()
+    uebrig = list(os.walk(waechter.paths[0]))
+    assert uebrig == [(waechter.paths[0], [], [])]
+
+
+def test_selbsttest_laeuft_sofort_und_dann_nach_abstand(tmp_path, scanner, clock):
+    """Beim ersten Durchgang sofort - ein tauber Schutz soll nicht erst
+    in einer Stunde auffallen."""
+    waechter = _waechter(tmp_path, scanner, clock, settle_seconds=0,
+                         scan_existing=True, selftest_interval=3600)
+    waechter.poll_once()
+    assert waechter.stats.selbsttests == 1
+
+    clock.advance(60)
+    waechter.poll_once()
+    assert waechter.stats.selbsttests == 1      # noch nicht faellig
+
+    clock.advance(3600)
+    waechter.poll_once()
+    assert waechter.stats.selbsttests == 2
+
+
+def test_selbsttest_abschaltbar(tmp_path, scanner, clock):
+    waechter = _waechter(tmp_path, scanner, clock, settle_seconds=0,
+                         scan_existing=True, selftest_interval=0)
+    waechter.poll_once()
+    assert waechter.stats.selbsttests == 0
+
+
+def test_selbsttest_ohne_verzeichnis_meldet_nichts(scanner, clock):
+    """Kein ueberwachtes Verzeichnis - dann gibt es nichts zu testen,
+    und das ist kein Alarm."""
+    waechter = RealtimeGuard(RealtimeConfig(), scanner, clock=clock)
+    assert waechter.selbsttest() is None
+
+
+def test_gleichzeitige_selbsttests_stoeren_sich_nicht(tmp_path, scanner, clock):
+    """Der Fall aus der Durchsicht.
+
+    Die Testdatei hiess immer gleich. Liefen zwei Selbsttests zugleich -
+    der Waechter im Hintergrund und ein Klick auf der Schutzseite -,
+    raeumten sie sich gegenseitig die Datei weg. Der Verlierer fand
+    nichts mehr und meldete "Der Virenschutz prueft nicht mehr": ein
+    Fehlalarm der schwersten Stufe, ausgeloest von der Pruefung selbst.
+    Gemessen waren es 135 solcher Meldungen bei 600 Laeufen.
+    """
+    import threading
+
+    waechter = _waechter(tmp_path, scanner, clock, settle_seconds=0)
+    ergebnisse = []
+    sperre = threading.Lock()
+
+    def laufen():
+        for _ in range(25):
+            ergebnis = waechter.selbsttest()
+            with sperre:
+                ergebnisse.append(ergebnis)
+
+    faeden = [threading.Thread(target=laufen) for _ in range(6)]
+    for faden in faeden:
+        faden.start()
+    for faden in faeden:
+        faden.join(timeout=60)
+
+    assert len(ergebnisse) == 150
+    assert all(e is True for e in ergebnisse), (
+        f"{sum(1 for e in ergebnisse if e is not True)} von {len(ergebnisse)} "
+        f"Selbsttests haben sich gegenseitig gestoert"
+    )
+    # Und aufgeraeumt ist am Ende trotzdem.
+    assert list(os.walk(waechter.paths[0])) == [(waechter.paths[0], [], [])]
+
+
+def test_selbsttest_weicht_aus_wenn_nicht_geschrieben_werden_darf(
+        tmp_path, scanner, clock):
+    """Ein Verzeichnis, das man lesen, aber nicht beschreiben darf, ist
+    ein gewoehnlicher Fall - und kein Grund, die Pruefung der Pruefung
+    still einzustellen."""
+    waechter = _waechter(tmp_path, scanner, clock, settle_seconds=0)
+    ordner = waechter.paths[0]
+    os.chmod(ordner, 0o500)                 # lesen ja, schreiben nein
+    try:
+        assert waechter.selbsttest() is True
+        assert waechter.stats.selbsttest_ok is True
+    finally:
+        os.chmod(ordner, 0o700)
