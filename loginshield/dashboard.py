@@ -19,6 +19,7 @@ from __future__ import annotations
 import hmac
 import json
 import logging
+import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional, Tuple
@@ -27,6 +28,7 @@ from urllib.parse import parse_qs, urlparse
 from .config import DashboardConfig
 from .engine import Guard
 from .models import Event
+from .realtime import pruefkette
 from .version import __version__
 
 log = logging.getLogger("loginshield.dashboard")
@@ -191,6 +193,19 @@ def _handler_factory(guard: Guard, config: DashboardConfig):
                 self._send(200, INDEX_HTML.encode("utf-8"), "text/html; charset=utf-8")
                 return
 
+            # Die Begruessung mit Ja/Nein. Sie ist mit Token geschuetzt
+            # wie alles andere: Wer sie aufruft, kann den Schutz
+            # einschalten - das ist eine Aenderung am System, keine
+            # Anzeige.
+            if route == "/schutz":
+                if not self._authorized(allow_query_token=True):
+                    self._send(401, b"Token fehlt oder ist falsch.\n",
+                               "text/plain; charset=utf-8")
+                    return
+                self._send(200, SCHUTZ_HTML.encode("utf-8"),
+                           "text/html; charset=utf-8")
+                return
+
             # Symbol und Beschreibung fuer den Startbildschirm. Bewusst
             # ohne Token: Safari holt beides beim "Zum Home-Bildschirm"
             # ohne die Kopfzeile mitzuschicken, und es steht nichts darin,
@@ -264,10 +279,62 @@ def _handler_factory(guard: Guard, config: DashboardConfig):
                     self._json(200, {"ok": guard.disallow(cidr), "cidr": cidr})
                 elif route == "/api/maintenance":
                     self._json(200, guard.maintenance())
+                elif route == "/api/schutz":
+                    self._json(200, self._schutz(data))
                 else:
                     self._json(404, {"error": "not_found"})
             except ValueError as exc:
                 self._json(400, {"error": str(exc)})
+
+        def _schutz(self, data: dict) -> dict:
+            """Die Antwort auf die Frage nach dem Gratisschutz.
+
+            Nein tut nichts - das ist der ganze Punkt der Frage. Ja
+            schaltet den Waechter ein, aber erst, nachdem der Selbsttest
+            gezeigt hat, dass der Schutz ueberhaupt greift: Etwas
+            einzuschalten, das nicht wirkt, waere schlimmer als es zu
+            lassen, weil sich dann jemand darauf verlaesst.
+            """
+            antwort = str(data.get("antwort", "")).strip().lower()
+            if antwort != "ja":
+                log.info("Gratisschutz abgelehnt - es wird nichts eingeschaltet.")
+                return {"ok": True, "eingeschaltet": False, "pfade": []}
+
+            # Erst der Beweis, dann der Schalter. Ist kein Verzeichnis
+            # eingerichtet, laesst sich der Waechter nicht an Ort und
+            # Stelle pruefen - die Erkennung selbst aber sehr wohl, und
+            # das ist es, worauf es hier ankommt.
+            geprueft = guard.realtime.selbsttest()
+            if geprueft is None:
+                geprueft = pruefkette(guard.filescan)[0]
+            erkannt = bool(geprueft)
+            if not erkannt:
+                log.error("Gratisschutz nicht eingeschaltet: Der Selbsttest "
+                          "schlaegt nicht an.")
+                return {"ok": True, "eingeschaltet": False, "selbsttest": False,
+                        "pfade": []}
+
+            # Nur die Verzeichnisse, die es wirklich gibt: Ein Pfad in der
+            # Konfiguration, den niemand angelegt hat, ist kein Schutz.
+            pfade = [p for p in guard.config.realtime.paths if os.path.isdir(p)]
+            if not pfade:
+                # Die Erkennung greift (der Selbsttest oben hat es
+                # gezeigt), aber es wird nichts ueberwacht. Frueher stand
+                # hier trotzdem "eingeschaltet: true", und die Seite
+                # meldete "Der Schutz ist an" - waehrend kein einziger
+                # Ordner beobachtet wurde. Genau die Sorte Zusage, die
+                # dieses Projekt nicht macht.
+                log.warning("Gratisschutz nicht eingeschaltet: kein "
+                            "ueberwachtes Verzeichnis eingerichtet.")
+                return {"ok": True, "eingeschaltet": False, "selbsttest": True,
+                        "pfade": [], "grund": "kein_verzeichnis"}
+
+            guard.config.realtime.enabled = True
+            guard.config.realtime.paths = pfade
+            guard.realtime.start()
+            log.info("Gratisschutz eingeschaltet fuer: %s", ", ".join(pfade))
+            return {"ok": True, "eingeschaltet": True, "selbsttest": True,
+                    "pfade": pfade}
 
         # -- Datenaufbereitung ----------------------------------------
         def _summary(self, params) -> dict:
@@ -1023,6 +1090,182 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
   });
 
   load();
+})();
+</script>
+</body>
+</html>
+"""
+
+
+#: Die Begruessung mit Ja/Nein - dieselbe Frage wie ``loginshield schutz``,
+#: nur mit Knoepfen zum Antippen.
+#:
+#: Warum es diese Seite gibt: Ein Schutz, der sich ungefragt auf einen
+#: fremden Rechner kopiert, waere ein Schaedling - genau das Ungefragte
+#: macht den Unterschied, nicht der Zweck. Der ehrliche Weg ist eine
+#: Einladung: Der Mensch am Geraet wird gefragt und entscheidet. Nein tut
+#: nichts.
+SCHUTZ_HTML = """<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171b21" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Schutz">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="apple-touch-icon.png" type="image/png">
+<title>Gratisschutz</title>
+<style>
+:root {
+  --bg:#f6f7f9; --panel:#ffffff; --line:#e3e6ea; --text:#1b1f24; --muted:#5c6672;
+  --accent:#2f6feb; --ok:#1f8a4c; --danger:#c8332e;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:#0f1216; --panel:#171b21; --line:#262c34; --text:#e7eaee; --muted:#98a2ae;
+    --accent:#5a8dff; --ok:#4cc57f; --danger:#f0665f;
+  }
+}
+* { box-sizing:border-box; }
+html { -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+body { margin:0; background:var(--bg); color:var(--text);
+  font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  display:flex; align-items:center; justify-content:center;
+  min-height:100vh; overflow-x:hidden;
+  padding:calc(env(safe-area-inset-top) + 20px) calc(env(safe-area-inset-right) + 16px)
+          calc(env(safe-area-inset-bottom) + 20px) calc(env(safe-area-inset-left) + 16px); }
+.karte { background:var(--panel); border:1px solid var(--line); border-radius:16px;
+  max-width:32rem; width:100%; padding:28px 24px; }
+h1 { font-size:1.5rem; margin:0 0 4px; }
+.unter { color:var(--muted); margin:0 0 20px; }
+p { margin:0 0 14px; }
+ul { margin:0 0 18px; padding-left:22px; color:var(--muted); }
+li { margin:4px 0; }
+.knoepfe { display:flex; gap:12px; flex-wrap:wrap; margin-top:22px; }
+button { font:inherit; font-weight:600; border-radius:10px; cursor:pointer;
+  /* 44 Punkte ist Apples Mindestmass fuer das Tippen mit dem Daumen. */
+  min-height:44px; padding:0 22px; flex:1 1 10rem; border:1px solid var(--line); }
+.ja { background:var(--accent); border-color:var(--accent); color:#fff; }
+.nein { background:transparent; color:var(--text); }
+button:disabled { opacity:.55; cursor:default; }
+#antwort { margin-top:22px; padding:16px; border-radius:10px;
+  border:1px solid var(--line); display:none; }
+#antwort.sichtbar { display:block; }
+#antwort.gut { border-color:var(--ok); }
+#antwort.aus { border-color:var(--line); }
+#antwort.schlecht { border-color:var(--danger); }
+.titel { font-weight:600; margin-bottom:6px; }
+.klein { font-size:.86rem; color:var(--muted); }
+code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.86em; }
+</style>
+</head>
+<body>
+<main class="karte">
+  <h1>Ich bin Antivirus.</h1>
+  <p class="unter">Ein Schutz f&uuml;r diesen Rechner.</p>
+
+  <p><strong>M&ouml;chten Sie einen Gratisschutz haben?</strong></p>
+  <ul>
+    <li>Ich pr&uuml;fe neue Dateien, sobald sie ankommen &ndash; still im Hintergrund.</li>
+    <li>Gefundenes lege ich beiseite. <strong>Gel&ouml;scht wird nie</strong>,
+        alles l&auml;sst sich zur&uuml;ckholen.</li>
+    <li>Ich sehe mir nur an, was auf diesem Rechner liegt. Nichts wird
+        irgendwohin gesendet.</li>
+    <li>Sie k&ouml;nnen mich jederzeit wieder abschalten.</li>
+  </ul>
+
+  <div class="knoepfe">
+    <button id="ja" class="ja" type="button">Ja, gerne</button>
+    <button id="nein" class="nein" type="button">Nein, danke</button>
+  </div>
+
+  <div id="antwort" role="status" aria-live="polite"></div>
+</main>
+<script>
+(function () {
+  "use strict";
+  var token = new URLSearchParams(location.search).get("token") || "";
+  var antwort = document.getElementById("antwort");
+  var ja = document.getElementById("ja");
+  var nein = document.getElementById("nein");
+
+  function zeige(art, titel, text, klein) {
+    antwort.className = "sichtbar " + art;
+    antwort.textContent = "";
+    var t = document.createElement("div");
+    t.className = "titel";
+    t.textContent = titel;
+    antwort.appendChild(t);
+    var p = document.createElement("div");
+    p.textContent = text;
+    antwort.appendChild(p);
+    if (klein) {
+      var k = document.createElement("div");
+      k.className = "klein";
+      k.textContent = klein;
+      antwort.appendChild(k);
+    }
+  }
+
+  function antworte(wahl) {
+    ja.disabled = true;
+    nein.disabled = true;
+    fetch("api/schutz", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Auth-Token": token },
+      body: JSON.stringify({ antwort: wahl })
+    }).then(function (r) {
+      return r.json().then(function (d) {
+        if (!r.ok) { throw new Error(d.error || ("HTTP " + r.status)); }
+        return d;
+      });
+    }).then(function (d) {
+      if (wahl !== "ja") {
+        zeige("aus", "Alles klar.",
+              "Es wurde nichts eingeschaltet und nichts gepr\\u00fcft.",
+              "Sie k\\u00f6nnen jederzeit wiederkommen.");
+        nein.disabled = false;
+        ja.disabled = false;
+        return;
+      }
+      if (!d.selbsttest) {
+        zeige("schlecht", "Der Schutz greift nicht.",
+              "Der Selbsttest mit der harmlosen Testdatei ist fehlgeschlagen "
+              + "- eingeschaltet wurde deshalb nichts.",
+              "Nachsehen: malware.enabled und malware.signatures.");
+        ja.disabled = false;
+        nein.disabled = false;
+        return;
+      }
+      if (!d.eingeschaltet) {
+        // Die Erkennung greift, aber es ist kein Ordner eingerichtet -
+        // dann wird auch nichts ueberwacht, und das wird gesagt.
+        zeige("aus", "Fast.",
+              "Die Erkennung greift - aber es ist noch kein Ordner "
+              + "eingerichtet, den ich im Auge behalten soll.",
+              "In der Konfiguration unter realtime.paths eintragen, "
+              + "zum Beispiel den Ordner f\\u00fcr Downloads.");
+        ja.disabled = false;
+        nein.disabled = false;
+        return;
+      }
+      zeige("gut", "Der Schutz ist an.",
+            "\\u00dcberwacht wird: " + d.pfade.join(", "),
+            "Vorher gepr\\u00fcft: Die harmlose Testdatei wurde erkannt "
+            + "- der Schutz greift wirklich.");
+    }).catch(function (fehler) {
+      zeige("schlecht", "Das hat nicht geklappt.", fehler.message,
+            "Stimmt der Token in der Adresse?");
+      ja.disabled = false;
+      nein.disabled = false;
+    });
+  }
+
+  ja.addEventListener("click", function () { antworte("ja"); });
+  nein.addEventListener("click", function () { antworte("nein"); });
 })();
 </script>
 </body>

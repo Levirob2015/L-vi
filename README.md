@@ -815,11 +815,13 @@ Nach einem erfolgreichen Einbruch legt ein Angreifer fast immer eine Datei ab �
 eine **Webshell**, ein kleines Skript, über das sich der Server fernsteuern
 lässt. Das ist der Punkt, an dem eine Sperre auf IP-Ebene zu spät kommt.
 
-**Was hier nicht passiert:** Es wird kein eigener Virenscanner gebaut. Eine
-Erkennungsmaschine ohne gepflegte Signaturdatenbank, ohne Aktualisierung, die
-trotzdem „Virenschutz“ behauptet, wäre unehrlich – und gefährlicher als gar
-keine, weil man sich darauf verlässt. Stattdessen drei Dinge, die auf einem
-Webserver wirklich zählen:
+**Was hier nicht passiert:** Es wird **keine eigene Signaturliste erfunden**.
+Eine solche Liste zu pflegen ist die Arbeit eines Virenschutzherstellers –
+täglich neue Muster, rund um die Uhr. Eine selbstgebaute Liste mit zwanzig
+Einträgen „Virenschutz“ zu nennen, wäre unehrlich und gefährlicher als gar
+keiner, weil man sich darauf verlässt. Der **Mechanismus** gehört hierher, die
+Liste nicht – sie wird gelesen, nicht erdacht (siehe *Signaturen* weiter
+unten). Dazu kommen vier Dinge, die auf einem Server wirklich zählen:
 
 ### 1. Webshells erkennen
 
@@ -881,6 +883,201 @@ Neue Datei, geänderte Datei, gelöschte Datei – alle drei fallen auf, wenn ma
 weiß, wie es vorher aussah. Am schwersten wiegt eine **neue Skriptdatei in
 einem Upload-Verzeichnis**: dort gehören Bilder hin, keine Programme.
 
+### 4. Signaturen: bekannte Schadsoftware am Fingerabdruck
+
+Jede Datei lässt sich durch eine Rechenvorschrift schicken (SHA-256), die aus
+beliebig vielen Bytes einen kurzen, eindeutigen Wert macht – einen
+Fingerabdruck. Steht er in der Liste, ist die Datei **genau** die bekannte
+Schadsoftware: kein Verdacht, kein Punktesystem, sondern ein Treffer.
+
+```bash
+loginshield signaturen               # Was ist da? Woher? Wie alt?
+loginshield signaturen --test        # Schlägt der Schutz überhaupt an?
+```
+
+`--test` ist der einzige ehrliche Weg, einen Virenschutz zu prüfen: nicht
+fragen, ob er läuft, sondern ihm etwas hinlegen, das er finden **muss**. Dazu
+gibt es die EICAR-Testdatei – eine Zeichenkette, auf die sich die Hersteller
+geeinigt haben. Sie ist völlig harmlos und wird nach dem Test sofort wieder
+gelöscht.
+
+```
+Testdatei angelegt (EICAR - harmlos, kein Schadcode).
+
+ERKANNT: schadhaft, 10 Punkte
+  ueber: eicar
+
+Die Pruefkette funktioniert.
+```
+
+Echte Signaturen kommen von außen – auf zwei Wegen:
+
+```bash
+# 1. ClamAV installieren; seine gepflegten Signaturen werden mitbenutzt
+sudo apt install clamav
+
+# 2. Eine Liste holen (nur https, und nur von einer Quelle, der du traust)
+loginshield signaturen --update https://beispiel.de/liste.hsb
+```
+
+Gelesen werden die üblichen Formate, auch das von ClamAV
+(`hash:größe:name`, `.hdb`/`.hsb`). Beim Aktualisieren wird die neue Liste
+erst danebengelegt und gelesen – **eine leere oder kaputte Antwort ersetzt die
+bewährte Liste nicht**, sonst würde eine fehlgeschlagene Aktualisierung den
+Schutz still abschalten.
+
+Umgekehrt geht es auch. Wird eine eigene Datei zu Unrecht gemeldet, gibt man
+sie frei, statt die Regel für alle abzuschalten:
+
+```bash
+loginshield signaturen --allow /pfad/zu/meinem/werkzeug.sh
+```
+
+### 5. Der Wächter: prüfen, sobald etwas ankommt
+
+Ein Scan, den jemand von Hand startet, findet Schadsoftware erst Tage später.
+Der Wächter sieht alle paar Sekunden nach und prüft, was **neu ist oder sich
+geändert hat**:
+
+```bash
+loginshield waechter --path /var/www/uploads --quarantine
+```
+
+```
+Waechter ueber: /var/www/uploads
+Durchgang alle 5s, Funde werden beiseitegelegt
+
+[17:57:13] SCHADHAFT: /var/www/uploads/rechnung.pdf.php -> Quarantaene
+           Code aus einer Anfrage wird direkt ausgefuehrt
+```
+
+Im Dauerbetrieb gehört er in die Konfiguration, dann läuft er im Dienst mit:
+
+```yaml
+realtime:
+  enabled: true
+  paths: [/var/www/uploads]
+  interval: 5             # Abstand zwischen zwei Durchgängen
+  settle_seconds: 2       # so lange muss eine Datei ruhen
+  action: quarantine
+```
+
+Drei Dinge, an denen ein solcher Wächter in der Praxis scheitert, und wie sie
+hier gelöst sind:
+
+* **Halbe Dateien.** Ein Upload ist beim ersten Blick oft noch nicht fertig.
+  Geprüft wird erst, wenn eine Datei sich `settle_seconds` lang nicht mehr
+  verändert hat – sonst prüft man das erste Drittel und meldet „sauber“.
+* **Immer wieder dasselbe.** Jede Datei wird mit Zeitstempel und Größe
+  gemerkt; geprüft wird nur, was neu oder anders ist.
+* **Der Speicher.** Das Verzeichnis der gemerkten Dateien wächst mit fremden
+  Daten – also hat es eine Obergrenze, verschwundene Dateien fallen heraus,
+  und je Durchgang wird höchstens `max_files_per_cycle` geprüft. Wer 10.000
+  Dateien auf einmal auspackt, legt den Server nicht lahm.
+
+Ohne `--path` und ohne Konfiguration läuft er nicht: Ein Wächter, der
+ungefragt über fremde Verzeichnisse geht, kostet Leistung und überrascht.
+
+**Wie oft ist oft genug?** Der Wächter darf ruhig alle paar Sekunden nachsehen
+(`interval`) – er prüft ja nur, was sich seit dem letzten Mal *verändert* hat,
+und das ist billig. Eine neue Datei fällt so binnen Sekunden auf, ohne dass
+jemand etwas merkt. Was man **nicht** alle zehn Sekunden tun sollte, ist die
+ganze Festplatte am Stück durchzurechnen – das würde den Rechner spürbar
+bremsen, genau das, was du vermeiden willst. Dafür gibt es einen eigenen,
+längeren Takt:
+
+```yaml
+realtime:
+  interval: 5               # alle 5s nach Veränderungen sehen (billig)
+  full_rescan_interval: 3600 # einmal pro Stunde wirklich alles prüfen
+```
+
+Die Vollprüfung ist für einen bestimmten Fall da: Eine Datei, die gestern
+sauber war, kann heute als bekannt schädlich gelten – weil du inzwischen eine
+neue Signaturliste geholt hast. Die Datei selbst ändert sich dabei nicht, also
+würde der normale Durchgang sie übersehen. Die Vollprüfung sieht sie sich
+trotzdem wieder an.
+
+### 6. Die lernende Erkennung: Schädlinge finden, die niemand kennt
+
+Signatur und Muster haben dieselbe Grenze. Eine **Signatur** erkennt nur, was
+schon jemand gemeldet hat. Ein **Muster** erkennt nur, was jemand vorher
+beschrieben hat. Der Schädling, den es gestern noch nicht gab, kommt an beidem
+vorbei.
+
+Der dritte Weg fragt nicht „kenne ich dich?", sondern „bist du hier fremd?".
+Er lernt, wie die Dateien auf *diesem* Rechner aussehen, und meldet, was aus
+der Reihe fällt:
+
+```bash
+loginshield erkennung --learn --path /var/www   # nur auf einem sauberen System!
+loginshield erkennung                           # was ist gelernt?
+loginshield erkennung --test verdaechtig.php    # eine Datei bewerten lassen
+```
+
+Gemessen wird, was Schadcode beim Verstecken hinterlässt:
+
+* **Entropie** – ein Maß für Unordnung von 0 bis 8. Gewöhnlicher Quelltext
+  liegt bei 4 bis 5,5, verschlüsselter oder gepackter Inhalt bei 7,5 bis 8.
+  Eine `.php` mit Entropie 7,8 enthält keinen PHP-Quelltext mehr.
+* **Zeilenlänge** – verschleierter Code steht oft in *einer* Zeile mit 40.000
+  Zeichen.
+* **Lange base64-Blöcke** und der **Anteil lesbarer Zeichen**.
+
+Verglichen wird immer nur mit Dateien derselben Art: Ein Bild mit Entropie 7,9
+ist normal, eine `.php` mit 7,9 ist es nicht.
+
+**Ist das jetzt KI?** In dem Sinne, in dem es hier etwas nützt: ja. Es lernt
+unbeaufsichtigt aus Daten und erkennt Dinge, die ihm nie jemand beschrieben
+hat. Ein neuronales Netz ist es nicht, und das ist Absicht – dieselbe
+Entscheidung wie bei der Anomalie-Erkennung: Verzögerung bei jeder Prüfung,
+schwere Abhängigkeiten, keine Trainingsdaten, und vor allem Urteile, die
+niemand erklären kann. Wer hier wissen will, *warum* seine Datei aufgefallen
+ist, bekommt eine Antwort in Zahlen:
+
+```
+Auffaellig:
+  - laengste Zeile in Zeichen: 5374.00 statt sonst 87.50 bei Dateien dieser Art
+  - laengster base64- oder Hex-Block: 5336.00 statt sonst 19.00 bei Dateien dieser Art
+```
+
+Drei Grundsätze, dieselben wie bei der Anomalie-Erkennung:
+
+1. **Ohne genug Daten wird nicht geurteilt** – dann sagt es das, statt zu raten.
+2. **Statistik allein legt nichts beiseite.** Die Punktzahl ist gedeckelt und
+   bleibt *unter* der Schwelle für die Quarantäne. Eine Abweichung ist ein
+   Verdacht, kein Beweis – erst zusammen mit einem echten Merkmal wird ein
+   Urteil daraus.
+3. **Jedes Urteil ist begründet.**
+
+Was das in der Praxis heißt, zeigt die Gegenprobe: Beim ersten Versuch meldete
+das Verfahren **elf von 59** eigenen Projektdateien – weil es an sehr
+einheitlich formatiertem Quelltext gelernt hatte und jede etwas längere Zeile
+für eine Abweichung hielt. Seit jedes Merkmal einen Mindestspielraum zugebilligt
+bekommt, sind es **null von 55**, bei unveränderter Erkennung. Ein Verfahren,
+das jede fünfte eigene Datei meldet, wäre wertlos – auch wenn es jeden
+Schädling findet.
+
+### 7. Der Selbsttest: prüft der Schutz überhaupt noch?
+
+Der schlimmste Fall ist nicht ein Schädling, der durchkommt. Es ist ein
+Wächter, der läuft, nichts meldet – und längst nichts mehr prüft. Eine
+leergelaufene Signaturliste, ein `enabled: false` nach einem Neustart, ein
+Verzeichnis ohne Leserecht: Von außen sieht all das aus wie „alles ruhig".
+
+Deshalb legt sich der Wächter regelmäßig selbst die harmlose EICAR-Testdatei in
+ein überwachtes Verzeichnis und sieht nach, ob er sie noch findet:
+
+```yaml
+realtime:
+  selftest_interval: 3600   # jede Stunde (0 = aus)
+```
+
+Findet er sie nicht, ist das die schwerste Meldung, die dieses Programm kennt –
+schwerer als ein Fund. Denn hier ist nichts passiert, und genau das ist das
+Problem: Wer glaubt, geschützt zu sein, ohne es zu sein, ist schlechter dran
+als jemand, der weiß, dass er ungeschützt ist.
+
 ### Gefunden – und dann?
 
 Voreingestellt wird nur **gemeldet**. Verschoben wird erst auf Ansage:
@@ -898,11 +1095,51 @@ loginshield quarantine --list
 loginshield quarantine --restore <ID>
 ```
 
+### Der freundliche Einstieg: fragen, bevor man etwas tut
+
+Ein Schutz drängt sich nicht auf – er fragt. `loginshield schutz` zeigt eine
+Begrüßung mit **Ja/Nein**: Bei *Ja* wird eingerichtet, bei *Nein* passiert
+nichts. Genau das ist der Unterschied zu einem Schädling: die Einladung. Kein
+Programm darf sich ungefragt auf einen fremden Rechner kopieren – das ist
+strafbar (§ 303a/b StGB), und jeder echte Virenschutz würde es blockieren. Der
+Nutzer holt sich den Schutz, statt dass er sich hineinschleicht.
+
+```bash
+loginshield schutz --path ~/Downloads
+```
+
+```
+  +--------------------------------------------------+
+  |   Ich bin Antivirus.                             |
+  |   Ein Schutz fuer diesen Rechner.                |
+  |   Moechten Sie einen Gratisschutz haben?         |
+  |        [ J ] Ja, gerne        [ N ] Nein         |
+  +--------------------------------------------------+
+```
+
+Bei *Ja* wird zuerst mit der harmlosen EICAR-Testdatei **vorgeführt**, dass der
+Schutz wirklich anschlägt – erst zeigen, dann behaupten –, und dann läuft er
+still im Hintergrund. Mit `--start` bleibt er dauerhaft an.
+
+Dieselbe Frage gibt es auch mit richtigen Knöpfen zum Antippen, als Seite im
+Dashboard – auch vom iPhone aus:
+
+```
+http://<server>:8787/schutz?token=<dein-token>
+```
+
+Auch dort gilt: *Nein* tut nichts, und *Ja* schaltet erst ein, **nachdem** der
+Selbsttest gezeigt hat, dass der Schutz greift. Etwas einzuschalten, das nicht
+wirkt, wäre schlimmer als es zu lassen.
+
 ---
 
 ## Kommandozeile
 
 ```
+loginshield schutz [--path ORDNER]     Begruessung mit Ja/Nein, Schutz anschalten
+loginshield erkennung --learn          lernen, wie die Dateien hier aussehen
+loginshield erkennung --test DATEI     eine Datei bewerten lassen
 loginshield init                       Konfiguration + Token anlegen
 loginshield serve [--watch]            Dashboard starten
 loginshield watch --path DATEI         Logdateien mitlesen
@@ -915,6 +1152,11 @@ loginshield firewall --sync            Sperren in die Firewall schreiben
 loginshield firewall --selftest        prueft die Anbindung an einer Testadresse
 loginshield firewall --limit-probe     Verbindungsbremse aus dem Verkehr ablesen
 loginshield scan --path VERZEICHNIS    Dateien auf Schadcode pruefen
+loginshield waechter --path VERZ.      neue Dateien sofort pruefen (Echtzeit)
+loginshield signaturen                 Stand der Signaturen anzeigen
+loginshield signaturen --test          pruefen, ob der Schutz anschlaegt
+loginshield signaturen --update QUELLE Signaturliste holen (nur https)
+loginshield signaturen --allow DATEI   Datei freigeben (bei einem Fehlalarm)
 loginshield integrity --learn          Zustand der Dateien festhalten
 loginshield integrity                  auf Veraenderungen pruefen
 loginshield quarantine --list          beiseitegelegte Dateien anzeigen
@@ -988,6 +1230,13 @@ läuft nicht auf iOS.** Er gehört auf den Server, auf dem deine Anwendung
 liegt. iOS lässt keine Dienste im Hintergrund laufen, hat keine
 Systemrechte und keine Firewall, an die sich ein Programm hängen könnte.
 Ein iPhone kann einen Server nicht verteidigen.
+
+Dasselbe gilt für **Virenschutz auf dem iPad selbst**, und zwar für jedes
+Programm, nicht nur für dieses: Auf iOS darf keine App die Dateien einer
+anderen App lesen. Ein „Virenscanner“ aus dem App Store kann dort also gar
+nicht scannen – er sieht nur seinen eigenen Ordner. Was auf einem iPad
+wirklich schützt, sind Updates, keine Jailbreaks und Vorsicht bei Links; ein
+Programm, das mehr verspricht, kann es auf iOS technisch nicht halten.
 
 Was aufs iPhone gehört, ist die **Bedienoberfläche**: nachsehen, wer gerade
 angreift, und eine Sperre aufheben, ohne am Rechner zu sitzen. Genau dafür
@@ -1235,7 +1484,7 @@ Was das System **nicht** leistet, damit die Erwartung stimmt:
 
 ```bash
 pip install pytest
-python -m pytest -q      # 574 Tests
+python -m pytest -q      # 675 Tests
 ```
 
 Abgedeckt sind unter anderem: Erkennungsregeln und Eskalation, Honeypot in
@@ -1262,6 +1511,33 @@ done
 
 Dieselben Fassungen prüft auch die CI bei jedem Push
 (`.github/workflows/tests.yml`), einmal davon zusätzlich ohne PyYAML.
+
+### Der Dauertest: die Tests laufen von selbst weiter
+
+Tests bei jedem Push finden, was jemand gerade eingebaut hat. Sie finden
+nicht, was von außen kommt, während niemand am Projekt arbeitet: eine neue
+Python-Fassung, eine geänderte Standardbibliothek, ein Test, der nur *meistens*
+durchläuft. Deshalb läuft alles auch **von selbst** – alle sechs Stunden,
+ohne dass jemand etwas anfasst (`.github/workflows/dauertest.yml`):
+
+* Die gesamte Testsuite **fünfmal hintereinander**. Ein Test, der bei einem
+  von fünf Läufen scheitert, ist kaputt – er fällt hier auf statt irgendwann
+  bei jemand anderem.
+* Ein **Dauerlauf des Wächters**: Dem laufenden Wächter wird über mehrere
+  Sekunden ein Strom von Dateien hingeworfen, harmlose und schädliche
+  gemischt. Geprüft wird, dass nichts verlorengeht, nichts fälschlich
+  gemeldet wird, das Gedächtnis nicht mitwächst und der Selbsttest jedes Mal
+  anschlägt.
+* Der **EICAR-Selbsttest** und eine echte Webshell gegen die installierte
+  Fassung – der Test, der wirklich zählt: nicht fragen, ob der Schutz läuft,
+  sondern ihm etwas hinlegen, das er finden muss.
+
+Der Dauerlauf läuft nicht bei jedem gewöhnlichen Testlauf mit – Tests, die
+Minuten dauern, führt am Ende niemand mehr aus. Er läuft auf Ansage:
+
+```bash
+LOGINSHIELD_DAUERTEST=1 python -m pytest tests/test_dauerlauf.py -q
+```
 
 ### Was diese Tests bewusst *nicht* messen
 

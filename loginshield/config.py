@@ -334,6 +334,25 @@ class MalwareConfig:
     #: vielen Gigabyte entpacken.
     max_archive_entries: int = 256
     max_archive_bytes: int = 33_554_432
+    #: Fingerabdruecke bekannter Schadsoftware mitpruefen. Siehe
+    #: :mod:`loginshield.signatures` - dieses Projekt liefert die Liste
+    #: nicht mit, es liest sie.
+    signatures: bool = True
+    #: Verzeichnis mit Signaturlisten (.txt/.sig/.hdb/.hsb). Alles darin
+    #: wird beim Start eingelesen.
+    signature_dir: str = "signatures"
+    #: Zusaetzliche Listen ausserhalb dieses Verzeichnisses.
+    signature_files: List[str] = field(default_factory=list)
+    #: Listen mit Fingerabdruecken, die immer als sauber gelten - der
+    #: Notausgang fuer einen Fehlalarm.
+    allowlist_files: List[str] = field(default_factory=list)
+    #: Obergrenze fuer die Zahl der Signaturen im Speicher.
+    max_signatures: int = 1_000_000
+    #: Lernende Erkennung: meldet Dateien, die aus der Reihe fallen, auch
+    #: wenn weder Signatur noch Muster sie kennen. Siehe
+    #: :mod:`loginshield.classifier`. Ohne gelernte Grundlinie greift nur
+    #: die Pruefung auf gepackten Inhalt - die braucht keine.
+    learning: bool = True
     disabled_rules: List[str] = field(default_factory=list)
     script_extensions: List[str] = field(default_factory=lambda: [
         ".php", ".phtml", ".php3", ".php4", ".php5", ".phar",
@@ -358,6 +377,79 @@ class MalwareConfig:
             raise ConfigError("malware.max_archive_entries muss mindestens 1 sein")
         if self.max_archive_bytes < 1024:
             raise ConfigError("malware.max_archive_bytes ist unrealistisch klein")
+        if self.max_signatures < 1:
+            raise ConfigError("malware.max_signatures muss mindestens 1 sein")
+
+
+@dataclass
+class RealtimeConfig:
+    """Der Waechter: neue Dateien pruefen, sobald sie auftauchen.
+
+    Standardmaessig aus. Ein Waechter, der ungefragt ueber fremde
+    Verzeichnisse laeuft, kostet Leistung und ueberrascht - er wird
+    eingeschaltet, wenn jemand ihn will.
+    """
+
+    enabled: bool = False
+    #: Verzeichnisse (oder einzelne Dateien), die im Blick bleiben.
+    paths: List[str] = field(default_factory=list)
+    #: Abstand zwischen zwei Durchgaengen, in Sekunden.
+    interval: float = 5.0
+    #: So lange muss eine Datei unveraendert sein, bevor sie geprueft
+    #: wird - sonst prueft man einen halben Download.
+    settle_seconds: float = 2.0
+    #: Beim Start alles Vorhandene pruefen statt es nur zu merken.
+    scan_existing: bool = False
+    #: Zusaetzlich in diesem Abstand *alles* erneut pruefen, nicht nur das
+    #: Veraenderte (Sekunden, 0 = aus). Der Sinn ist nicht, dieselbe Datei
+    #: staendig neu anzusehen - das faengt schon der normale Durchgang.
+    #: Der Sinn ist eine frisch geholte Signaturliste: Eine Datei, die
+    #: gestern sauber war, kann heute als bekannt schadhaft gelten. Ohne
+    #: Vollpruefung fiele das erst auf, wenn sich die Datei aendert.
+    full_rescan_interval: float = 0.0
+    #: Abstand des Selbsttests im laufenden Betrieb (Sekunden, 0 = aus).
+    #: Der schlimmste Fall ist nicht ein Schaedling, der durchkommt,
+    #: sondern ein Schutz, der *still* aufgehoert hat zu pruefen: Dann
+    #: verlaesst sich jemand auf etwas, das es nicht mehr gibt. Deshalb
+    #: legt sich der Waechter regelmaessig selbst die harmlose
+    #: EICAR-Testdatei hin und sieht nach, ob er sie noch findet.
+    selftest_interval: float = 3600.0
+    #: report = nur melden, quarantine = zusaetzlich beiseitelegen
+    action: str = "report"
+    #: Obergrenze fuer die Zahl der Pruefungen je Durchgang. Wer 10.000
+    #: Dateien auf einmal entpackt, soll den Rechner nicht lahmlegen -
+    #: der Rest kommt im naechsten Durchgang dran.
+    max_files_per_cycle: int = 500
+    #: Obergrenze fuer die Zahl der gemerkten Dateien.
+    max_index: int = 100_000
+    skip_hidden: bool = True
+    skip_dirs: List[str] = field(default_factory=lambda: [
+        ".git", "node_modules", "__pycache__", "venv", ".venv", "vendor",
+        "quarantine",
+    ])
+
+    def validate(self) -> None:
+        if self.action not in ("report", "quarantine"):
+            raise ConfigError("realtime.action muss report oder quarantine sein")
+        if self.enabled and not self.paths:
+            raise ConfigError(
+                "realtime.enabled ohne realtime.paths - der Waechter wuesste "
+                "nicht, wohin er sehen soll"
+            )
+        if self.interval <= 0:
+            raise ConfigError("realtime.interval muss groesser als 0 sein")
+        if self.settle_seconds < 0:
+            raise ConfigError("realtime.settle_seconds darf nicht negativ sein")
+        if self.max_files_per_cycle < 1:
+            raise ConfigError("realtime.max_files_per_cycle muss mindestens 1 sein")
+        if self.max_index < 1:
+            raise ConfigError("realtime.max_index muss mindestens 1 sein")
+        if self.full_rescan_interval < 0:
+            raise ConfigError(
+                "realtime.full_rescan_interval darf nicht negativ sein")
+        if self.selftest_interval < 0:
+            raise ConfigError(
+                "realtime.selftest_interval darf nicht negativ sein")
 
 
 @dataclass
@@ -635,6 +727,7 @@ class Config:
     requestfilter: RequestFilterConfig = field(default_factory=RequestFilterConfig)
     anomaly: AnomalyConfig = field(default_factory=AnomalyConfig)
     malware: MalwareConfig = field(default_factory=MalwareConfig)
+    realtime: RealtimeConfig = field(default_factory=RealtimeConfig)
     integrity: IntegrityConfig = field(default_factory=IntegrityConfig)
     notify: NotifyConfig = field(default_factory=NotifyConfig)
     logwatch: List[LogSourceConfig] = field(default_factory=list)
@@ -658,6 +751,7 @@ class Config:
         self.requestfilter.validate()
         self.anomaly.validate()
         self.malware.validate()
+        self.realtime.validate()
         self.integrity.validate()
         self.notify.validate()
         for source in self.logwatch:
@@ -688,6 +782,7 @@ class Config:
             ("requestfilter", RequestFilterConfig),
             ("anomaly", AnomalyConfig),
             ("malware", MalwareConfig),
+            ("realtime", RealtimeConfig),
             ("integrity", IntegrityConfig),
             ("notify", NotifyConfig),
         ):

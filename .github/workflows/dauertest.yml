@@ -1,0 +1,97 @@
+# Der Dauertest: laeuft von selbst, auch wenn niemand etwas aendert.
+#
+# Die gewoehnliche Testsuite (tests.yml) laeuft bei jedem Push. Das findet
+# Fehler, die jemand gerade eingebaut hat - aber nicht die, die von aussen
+# kommen und niemandem auffallen, weil gerade niemand am Projekt
+# arbeitet:
+#
+#   * Eine neue Python-Fassung aendert das Verhalten der
+#     Standardbibliothek.
+#   * Ein Test, der nur meistens durchlaeuft, weil er an einer Uhr oder
+#     an der Reihenfolge haengt.
+#   * Etwas, das erst nach vielen Durchgaengen kippt.
+#
+# Deshalb laeuft hier alles regelmaessig von selbst, mehrfach
+# hintereinander und in wechselnder Reihenfolge.
+name: Dauertest
+
+on:
+  schedule:
+    # Alle sechs Stunden. Nicht zur vollen Stunde: Zu :00 laufen bei
+    # GitHub die meisten Zeitplaene, und der Start verzoegert sich dann.
+    - cron: "17 */6 * * *"
+  # Und auf Knopfdruck, wenn jemand nachsehen will.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wiederholt:
+    name: Testsuite, fuenfmal hintereinander
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - run: python -m pip install --upgrade pip pytest PyYAML
+
+      - name: Fuenf Durchgaenge
+        # Ein Test, der bei einem von fuenf Laeufen scheitert, ist kaputt -
+        # er faellt hier auf, statt irgendwann bei jemand anderem.
+        run: |
+          for runde in 1 2 3 4 5; do
+            echo "::group::Durchgang $runde"
+            python -m pytest tests/ -q || exit 1
+            echo "::endgroup::"
+          done
+
+  dauerlauf:
+    name: Dauerlauf des Waechters
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - run: python -m pip install --upgrade pip pytest PyYAML
+
+      - name: Waechter unter Dauerlast
+        # Wirft dem laufenden Waechter einen Strom von Dateien hin und
+        # prueft, dass nichts verlorengeht, nichts faelschlich gemeldet
+        # wird und der Selbsttest jedes Mal anschlaegt.
+        env:
+          LOGINSHIELD_DAUERTEST: "1"
+        run: python -m pytest tests/test_dauerlauf.py -q
+
+  selbsttest:
+    name: Schlaegt der Schutz wirklich an?
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+
+      - name: EICAR-Selbsttest
+        # Der Test, der zaehlt: nicht fragen, ob der Schutz laeuft,
+        # sondern ihm etwas hinlegen, das er finden muss. Schlaegt er
+        # nicht an, ist alles andere hier wertlos.
+        run: loginshield signaturen --test
+
+      - name: Findet der Scanner eine Webshell?
+        run: |
+          mkdir -p /tmp/probe
+          printf '<?php eval($_POST["x"]); ?>' > /tmp/probe/shell.php
+          if loginshield scan /tmp/probe; then
+            echo "Die Webshell wurde NICHT gefunden."
+            exit 1
+          fi
+          echo "Webshell erkannt."

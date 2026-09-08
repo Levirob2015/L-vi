@@ -2,11 +2,12 @@
 
 Was hier **nicht** passiert
 ---------------------------
-Es wird kein eigener Virenscanner geschrieben. Eine Erkennungsmaschine mit
-eigenen Signaturen zu bauen, waere unehrlich: Sie haette keine gepflegte
-Signaturdatenbank, keine Aktualisierung, keine Heuristik - und wuerde
-trotzdem "Virenschutz" behaupten. Software, die Schutz vortaeuscht, ist
-schlechter als gar keine, weil man sich auf sie verlaesst.
+Es wird keine eigene Signaturliste erfunden. Eine solche Liste zu pflegen
+ist die Arbeit eines Virenschutzherstellers: taeglich neue Muster, rund
+um die Uhr. Eine selbstgebaute Liste mit zwanzig Eintraegen "Virenschutz"
+zu nennen, waere unehrlich - Software, die Schutz vortaeuscht, ist
+schlechter als gar keine, weil man sich auf sie verlaesst. Gelesen werden
+fremde, gepflegte Listen dagegen sehr wohl.
 
 Was hier passiert
 -----------------
@@ -19,7 +20,11 @@ allgemeiner Virenscanner gerade **nicht** gut abdeckt:
 2. **Getarnte Dateien.** Eine ``rechnung.pdf.php``, oder eine ``.jpg``, die
    in Wahrheit mit ``<?php`` beginnt - der Standardweg, um an einer
    Upload-Pruefung vorbeizukommen.
-3. **Anbindung an einen echten Scanner.** Ist ClamAV installiert, wird es
+3. **Signaturen.** Fingerabdruecke bekannter Schadsoftware, gelesen aus
+   einer Liste, die jemand anderes pflegt - siehe
+   :mod:`loginshield.signatures`. Der Mechanismus gehoert hierher, die
+   Liste nicht.
+4. **Anbindung an einen echten Scanner.** Ist ClamAV installiert, wird es
    benutzt. Damit kommen echte, gepflegte Signaturen ins Spiel - ohne dass
    dieses Projekt so tut, als haette es eigene.
 
@@ -41,18 +46,24 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from .classifier import Klassifikator
 from .config import MalwareConfig
 from .models import sauber
+from .signatures import (
+    EICAR,
+    SignatureDB,
+    hashes_von_bytes,
+    hashes_von_datei,
+)
 
 log = logging.getLogger("loginshield.filescan")
 
-#: Standard-Testdatei der Virenschutzbranche (EICAR). Voellig harmlos, aber
-#: jeder Scanner muss sie erkennen - damit laesst sich pruefen, ob die
-#: Pruefkette ueberhaupt funktioniert.
-EICAR = (
-    b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-"
-    b"ANTIVIRUS-TEST-FILE!$H+H*"
-)
+# ``EICAR`` steht in :mod:`loginshield.signatures`, wo die Testdatei auch
+# als Signatur gebraucht wird, und wird von dort weitergereicht. Die
+# Musterpruefung kennt sie zusaetzlich: So faellt sie auch auf, wenn die
+# Testzeichenkette mitten in einer groesseren Datei steht - dann passt
+# der Fingerabdruck ueber die ganze Datei naemlich nicht mehr.
+__all__ = ["EICAR", "FileScanner", "Quarantine", "ScanResult", "FileFinding"]
 
 
 @dataclass(frozen=True)
@@ -252,10 +263,26 @@ class FileScanner:
     """Prueft Dateien und Dateiinhalte auf Merkmale von Schadcode."""
 
     def __init__(self, config: Optional[MalwareConfig] = None, guard=None,
-                 run=None) -> None:
+                 run=None, signatures: Optional[SignatureDB] = None,
+                 klassifikator: Optional[Klassifikator] = None) -> None:
         self.config = config or MalwareConfig()
         self.guard = guard
         self._run = run or _run_command
+        self.signatures = (
+            signatures if signatures is not None
+            else self._signaturen_laden()
+        )
+        #: Die lernende Erkennung. Sie greift auch ohne Grundlinie - dann
+        #: allerdings nur mit der Pruefung auf gepackten Inhalt.
+        self.klassifikator = klassifikator if klassifikator is not None else (
+            # Der Deckel richtet sich nach der eingestellten Schwelle:
+            # Statistik allein soll nie ausreichen, um eine Datei
+            # beiseitezulegen - auch dann nicht, wenn jemand die Schwelle
+            # herunterdreht.
+            Klassifikator(guard=guard,
+                          max_punkte=self.config.block_score - 1)
+            if self.config.learning else None
+        )
         aus = set(self.config.disabled_rules)
         self._rules = [
             (rule, re.compile(rule.pattern, re.IGNORECASE) if rule.regex else None)
@@ -273,6 +300,26 @@ class FileScanner:
         ]
         self._clamav: Optional[str] = None
         self._clamav_geprueft = False
+
+    def _signaturen_laden(self) -> Optional[SignatureDB]:
+        """Liest die Signaturlisten ein - einmal beim Start.
+
+        Ein fehlendes Verzeichnis ist kein Fehler: Dann bleibt es bei der
+        eingebauten Testsignatur und den Mustern. Der Schutz ist dann
+        schwaecher, aber er behauptet auch nichts anderes.
+        """
+        if not self.config.signatures:
+            return None
+        datenbank = SignatureDB(max_signaturen=self.config.max_signatures)
+        anzahl = datenbank.load(
+            dateien=self.config.signature_files,
+            verzeichnis=self.config.signature_dir,
+            freigabe_dateien=self.config.allowlist_files,
+        )
+        if anzahl:
+            log.info("%s Signaturen aus %s Liste(n) geladen", anzahl,
+                     len(datenbank.quellen))
+        return datenbank
 
     @property
     def enabled(self) -> bool:
@@ -322,16 +369,36 @@ class FileScanner:
     # ------------------------------------------------------------------
     # Pruefung
     # ------------------------------------------------------------------
-    def scan_bytes(self, data: bytes, filename: str = "") -> ScanResult:
+    def scan_bytes(self, data: bytes, filename: str = "",
+                   hashes: Optional[Dict[str, str]] = None,
+                   size: Optional[int] = None) -> ScanResult:
         """Prueft einen Inhalt, ohne ihn auf die Platte zu schreiben.
 
         Fuer Uploads gedacht: erst pruefen, dann speichern.
+
+        ``hashes`` und ``size`` gehoeren zusammen und sind fuer den Weg
+        ueber :meth:`scan_file` gedacht: Ein Fingerabdruck gilt nur fuer
+        den **vollstaendigen** Inhalt, waehrend hier oft nur der Anfang
+        einer Datei ankommt. Wer beides weglaesst, bekommt die
+        Fingerabdruecke von ``data`` - richtig, solange ``data`` die ganze
+        Datei ist.
         """
-        result = ScanResult(path=filename, size=len(data))
+        result = ScanResult(path=filename, size=len(data) if size is None else size)
         if not self.enabled:
             return result
 
-        result.sha256 = hashlib.sha256(data).hexdigest()
+        vollstaendig = hashes is not None
+        if hashes is None and self.signatures is not None:
+            hashes = hashes_von_bytes(data, self.signatures.algos)
+        result.sha256 = (hashes or {}).get("sha256") or hashlib.sha256(data).hexdigest()
+
+        # Freigabeliste zuerst: Was ausdruecklich als sauber gilt, wird
+        # nicht erst noch bewertet. Das ist der Notausgang fuer einen
+        # Fehlalarm - und er muss vor allem anderen greifen.
+        if (self.signatures is not None and vollstaendig
+                and self.signatures.ist_freigegeben(hashes or {})):
+            return result
+
         probe = data[: self.config.max_scan_bytes]
         ist_skript = self._ist_skript(filename, probe)
 
@@ -339,6 +406,21 @@ class FileScanner:
             result.findings.append(FileFinding(
                 "eicar", 10, "EICAR-Testdatei (harmlos, prueft die Pruefkette)"
             ))
+
+        # Der Fingerabdruck kommt nach der Testdatei, damit diese ihren
+        # eigenen Namen behaelt: "EICAR-Testdatei" sagt jemandem, der die
+        # Meldung liest, mehr als "bekannte Schadsoftware" - und beides
+        # zu melden hiesse, denselben Fund doppelt zu zaehlen.
+        if self.signatures is not None and not any(
+                f.name == "eicar" for f in result.findings):
+            treffer = self.signatures.match_hashes(
+                hashes or {}, result.size if vollstaendig else -1)
+            if treffer is not None:
+                result.findings.append(FileFinding(
+                    "signatur", 10,
+                    f"bekannte Schadsoftware: {sauber(treffer.name, 80)} "
+                    f"({treffer.algo})",
+                ))
 
         for rule, muster in self._rules:
             if rule.only_scripts and not ist_skript:
@@ -363,6 +445,20 @@ class FileScanner:
                     result.findings.append(fund)
 
         result.findings.extend(self._check_tarnung(probe, filename))
+
+        # Zum Schluss die lernende Erkennung: Sie kennt weder Signatur
+        # noch Muster, sondern nur den Vergleich mit dem, was hier sonst
+        # liegt. Ihre Punktzahl ist gedeckelt und reicht allein nie zum
+        # Beiseitelegen - sie gibt den Ausschlag, wenn ausserdem etwas
+        # gefunden wurde.
+        if self.klassifikator is not None:
+            befund = self.klassifikator.bewerten(probe, filename)
+            if befund.punkte:
+                result.findings.append(FileFinding(
+                    "unueblich", befund.punkte,
+                    sauber(befund.zusammenfassung, 160),
+                ))
+
         result.score = sum(f.severity for f in result.findings)
         return result
 
@@ -444,8 +540,26 @@ class FileScanner:
             result.error = f"nicht lesbar: {exc}"
             return result
 
-        result = self.scan_bytes(data, filename=path)
+        # Der Fingerabdruck gilt nur fuer den vollstaendigen Inhalt -
+        # oben wurde aber nur der Anfang gelesen. Also einmal ueber die
+        # ganze Datei, in Haeppchen. Nebenbei stimmt damit auch
+        # ``result.sha256``: bisher war das der Wert des Anfangs, was bei
+        # einer grossen Datei niemand erwartet.
+        hashes = None
+        if self.signatures is not None:
+            # SHA-256 ist immer dabei, auch wenn die Liste ihn nicht
+            # braucht: Er steht im Ergebnis und wird in der Quarantaene
+            # als Beleg festgehalten.
+            verfahren = tuple({"sha256", *self.signatures.algos})
+            hashes = hashes_von_datei(
+                path, verfahren, max_bytes=self.config.max_file_bytes
+            ) or None
+
+        result = self.scan_bytes(data, filename=path, hashes=hashes,
+                                 size=groesse)
         result.size = groesse
+        if hashes is not None and self.signatures.ist_freigegeben(hashes):
+            return result
 
         if self.config.inspect_archives and data.startswith(b"PK\x03\x04"):
             for fund in self.scan_archive(path):

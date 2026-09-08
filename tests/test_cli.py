@@ -344,3 +344,44 @@ def test_doctor_lobt_eingerichtete_benachrichtigung(tmp_path, capsys):
                     ' "url": "https://ntfy.sh/thema"}}')
     main(["--config", str(pfad), "--db", str(tmp_path / "x.db"), "doctor"])
     assert "Benachrichtigung ueber webhook" in capsys.readouterr().out
+
+
+# -- Die Begruessung: Ja/Nein --------------------------------------------
+def test_schutz_nein_tut_nichts(db, capsys):
+    """Nein heisst Nein: kein Scan, keine Einrichtung."""
+    assert run(["schutz", "--nein"], db) == 0
+    ausgabe = capsys.readouterr().out
+    assert "Ich bin Antivirus" in ausgabe
+    assert "es wird nichts installiert" in ausgabe
+
+
+def test_schutz_ja_beweist_dass_es_wirkt(db, capsys):
+    """Ja fuehrt den Selbsttest vor - erst zeigen, dann behaupten."""
+    assert run(["schutz", "--ja"], db) == 0
+    ausgabe = capsys.readouterr().out
+    assert "Die Pruefkette funktioniert" in ausgabe
+
+
+def test_schutz_ja_mit_ordner_richtet_ein(tmp_path, db, capsys):
+    ordner = tmp_path / "geschuetzt"
+    ordner.mkdir()
+    assert run(["schutz", "--ja", "--path", str(ordner)], db) == 0
+    ausgabe = capsys.readouterr().out
+    assert "Geschuetzt wird ab jetzt" in ausgabe
+    assert str(ordner) in ausgabe
+
+
+def test_schutz_ohne_antwort_schaltet_nichts_ein(db, capsys, monkeypatch):
+    """Kein Mensch am Terminal (Pipe/Cron): Schweigen ist kein Ja."""
+    def kein_terminal(_):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", kein_terminal)
+    assert run(["schutz"], db) == 0
+    assert "es wird nichts eingeschaltet" in capsys.readouterr().out
+
+
+def test_schutz_interaktiv_ja(db, capsys, monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda _: "j")
+    assert run(["schutz"], db) == 0
+    assert "Die Pruefkette funktioniert" in capsys.readouterr().out

@@ -168,6 +168,25 @@ malware:
   block_score: 8
   clamav: auto            # auto | on | off
   inspect_archives: true  # in ZIP-Dateien hineinsehen (auch .docx usw.)
+  signatures: true        # Fingerabdruecke bekannter Schadsoftware pruefen
+  signature_dir: signatures   # Listen hier ablegen (auch ClamAV .hdb/.hsb)
+  allowlist_files: []     # Fingerabdruecke, die immer als sauber gelten
+  learning: true          # lernende Erkennung: was aus der Reihe faellt
+                          #   loginshield erkennung --learn --path /var/www
+
+# Der Waechter: prueft neue Dateien, sobald sie auftauchen, statt erst
+# beim naechsten Scan. Fuer Verzeichnisse gedacht, in denen Fremdes
+# landet - Uploads, Downloads, /tmp.
+#   loginshield waechter --path /var/www/uploads
+realtime:
+  enabled: false
+  paths: []
+  # - /var/www/uploads
+  interval: 5             # Abstand zwischen zwei Durchgaengen (Sekunden)
+  settle_seconds: 2       # so lange muss eine Datei ruhen (halbe Downloads)
+  full_rescan_interval: 0 # zusaetzlich alles neu pruefen (0 = aus, sonst Sek.)
+  selftest_interval: 3600 # sich selbst pruefen: greift der Schutz noch?
+  action: report          # report | quarantine
 
 # Dateiveraenderungen ueberwachen - die wirksamste Erkennung NACH einem
 # Einbruch. Erst auf einem sauberen System lernen:
@@ -364,6 +383,77 @@ def build_parser() -> argparse.ArgumentParser:
                            help="Zu ueberwachender Pfad (wiederholbar)")
     integrity.add_argument("--json", action="store_true")
     integrity.set_defaults(handler=cmd_integrity)
+
+    schutz = subparsers.add_parser(
+        "schutz",
+        help="Begruessung mit Ja/Nein - den Gratisschutz einschalten",
+    )
+    schutz.add_argument("--path", action="append", default=[],
+                        help="Was geschuetzt werden soll (wiederholbar)")
+    schutz.add_argument("--ja", action="store_true",
+                        help="Ohne Rueckfrage mit Ja beantworten")
+    schutz.add_argument("--nein", action="store_true",
+                        help="Ohne Rueckfrage mit Nein beantworten")
+    schutz.add_argument("--intervall", type=float, default=60.0,
+                        help="Wie oft der Rechner geprueft wird (Sekunden)")
+    schutz.add_argument("--start", action="store_true",
+                        help="Bei Ja gleich dauerhaft weiterlaufen")
+    schutz.set_defaults(handler=cmd_schutz)
+
+    waechter = subparsers.add_parser(
+        "waechter",
+        help="Neue Dateien pruefen, sobald sie auftauchen (Echtzeitschutz)",
+    )
+    waechter.add_argument("--path", action="append", default=[],
+                          help="Zu ueberwachendes Verzeichnis (wiederholbar)")
+    waechter.add_argument("--interval", type=float, default=None,
+                          help="Abstand zwischen zwei Durchgaengen in Sekunden")
+    waechter.add_argument("--rescan", type=float, default=None, metavar="SEKUNDEN",
+                          help="Zusaetzlich in diesem Abstand alles neu pruefen "
+                               "(fuer frisch geholte Signaturen)")
+    waechter.add_argument("--quarantine", action="store_true",
+                          help="Funde beiseitelegen statt nur melden")
+    waechter.add_argument("--scan-existing", action="store_true",
+                          help="Beim Start auch den vorhandenen Bestand pruefen")
+    waechter.add_argument("--once", action="store_true",
+                          help="Nur ein Durchgang ueber den vorhandenen "
+                               "Bestand, dann beenden (fuer Cron)")
+    waechter.add_argument("--json", action="store_true")
+    waechter.set_defaults(handler=cmd_waechter)
+
+    erkennung = subparsers.add_parser(
+        "erkennung",
+        help="Lernende Erkennung: findet Schaedlinge, die niemand kennt",
+    )
+    erkennung_aktion = erkennung.add_mutually_exclusive_group()
+    erkennung_aktion.add_argument("--learn", action="store_true",
+                                  help="Lernen, wie die Dateien hier aussehen "
+                                       "(nur auf einem sauberen System!)")
+    erkennung_aktion.add_argument("--status", action="store_true",
+                                  help="Was ist gelernt? (Standard)")
+    erkennung_aktion.add_argument("--test", metavar="DATEI",
+                                  help="Eine einzelne Datei bewerten lassen")
+    erkennung.add_argument("--path", action="append", default=[],
+                           help="Woraus gelernt wird (wiederholbar)")
+    erkennung.add_argument("--json", action="store_true")
+    erkennung.set_defaults(handler=cmd_erkennung)
+
+    signaturen = subparsers.add_parser(
+        "signaturen",
+        help="Fingerabdruecke bekannter Schadsoftware verwalten",
+    )
+    signaturen.add_argument("--update", metavar="QUELLE",
+                            help="Liste von einer https-Adresse oder aus einer "
+                                 "Datei holen")
+    signaturen.add_argument("--name", default="",
+                            help="Dateiname fuer die geholte Liste")
+    signaturen.add_argument("--test", action="store_true",
+                            help="Mit der EICAR-Testdatei pruefen, ob der "
+                                 "Schutz ueberhaupt anschlaegt")
+    signaturen.add_argument("--allow", metavar="DATEI",
+                            help="Diese Datei kuenftig als sauber ansehen "
+                                 "(bei einem Fehlalarm)")
+    signaturen.set_defaults(handler=cmd_signaturen)
 
     quarantine = subparsers.add_parser(
         "quarantine", help="Beiseitegelegte Dateien verwalten"
@@ -1068,6 +1158,60 @@ def _doctor_dateien(config, guard, pruefe) -> None:
         else:
             pruefe(bereich, WARNUNG, "Uploads werden nicht geprueft",
                    "malware.scan_uploads: true")
+
+        signaturen = guard.filescan.signatures
+        if signaturen is None:
+            pruefe(bereich, INFO, "Signaturpruefung ist abgeschaltet",
+                   "malware.signatures: true")
+        elif signaturen.quellen:
+            pruefe(bereich, GUT,
+                   f"{len(signaturen)} Signaturen aus "
+                   f"{len(signaturen.quellen)} Liste(n)")
+        else:
+            # Kein Fehler, aber es soll niemand glauben, hier laege eine
+            # gepflegte Virendatenbank.
+            pruefe(bereich, INFO,
+                   "Nur die eingebaute Testsignatur - es ist keine gepflegte "
+                   "Liste hinterlegt",
+                   "loginshield signaturen --update <https-Adresse einer "
+                   "Liste> oder ClamAV installieren")
+
+        klassifikator = guard.filescan.klassifikator
+        if klassifikator is None:
+            pruefe(bereich, INFO, "Lernende Erkennung ist abgeschaltet",
+                   "malware.learning: true")
+        elif klassifikator.bereit:
+            stand = klassifikator.status()
+            pruefe(bereich, GUT,
+                   f"Lernende Erkennung bereit ({stand['dateien']} Dateien "
+                   f"gelernt)")
+        else:
+            pruefe(bereich, INFO,
+                   "Lernende Erkennung hat noch nichts gelernt - sie prueft "
+                   "vorerst nur auf gepackten Inhalt",
+                   "loginshield erkennung --learn --path /var/www (nur auf "
+                   "einem sauberen System)")
+
+        if config.realtime.enabled:
+            pruefe(bereich, GUT,
+                   f"Waechter eingerichtet fuer "
+                   f"{', '.join(config.realtime.paths)}")
+            if config.realtime.selftest_interval:
+                pruefe(bereich, GUT,
+                       f"Selbsttest alle "
+                       f"{_fmt_duration(config.realtime.selftest_interval)} - "
+                       f"ein stiller Ausfall faellt auf")
+            else:
+                pruefe(bereich, WARNUNG,
+                       "Kein Selbsttest - ein Schutz, der still aufhoert zu "
+                       "pruefen, faellt niemandem auf",
+                       "realtime.selftest_interval: 3600")
+        else:
+            pruefe(bereich, INFO,
+                   "Kein Waechter - neue Dateien fallen erst beim naechsten "
+                   "Scan auf",
+                   "realtime.enabled: true und realtime.paths setzen, dann "
+                   "'loginshield waechter'")
     else:
         pruefe(bereich, WARNUNG, "Dateipruefung ist abgeschaltet",
                "malware.enabled: true")
@@ -1297,6 +1441,432 @@ def cmd_integrity(args) -> int:
         return 1
     finally:
         guard.close()
+
+
+def cmd_schutz(args) -> int:
+    """Die Begruessung mit Ja/Nein - der freundliche Weg zum Schutz.
+
+    Kein Programm draengt sich hier auf. Es fragt, und der Mensch am
+    Rechner entscheidet. Ja schaltet den Schutz ein, Nein tut nichts -
+    genau das ist der Unterschied zwischen Schutz und Schaedling: die
+    Einladung.
+    """
+    from .filescan import EICAR
+
+    print()
+    print("  +--------------------------------------------------+")
+    print("  |                                                  |")
+    print("  |   Ich bin Antivirus.                             |")
+    print("  |   Ein Schutz fuer diesen Rechner.                |")
+    print("  |                                                  |")
+    print("  |   Moechten Sie einen Gratisschutz haben?         |")
+    print("  |                                                  |")
+    print("  |   Ich pruefe still im Hintergrund auf Viren      |")
+    print("  |   und Hacker - und lasse Ihre Dateien in Ruhe.   |")
+    print("  |                                                  |")
+    print("  |        [ J ] Ja, gerne        [ N ] Nein         |")
+    print("  |                                                  |")
+    print("  +--------------------------------------------------+")
+    print()
+
+    # Die Antwort: aus einem Schalter, sonst gefragt.
+    if args.nein:
+        antwort = "n"
+    elif args.ja:
+        antwort = "j"
+    else:
+        try:
+            eingabe = input("  Ihre Wahl (J/N): ").strip().lower()
+        except EOFError:
+            # Kein Mensch am Terminal (Cron, Pipe) - ohne ausdrueckliches
+            # Ja wird nichts eingeschaltet. Schweigen ist kein Ja.
+            print("  Keine Antwort - es wird nichts eingeschaltet.")
+            print("  (Fuer den unbeaufsichtigten Betrieb: --ja)")
+            return 0
+        antwort = "j" if eingabe[:1] in ("j", "y") else "n"
+
+    if antwort != "j":
+        print()
+        print("  Alles klar - es wird nichts installiert und nichts geprueft.")
+        print("  Sie koennen jederzeit wiederkommen:  loginshield schutz")
+        print()
+        return 0
+
+    guard = _guard(args)
+    try:
+        print()
+        print("  Danke. Zuerst der Beweis, dass der Schutz wirklich anschlaegt")
+        print("  - mit einer harmlosen Testdatei:\n")
+        # Nicht behaupten, dass geschuetzt wird - zeigen. Wenn schon die
+        # Testdatei durchginge, waere alles Weitere wertlos.
+        if _signaturen_test(guard, EICAR) != 0:
+            print("\n  Der Selbsttest ist fehlgeschlagen - bitte oben nachsehen.")
+            return 1
+
+        pfade = list(args.path) or list(guard.config.realtime.paths)
+        if not pfade:
+            print()
+            print("  Der Schutz gegen Hacker laeuft ab jetzt im Hintergrund.")
+            print("  Damit auch Dateien ueberwacht werden, sagen Sie noch,")
+            print("  welcher Ordner geschuetzt werden soll:")
+            print("      loginshield schutz --path <Ordner> --start")
+            return 0
+
+        fehlend = [p for p in pfade if not os.path.exists(p)]
+        if fehlend:
+            print("\n  Gibt es nicht: " + ", ".join(fehlend))
+            return 1
+
+        einstellung = guard.config.realtime
+        einstellung.enabled = True
+        einstellung.paths = pfade
+        einstellung.interval = max(1.0, args.intervall)
+        einstellung.action = "quarantine"
+
+        print()
+        print(f"  Geschuetzt wird ab jetzt: {', '.join(pfade)}")
+        print(f"  Geprueft wird alle {einstellung.interval:g} Sekunden, still")
+        print("  im Hintergrund. Gefundenes wird beiseitegelegt, nie geloescht.")
+
+        if not args.start:
+            print()
+            print("  So bleibt der Schutz dauerhaft an:")
+            print(f"      loginshield waechter --path {pfade[0]} --quarantine")
+            print("  (oder in der Konfiguration realtime.enabled: true setzen)")
+            return 0
+
+        print("  Beenden mit Strg-C.\n")
+
+        def melden(ereignis):
+            zeit = time.strftime("%H:%M:%S")
+            print(f"  [{zeit}] Schadsoftware gefunden und beiseitegelegt: "
+                  f"{os.path.basename(ereignis.path)}")
+
+        guard.realtime.on_event = melden
+        try:
+            guard.realtime.run()
+        except KeyboardInterrupt:
+            pass
+        print(f"\n  Beendet. {guard.realtime.stats.geprueft} Datei(en) geprueft, "
+              f"{guard.realtime.stats.funde} Fund(e).")
+        return 0
+    finally:
+        guard.close()
+
+
+def cmd_waechter(args) -> int:
+    """Der Echtzeitschutz: sieht nach, was neu dazukommt."""
+    guard = _guard(args)
+    try:
+        waechter = guard.realtime
+        einstellung = waechter.config
+        if args.path:
+            einstellung.paths = list(args.path)
+            einstellung.enabled = True
+        if args.interval:
+            einstellung.interval = args.interval
+        if args.quarantine:
+            einstellung.action = "quarantine"
+        if args.rescan is not None:
+            einstellung.full_rescan_interval = args.rescan
+        if args.scan_existing:
+            einstellung.scan_existing = True
+        if args.once:
+            # Ein einzelner Durchgang in einem frisch gestarteten Programm
+            # hat keine Erinnerung an vorher - "neu seit dem letzten Mal"
+            # gibt es fuer ihn nicht. Ohne diese Zeile wuerde er sich den
+            # Bestand nur merken und melden, es sei nichts zu finden.
+            einstellung.scan_existing = True
+
+        if not einstellung.paths:
+            print("Kein Pfad angegeben. Entweder 'realtime.paths' in der "
+                  "Konfiguration setzen oder --path benutzen.", file=sys.stderr)
+            return 1
+        fehlend = [p for p in einstellung.paths if not os.path.exists(p)]
+        if fehlend:
+            print("Gibt es nicht: " + ", ".join(fehlend), file=sys.stderr)
+            return 1
+        if not guard.filescan.enabled:
+            print("Die Dateipruefung ist abgeschaltet (malware.enabled).",
+                  file=sys.stderr)
+            return 1
+
+        if not args.json:
+            print(f"Waechter ueber: {', '.join(einstellung.paths)}")
+            print(f"Durchgang alle {einstellung.interval:g}s, Funde werden "
+                  + ("beiseitegelegt" if einstellung.action == "quarantine"
+                     else "gemeldet"))
+            signaturen = guard.filescan.signatures
+            print(f"Signaturen: {len(signaturen) if signaturen else 0}")
+            if not args.once:
+                print("Beenden mit Strg-C.\n")
+
+        funde = []
+        if args.once:
+            funde = waechter.poll_once()
+            if waechter.stats.zurueckgestellt and einstellung.settle_seconds > 0:
+                # Eben erst geschriebene Dateien werden zurueckgestellt,
+                # damit kein halber Download geprueft wird. Bei einem
+                # einzelnen Durchgang wird dafuer einmal gewartet - sonst
+                # hiesse es "nichts gefunden", obwohl gar nichts geprueft
+                # wurde. Im Dauerbetrieb erledigt das der naechste
+                # Durchgang von allein.
+                if not args.json:
+                    print(f"  {waechter.stats.zurueckgestellt} Datei(en) "
+                          f"werden noch geschrieben - "
+                          f"{einstellung.settle_seconds:g}s warten ...")
+                time.sleep(einstellung.settle_seconds + 0.1)
+                funde.extend(waechter.poll_once())
+        else:
+            def melden(ereignis):
+                zeit = time.strftime("%H:%M:%S")
+                wohin = (" -> Quarantaene" if ereignis.action == "quarantaene"
+                         else "")
+                print(f"[{zeit}] {ereignis.verdict.upper()}: "
+                      f"{ereignis.path}{wohin}\n           {ereignis.summary}")
+            waechter.on_event = melden
+            try:
+                waechter.run()
+            except KeyboardInterrupt:
+                pass
+            if not args.json:
+                zahlen = waechter.stats
+                print(f"\nBeendet. {zahlen.geprueft} Dateien geprueft, "
+                      f"{zahlen.funde} Fund(e).")
+            return 1 if waechter.stats.funde else 0
+
+        if args.json:
+            print(json.dumps([f.as_dict() for f in funde], indent=2,
+                             ensure_ascii=False))
+            return 1 if funde else 0
+
+        if not funde:
+            print(f"\nNichts Neues. {waechter.stats.geprueft} Datei(en) "
+                  f"geprueft.")
+            return 0
+        rows = [[f.verdict, os.path.relpath(f.path), f.action, f.summary[:44]]
+                for f in funde]
+        print()
+        print(_table(rows, ["Bewertung", "Datei", "Umgang", "Begruendung"]))
+        return 1
+    finally:
+        guard.close()
+
+
+def cmd_erkennung(args) -> int:
+    """Die lernende Erkennung: lernen, nachsehen, ausprobieren."""
+    guard = _guard(args)
+    try:
+        klassifikator = guard.filescan.klassifikator
+        if klassifikator is None:
+            print("Die lernende Erkennung ist abgeschaltet "
+                  "(malware.learning).", file=sys.stderr)
+            return 1
+
+        if args.test:
+            try:
+                with open(args.test, "rb") as handle:
+                    daten = handle.read(1_048_576)
+            except OSError as exc:
+                print(f"Nicht lesbar: {exc}", file=sys.stderr)
+                return 1
+            befund = klassifikator.bewerten(daten, args.test)
+            if args.json:
+                print(json.dumps(befund.as_dict(), indent=2, ensure_ascii=False))
+                return 1 if befund.auffaellig else 0
+            print(f"Datei:     {args.test}")
+            print(f"Art:       {befund.klasse}")
+            print(f"Punkte:    {befund.punkte}")
+            if not befund.signale:
+                print("Urteil:    unauffaellig"
+                      + (f" ({befund.grund})" if befund.grund else ""))
+                return 0
+            print("Auffaellig:")
+            for signal in befund.signale:
+                print(f"  - {signal.beschreibung}")
+            print(f"\n{befund.grund}")
+            print("\nDas allein legt nichts beiseite - eine Abweichung ist ein "
+                  "Verdacht,\nkein Beweis. Erst zusammen mit einem Merkmal "
+                  "wird ein Urteil daraus.")
+            return 1
+
+        if args.learn:
+            pfade = args.path or ["."]
+            fehlend = [p for p in pfade if not os.path.exists(p)]
+            if fehlend:
+                print("Gibt es nicht: " + ", ".join(fehlend), file=sys.stderr)
+                return 1
+            print("Achtung: nur auf einem System lernen, das sauber ist.")
+            print("Nach einem Einbruch gilt die Webshell sonst als normal.\n")
+            grundlinie = klassifikator.lernen(
+                pfade, skip_dirs=guard.config.malware.skip_dirs)
+            print(f"Gelernt aus {grundlinie.dateien} Datei(en) in "
+                  f"{', '.join(pfade)}:\n")
+            rows = [
+                [name, klasse.dateien,
+                 "ja" if klasse.belastbar else "zu wenig",
+                 f"{klasse.werte.get('entropie', {}).get('median', 0):.2f}"]
+                for name, klasse in sorted(grundlinie.klassen.items())
+            ]
+            print(_table(rows, ["Dateiart", "Dateien", "Belastbar",
+                                "Entropie"]))
+            if not any(k.belastbar for k in grundlinie.klassen.values()):
+                print("\nNoch keine Dateiart mit genug Beispielen - es wird "
+                      "vorerst nur\nauf gepackten Inhalt geprueft. Mehr Pfade "
+                      "angeben hilft.")
+            return 0
+
+        status = klassifikator.status()
+        if args.json:
+            print(json.dumps(status, indent=2, ensure_ascii=False))
+            return 0 if status["bereit"] else 1
+        if not status["dateien"]:
+            print("Es wurde noch nichts gelernt.")
+            print("\nDie lernende Erkennung vergleicht eine Datei mit dem, was")
+            print("auf diesem Rechner sonst so liegt. Dafuer muss sie erst")
+            print("einmal hinsehen duerfen:")
+            print("    loginshield erkennung --learn --path /var/www")
+            print("\nOhne Grundlinie prueft sie nur auf gepackten Inhalt -")
+            print("das geht auch ohne zu lernen.")
+            return 1
+        print(f"Gelernt aus:  {status['dateien']} Dateien")
+        print("Stand:        " + time.strftime(
+            "%d.%m.%Y %H:%M", time.localtime(status.get("created_ts", 0))))
+        print(f"Urteilsfaehig: {'ja' if status['bereit'] else 'nein'}")
+        if status["grund"]:
+            print(f"              {status['grund']}")
+        print()
+        rows = [[name, werte["dateien"], "ja" if werte["belastbar"] else "nein"]
+                for name, werte in sorted(status["klassen"].items())]
+        print(_table(rows, ["Dateiart", "Gelernt", "Belastbar"]))
+        return 0 if status["bereit"] else 1
+    finally:
+        guard.close()
+
+
+def cmd_signaturen(args) -> int:
+    """Die Fingerabdruecke: Stand anzeigen, holen, pruefen, freigeben."""
+    from .filescan import EICAR
+    from . import signatures as sig
+
+    guard = _guard(args)
+    try:
+        einstellung = guard.config.malware
+        datenbank = guard.filescan.signatures
+
+        if args.update:
+            name = args.name or os.path.basename(args.update.rstrip("/")) \
+                or "signaturen.txt"
+            if not name.lower().endswith(sig.SIGNATUR_ENDUNGEN):
+                name += ".txt"
+            ziel = os.path.join(einstellung.signature_dir, name)
+            anzahl, meldung = sig.aktualisieren(args.update, ziel)
+            print(meldung)
+            return 0 if anzahl else 1
+
+        if args.allow:
+            hashes = sig.hashes_von_datei(args.allow, ("sha256",))
+            if not hashes:
+                print(f"Nicht lesbar: {args.allow}", file=sys.stderr)
+                return 1
+            ziel = (einstellung.allowlist_files[0]
+                    if einstellung.allowlist_files
+                    else os.path.join(einstellung.signature_dir, "freigabe.txt"))
+            os.makedirs(os.path.dirname(os.path.abspath(ziel)) or ".",
+                        exist_ok=True)
+            with open(ziel, "a", encoding="utf-8") as handle:
+                handle.write(f"{hashes['sha256']}  {os.path.basename(args.allow)}\n")
+            print(f"Freigegeben: {os.path.basename(args.allow)}")
+            print(f"  {hashes['sha256']}")
+            print(f"Eingetragen in {ziel}.")
+            if not einstellung.allowlist_files:
+                # Die Datei wurde eben erst angelegt - ohne Eintrag in der
+                # Konfiguration liest sie niemand, und die Freigabe waere
+                # wirkungslos.
+                print("\nDamit die Freigabe wirkt, muss die Datei in der "
+                      "Konfiguration stehen:")
+                print(f"  malware:\n    allowlist_files: [{ziel}]")
+            return 0
+
+        if args.test:
+            return _signaturen_test(guard, EICAR)
+
+        stand = datenbank.stats() if datenbank else {}
+        if not datenbank:
+            print("Signaturpruefung ist abgeschaltet (malware.signatures).")
+            return 1
+        print(f"Signaturen:      {stand['gesamt']}")
+        print(f"  MD5            {stand['md5']}")
+        print(f"  SHA-1          {stand['sha1']}")
+        print(f"  SHA-256        {stand['sha256']}")
+        print(f"Freigegeben:     {stand['freigegeben']}")
+        print(f"Verzeichnis:     {einstellung.signature_dir}"
+              + ("" if os.path.isdir(einstellung.signature_dir)
+                 else "  (gibt es noch nicht)"))
+        if stand["quellen"]:
+            print("Listen:")
+            for quelle in stand["quellen"]:
+                print(f"  {quelle}")
+            if stand["aktualisiert"]:
+                print("Stand:           " + time.strftime(
+                    "%d.%m.%Y %H:%M", time.localtime(stand["aktualisiert"])))
+        else:
+            print("\nEs ist nur die eingebaute Testsignatur vorhanden.")
+            print("Dieses Programm liefert keine eigene Liste mit - das waere")
+            print("vorgetaeuschter Schutz. Zwei Wege zu echten Signaturen:")
+            print("  1. ClamAV installieren (apt install clamav) - dessen")
+            print("     Signaturen werden dann mitbenutzt.")
+            print("  2. Eine gepflegte Liste holen:")
+            print("     loginshield signaturen --update https://.../liste.hsb")
+        print("\nSelbsttest: loginshield signaturen --test")
+        return 0
+    finally:
+        guard.close()
+
+
+def _signaturen_test(guard, eicar: bytes) -> int:
+    """Legt die EICAR-Testdatei an und sieht nach, ob sie gefunden wird.
+
+    Der einzige ehrliche Weg, einen Virenschutz zu pruefen: nicht fragen,
+    ob er laeuft, sondern ihm etwas hinlegen, das er finden muss. EICAR
+    ist dafuer gemacht und voellig harmlos - es ist eine Zeichenkette,
+    kein Programm.
+    """
+    import tempfile
+
+    ordner = tempfile.mkdtemp(prefix="loginshield-test-")
+    pfad = os.path.join(ordner, "eicar-test.txt")
+    try:
+        with open(pfad, "wb") as handle:
+            handle.write(eicar)
+
+        ergebnis = guard.filescan.scan_file(pfad)
+        gefunden = guard.filescan.is_malicious(ergebnis)
+        wege = sorted({f.name for f in ergebnis.findings})
+
+        print("Testdatei angelegt (EICAR - harmlos, kein Schadcode).")
+        print(f"  {pfad}\n")
+        if gefunden:
+            print(f"ERKANNT: {ergebnis.verdict}, {ergebnis.score} Punkte")
+            print(f"  ueber: {', '.join(wege)}")
+            print("\nDie Pruefkette funktioniert.")
+        else:
+            print("NICHT ERKANNT.")
+            print("  Damit wuerde auch echte Schadsoftware durchgehen.")
+            print("  Pruefen: malware.enabled, malware.signatures")
+        if guard.config.realtime.enabled:
+            print("\nDer Waechter ist eingeschaltet - fuer einen Test im "
+                  "laufenden Betrieb die Testdatei in eines der ueberwachten "
+                  "Verzeichnisse kopieren.")
+        return 0 if gefunden else 1
+    finally:
+        # Die Testdatei bleibt nicht liegen: Ein anderer Virenschutz auf
+        # demselben Rechner wuerde sonst Alarm schlagen - zu Recht.
+        try:
+            os.unlink(pfad)
+            os.rmdir(ordner)
+        except OSError:      # pragma: no cover
+            pass
 
 
 def cmd_quarantine(args) -> int:
