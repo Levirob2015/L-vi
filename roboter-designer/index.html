@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KI Roboter-Designer</title>
+<style>
+  :root { --bg:#0f1420; --card:#182033; --line:#2a3550; --text:#e7ecf5; --muted:#93a0b8; --acc:#4fb3ff; --ok:#3ecf8e; --err:#ff6b6b; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui, sans-serif; }
+  header { padding:24px 16px 8px; max-width:1100px; margin:auto; }
+  h1 { margin:0; font-size:28px; } header p { color:var(--muted); margin:4px 0 0; }
+  main { max-width:1100px; margin:auto; padding:16px; display:grid; gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h2 { margin:0 0 12px; font-size:18px; }
+  textarea, input, select { width:100%; background:#0b101a; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:10px; font:inherit; }
+  textarea#desc { min-height:110px; resize:vertical; }
+  button { background:var(--acc); color:#04121f; border:0; border-radius:8px; padding:10px 16px; font-weight:600; cursor:pointer; }
+  button.sec { background:transparent; color:var(--text); border:1px solid var(--line); }
+  button:disabled { opacity:.5; cursor:wait; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:800px) { .grid2 { grid-template-columns:1fr; } }
+  #design { background:#fff; border-radius:8px; min-height:260px; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+  #design svg { max-width:100%; height:auto; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); }
+  td.num, th.num { text-align:right; white-space:nowrap; }
+  tfoot td { font-weight:700; border:0; }
+  #code { min-height:380px; font:13px/1.45 ui-monospace, Menlo, Consolas, monospace; tab-size:2; white-space:pre; resize:vertical; }
+  .muted { color:var(--muted); font-size:14px; }
+  #status { font-size:14px; } #status.err { color:var(--err); } #status.ok { color:var(--ok); }
+  ol { margin:0; padding-left:20px; } .hidden { display:none; }
+  a { color:var(--acc); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🤖 KI Roboter-Designer</h1>
+  <p>Beschreibe deinen Roboter – die KI entwirft ihn, sagt dir was du brauchst, was es kostet, und schreibt den Code.</p>
+</header>
+<main>
+  <section class="card">
+    <h2>1. API-Schlüssel</h2>
+    <input id="key" type="password" placeholder="Anthropic API-Key (sk-ant-…)">
+    <p class="muted">Der Schlüssel bleibt nur in deinem Browser gespeichert und geht direkt an api.anthropic.com. Einen Schlüssel bekommst du auf <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a>.</p>
+  </section>
+
+  <section class="card">
+    <h2>2. Beschreibe deinen Roboter</h2>
+    <textarea id="desc" placeholder="z.B. Ein kleiner Roboter auf Rädern, der Hindernissen ausweicht, mit dem Handy per Bluetooth gesteuert wird und LED-Augen hat. Budget ca. 60 €."></textarea>
+    <div class="row">
+      <label class="muted">Plattform:</label>
+      <select id="platform" style="width:auto">
+        <option>Arduino (C++)</option><option>ESP32 (C++)</option><option>Raspberry Pi (Python)</option><option>micro:bit (MicroPython)</option><option>KI soll wählen</option>
+      </select>
+      <button id="go">Roboter entwerfen</button>
+      <span id="status"></span>
+    </div>
+  </section>
+
+  <div id="result" class="hidden" style="display:grid;gap:16px">
+    <section class="card">
+      <h2 id="rname">Dein Roboter</h2>
+      <p id="rsum"></p>
+    </section>
+    <div class="grid2">
+      <section class="card"><h2>Design</h2><div id="design"></div></section>
+      <section class="card">
+        <h2>Teileliste &amp; Kosten</h2>
+        <table>
+          <thead><tr><th>Teil</th><th class="num">Anz.</th><th class="num">Preis</th></tr></thead>
+          <tbody id="parts"></tbody>
+          <tfoot><tr><td>Gesamt (ca.)</td><td></td><td class="num" id="total"></td></tr></tfoot>
+        </table>
+        <p class="muted">Preise sind Schätzungen und können je nach Händler abweichen.</p>
+      </section>
+    </div>
+    <section class="card"><h2>Werkzeug</h2><p id="tools"></p></section>
+    <section class="card"><h2>Bauanleitung</h2><ol id="steps"></ol></section>
+    <section class="card">
+      <h2>Code <span class="muted" id="lang"></span></h2>
+      <p class="muted">Du kannst den Code direkt hier bearbeiten. Oder sag der KI, was sie ändern soll.</p>
+      <textarea id="code" spellcheck="false"></textarea>
+      <div class="row">
+        <button class="sec" id="copy">Kopieren</button>
+        <button class="sec" id="dl">Herunterladen</button>
+      </div>
+      <div class="row">
+        <input id="change" placeholder="z.B. Mach den Roboter langsamer und lass die LEDs blinken" style="flex:1;min-width:200px">
+        <button id="fix">KI ändern lassen</button>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script>
+const MODEL = "claude-sonnet-5";
+const $ = id => document.getElementById(id);
+let current = null;
+
+try { $("key").value = localStorage.getItem("anthropic_key") || ""; } catch {}
+$("key").addEventListener("change", () => { try { localStorage.setItem("anthropic_key", $("key").value.trim()); } catch {} });
+
+const SYSTEM = `Du bist ein erfahrener Robotik-Ingenieur und hilfst Hobby-Bastlern (auch Anfängern). Antworte immer auf Deutsch.
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt (kein Markdown, kein Text drumherum) in diesem Format:
+{
+  "name": "kurzer Name des Roboters",
+  "summary": "2-4 Sätze, was der Roboter kann und wie er funktioniert",
+  "svg": "<svg viewBox='0 0 400 300' xmlns='http://www.w3.org/2000/svg'>…</svg> – eine schöne, farbige Zeichnung des Roboters mit Beschriftungen der wichtigsten Teile",
+  "parts": [{"name":"Teil","qty":1,"price_eur":4.5,"note":"kurzer Hinweis"}],
+  "tools": ["Lötkolben", "..."],
+  "steps": ["Schritt 1 …", "..."],
+  "language": "z.B. Arduino C++",
+  "filename": "z.B. roboter.ino",
+  "code": "vollständiger, lauffähiger, gut kommentierter Code mit Pin-Belegung oben"
+}
+price_eur ist der Stückpreis in Euro (realistische Preise 2026). Der Code muss zu den Teilen und der Pin-Belegung in der Bauanleitung passen.`;
+
+async function ask(messages, maxTokens = 16000) {
+  const key = $("key").value.trim();
+  if (!key) throw new Error("Bitte zuerst den API-Schlüssel eingeben.");
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": key,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true"
+    },
+    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system: SYSTEM, messages })
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error?.message || ("Fehler " + r.status));
+  const text = data.content.filter(b => b.type === "text").map(b => b.text).join("");
+  const start = text.indexOf("{"), end = text.lastIndexOf("}");
+  return JSON.parse(text.slice(start, end + 1));
+}
+
+function status(msg, cls = "") { $("status").textContent = msg; $("status").className = cls; }
+const eur = n => (Number(n) || 0).toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+
+function cleanSvg(svg) {
+  const doc = new DOMParser().parseFromString(svg || "", "image/svg+xml");
+  const el = doc.documentElement;
+  if (el.nodeName !== "svg") return "<p style='color:#333'>Keine Zeichnung erhalten.</p>";
+  el.querySelectorAll("script, foreignObject").forEach(n => n.remove());
+  el.querySelectorAll("*").forEach(n => [...n.attributes].forEach(a => { if (/^on/i.test(a.name)) n.removeAttribute(a.name); }));
+  return new XMLSerializer().serializeToString(el);
+}
+
+function render(r) {
+  current = r;
+  $("rname").textContent = r.name || "Dein Roboter";
+  $("rsum").textContent = r.summary || "";
+  $("design").innerHTML = cleanSvg(r.svg);
+  const tb = $("parts"); tb.innerHTML = ""; let sum = 0;
+  (r.parts || []).forEach(p => {
+    const line = (p.qty || 1) * (p.price_eur || 0); sum += line;
+    const tr = document.createElement("tr");
+    tr.innerHTML = "<td></td><td class='num'></td><td class='num'></td>";
+    tr.children[0].textContent = p.name + (p.note ? " – " + p.note : "");
+    tr.children[1].textContent = p.qty || 1;
+    tr.children[2].textContent = eur(line);
+    tb.appendChild(tr);
+  });
+  $("total").textContent = eur(sum);
+  $("tools").textContent = (r.tools || []).join(", ");
+  $("steps").innerHTML = "";
+  (r.steps || []).forEach(s => { const li = document.createElement("li"); li.textContent = s; $("steps").appendChild(li); });
+  $("lang").textContent = r.language ? "(" + r.language + ")" : "";
+  $("code").value = r.code || "";
+  $("result").classList.remove("hidden");
+}
+
+$("go").onclick = async () => {
+  const desc = $("desc").value.trim();
+  if (!desc) return status("Bitte beschreibe zuerst deinen Roboter.", "err");
+  $("go").disabled = true; status("Die KI entwirft deinen Roboter… (kann 1–2 Minuten dauern)");
+  try {
+    render(await ask([{ role: "user", content: `Plattform: ${$("platform").value}\n\nMein Roboter:\n${desc}` }]));
+    status("Fertig!", "ok");
+    $("result").scrollIntoView({ behavior: "smooth" });
+  } catch (e) { status(e.message, "err"); }
+  $("go").disabled = false;
+};
+
+$("fix").onclick = async () => {
+  const wish = $("change").value.trim();
+  if (!current || !wish) return;
+  $("fix").disabled = true; $("fix").textContent = "KI arbeitet…";
+  try {
+    const updated = { ...current, code: $("code").value };
+    const r = await ask([{ role: "user", content:
+      `Hier ist der aktuelle Roboter als JSON (der Code wurde evtl. vom Benutzer bearbeitet):\n${JSON.stringify(updated)}\n\nÄnderungswunsch: ${wish}\n\nGib das komplette, aktualisierte JSON im selben Format zurück. Passe Teile, Schritte und Zeichnung nur an, wenn nötig.` }]);
+    render(r); $("change").value = "";
+  } catch (e) { alert(e.message); }
+  $("fix").disabled = false; $("fix").textContent = "KI ändern lassen";
+};
+
+$("copy").onclick = async () => {
+  try { await navigator.clipboard.writeText($("code").value); $("copy").textContent = "Kopiert ✓"; }
+  catch { $("code").select(); document.execCommand("copy"); }
+  setTimeout(() => $("copy").textContent = "Kopieren", 1500);
+};
+
+$("dl").onclick = () => {
+  const blob = new Blob([$("code").value], { type: "text/plain" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = current?.filename || "roboter.txt";
+  a.click(); URL.revokeObjectURL(a.href);
+};
+
+$("code").addEventListener("keydown", e => {
+  if (e.key === "Tab") { e.preventDefault(); const t = e.target, s = t.selectionStart;
+    t.setRangeText("  ", s, t.selectionEnd, "end"); }
+});
+</script>
+</body>
+</html>
