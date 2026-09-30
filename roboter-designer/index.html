@@ -5,17 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>KI Roboter-Designer</title>
 <style>
-  :root { --bg:#0f1420; --card:#182033; --line:#2a3550; --text:#e7ecf5; --muted:#93a0b8; --acc:#4fb3ff; --ok:#3ecf8e; --err:#ff6b6b; }
-  * { box-sizing: border-box; }
+  :root { --bg:#0f1420; --card:#182033; --line:#2a3550; --text:#e7ecf5; --muted:#93a0b8; --acc:#4fb3ff; --ok:#3ecf8e; --err:#ff6b6b; --warn:#ffc15e; }
+  :root[data-theme="light"] { --bg:#f3f5fa; --card:#fff; --line:#d6dcea; --text:#141a26; --muted:#5b6780; --acc:#0a74c9; }
+  * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui, sans-serif; }
   header { padding:24px 16px 8px; max-width:1100px; margin:auto; }
   h1 { margin:0; font-size:28px; } header p { color:var(--muted); margin:4px 0 0; }
   main { max-width:1100px; margin:auto; padding:16px; display:grid; gap:16px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
-  .card h2 { margin:0 0 12px; font-size:18px; }
-  textarea, input, select { width:100%; background:#0b101a; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:10px; font:inherit; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; min-width:0; }
+  .card h2 { margin:0 0 12px; font-size:18px; } .card h3 { margin:14px 0 6px; font-size:16px; }
+  textarea, input, select { width:100%; background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:10px; font:inherit; }
   textarea#desc { min-height:110px; resize:vertical; }
-  button { background:var(--acc); color:#04121f; border:0; border-radius:8px; padding:10px 16px; font-weight:600; cursor:pointer; }
+  button { background:var(--acc); color:#fff; border:0; border-radius:8px; padding:10px 16px; font-weight:600; cursor:pointer; font:inherit; font-weight:600; }
   button.sec { background:transparent; color:var(--text); border:1px solid var(--line); }
   button:disabled { opacity:.5; cursor:wait; }
   .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
@@ -24,47 +25,68 @@
   #design { background:#fff; border-radius:8px; min-height:260px; display:flex; align-items:center; justify-content:center; overflow:hidden; }
   #design svg { max-width:100%; height:auto; }
   table { width:100%; border-collapse:collapse; font-size:14px; }
-  th, td { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); }
+  th, td { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); vertical-align:top; }
   td.num, th.num { text-align:right; white-space:nowrap; }
   tfoot td { font-weight:700; border:0; }
   #code { min-height:380px; font:13px/1.45 ui-monospace, Menlo, Consolas, monospace; tab-size:2; white-space:pre; resize:vertical; }
   .muted { color:var(--muted); font-size:14px; }
-  #status { font-size:14px; } #status.err { color:var(--err); } #status.ok { color:var(--ok); }
-  ol { margin:0; padding-left:20px; } .hidden { display:none; }
+  #status { font-size:14px; } .err { color:var(--err); } .ok { color:var(--ok); } .warn { color:var(--warn); }
+  ol, ul { margin:0; padding-left:20px; } .hidden { display:none !important; }
   a { color:var(--acc); }
+  .tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+  .tabs button { background:transparent; color:var(--text); border:1px solid var(--line); padding:6px 12px; }
+  .tabs button.on { background:var(--acc); color:#fff; border-color:var(--acc); }
+  #viewer { width:100%; height:340px; background:#dfe6f2; border-radius:8px; touch-action:none; cursor:grab; display:block; }
+  .partlist { display:grid; gap:10px; }
+  .part { border:1px solid var(--line); border-radius:8px; padding:10px; }
+  .part.on { border-color:var(--acc); }
+  .part b { cursor:pointer; }
+  .badge { display:inline-block; font-size:12px; border:1px solid var(--line); border-radius:99px; padding:1px 8px; margin:2px 4px 0 0; color:var(--muted); }
+  #serial { background:#05080d; color:#8ef0a8; font:13px/1.4 ui-monospace, monospace; padding:10px; border-radius:8px; min-height:160px; max-height:320px; overflow:auto; white-space:pre-wrap; }
+  .mode { font-size:13px; padding:4px 10px; border-radius:99px; border:1px solid var(--line); color:var(--muted); }
 </style>
 </head>
 <body>
 <header>
   <h1>🤖 KI Roboter-Designer</h1>
-  <p>Beschreibe deinen Roboter – die KI entwirft ihn, sagt dir was du brauchst, was es kostet, und schreibt den Code.</p>
+  <p>Beschreibe deinen Roboter – die KI entwirft ihn, sagt dir was du brauchst und was es kostet, schreibt den Code, konstruiert 3D-Druckteile und erstellt die Anleitung.</p>
 </header>
 <main>
-  <section class="card">
+  <section class="card" id="keycard">
     <h2>1. API-Schlüssel</h2>
     <input id="key" type="password" placeholder="Anthropic API-Key (sk-ant-…)">
-    <p class="muted">Der Schlüssel bleibt nur in deinem Browser gespeichert und geht direkt an api.anthropic.com. Einen Schlüssel bekommst du auf <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a>.</p>
+    <p class="muted">Der Schlüssel bleibt nur in deinem Browser und geht direkt an api.anthropic.com (<a href="https://console.anthropic.com" target="_blank" rel="noopener">Schlüssel holen</a>). Ohne Schlüssel kannst du trotzdem den <b>Demo-Roboter</b> ausprobieren.</p>
   </section>
 
   <section class="card">
-    <h2>2. Beschreibe deinen Roboter</h2>
-    <textarea id="desc" placeholder="z.B. Ein kleiner Roboter auf Rädern, der Hindernissen ausweicht, mit dem Handy per Bluetooth gesteuert wird und LED-Augen hat. Budget ca. 60 €."></textarea>
+    <h2>Beschreibe deinen Roboter <span class="mode" id="mode">KI: API-Schlüssel</span></h2>
+    <textarea id="desc" placeholder="z.B. Ein kleiner Roboter auf Rädern, der Hindernissen ausweicht, per Bluetooth gesteuert wird und LED-Augen hat. Budget ca. 60 €."></textarea>
     <div class="row">
       <label class="muted">Plattform:</label>
       <select id="platform" style="width:auto">
         <option>Arduino (C++)</option><option>ESP32 (C++)</option><option>Raspberry Pi (Python)</option><option>micro:bit (MicroPython)</option><option>KI soll wählen</option>
       </select>
+      <label class="muted"><input type="checkbox" id="want3d" checked style="width:auto"> 3D-Druckteile</label>
       <button id="go">Roboter entwerfen</button>
-      <span id="status"></span>
+      <button class="sec" id="demo">Demo-Roboter laden (ohne KI)</button>
     </div>
+    <p id="status"></p>
   </section>
 
   <div id="result" class="hidden" style="display:grid;gap:16px">
     <section class="card">
       <h2 id="rname">Dein Roboter</h2>
       <p id="rsum"></p>
+      <div class="tabs" id="tabs">
+        <button data-t="t-design" class="on">Design &amp; Kosten</button>
+        <button data-t="t-3d">3D-Druckteile</button>
+        <button data-t="t-guide">Anleitung</button>
+        <button data-t="t-code">Code</button>
+        <button data-t="t-test">Test-Labor</button>
+      </div>
     </section>
-    <div class="grid2">
+
+    <div id="t-design" class="tab grid2">
       <section class="card"><h2>Design</h2><div id="design"></div></section>
       <section class="card">
         <h2>Teileliste &amp; Kosten</h2>
@@ -73,12 +95,34 @@
           <tbody id="parts"></tbody>
           <tfoot><tr><td>Gesamt (ca.)</td><td></td><td class="num" id="total"></td></tr></tfoot>
         </table>
-        <p class="muted">Preise sind Schätzungen und können je nach Händler abweichen.</p>
+        <p class="muted">Preise sind Schätzungen. 3D-Filament ist mit eingerechnet, falls die KI Druckteile konstruiert hat.</p>
+        <h3>Werkzeug</h3><p id="tools" style="margin:0"></p>
       </section>
     </div>
-    <section class="card"><h2>Werkzeug</h2><p id="tools"></p></section>
-    <section class="card"><h2>Bauanleitung</h2><ol id="steps"></ol></section>
-    <section class="card">
+
+    <div id="t-3d" class="tab grid2 hidden">
+      <section class="card">
+        <h2>3D-Vorschau</h2>
+        <canvas id="viewer"></canvas>
+        <p class="muted">Ziehen zum Drehen, Mausrad/zwei Finger zum Zoomen.</p>
+      </section>
+      <section class="card">
+        <h2>Druckteile</h2>
+        <div class="partlist" id="p3d"></div>
+        <div class="row">
+          <button class="sec" id="gen3d">3D-Teile von der KI (neu) konstruieren lassen</button>
+        </div>
+        <p class="muted">STL-Dateien öffnest du direkt im Slicer (Cura, PrusaSlicer, Bambu Studio). Die .scad-Datei kannst du in OpenSCAD genau anpassen.</p>
+      </section>
+    </div>
+
+    <section id="t-guide" class="tab card hidden">
+      <h2>Anleitung</h2>
+      <div id="guide"></div>
+      <div class="row"><button class="sec" id="dlguide">Anleitung herunterladen (.md)</button></div>
+    </section>
+
+    <section id="t-code" class="tab card hidden">
       <h2>Code <span class="muted" id="lang"></span></h2>
       <p class="muted">Du kannst den Code direkt hier bearbeiten. Oder sag der KI, was sie ändern soll.</p>
       <textarea id="code" spellcheck="false"></textarea>
@@ -91,63 +135,105 @@
         <button id="fix">KI ändern lassen</button>
       </div>
     </section>
+
+    <section id="t-test" class="tab card hidden">
+      <h2>Test-Labor</h2>
+      <p class="muted">Teste deinen Roboter, bevor du ihn baust: Die KI führt den (auch von dir bearbeiteten) Code in Gedanken aus, simuliert die Sensoren und zeigt dir, was im seriellen Monitor erscheinen würde – plus eine Prüfung, ob Code, Teile und Verkabelung zusammenpassen.</p>
+      <input id="scenario" placeholder="Test-Situation, z.B. Ein Hindernis taucht 15 cm vor dem Roboter auf">
+      <div class="row"><button id="runtest">Test starten</button><span id="teststatus" class="muted"></span></div>
+      <h3>Serieller Monitor (simuliert)</h3>
+      <div id="serial">– noch kein Test –</div>
+      <h3>Was der Roboter macht</h3><p id="behavior" class="muted">–</p>
+      <h3>Prüfung</h3><ul id="checks"><li class="muted">–</li></ul>
+    </section>
   </div>
 </main>
 
 <script>
 const MODEL = "claude-sonnet-5";
 const $ = id => document.getElementById(id);
-let current = null;
+let current = null, sampleApi = null, downloadsApi = null, sel3d = 0;
 
 try { $("key").value = localStorage.getItem("anthropic_key") || ""; } catch {}
 $("key").addEventListener("change", () => { try { localStorage.setItem("anthropic_key", $("key").value.trim()); } catch {} });
 
-const SYSTEM = `Du bist ein erfahrener Robotik-Ingenieur und hilfst Hobby-Bastlern (auch Anfängern). Antworte immer auf Deutsch.
-Antworte AUSSCHLIESSLICH mit einem JSON-Objekt (kein Markdown, kein Text drumherum) in diesem Format:
+// In claude.ai läuft die Seite ohne API-Schlüssel über Claude selbst.
+if (window.claude?.use) {
+  claude.use("sample").then(s => { if (s) { sampleApi = s; $("keycard").classList.add("hidden"); $("mode").textContent = "KI: Claude (kein Schlüssel nötig)"; } });
+  claude.use("downloads").then(d => { downloadsApi = d; });
+}
+
+/* ---------- KI ---------- */
+const BASE = `Du bist ein erfahrener Robotik-Ingenieur und 3D-Konstrukteur und hilfst Hobby-Bastlern (auch Anfängern). Antworte immer auf Deutsch.
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt (kein Markdown, kein Text drumherum).`;
+
+const PARTS3D_SPEC = `"parts3d": [{
+  "name": "z.B. Chassis-Platte",
+  "purpose": "wofür das Teil ist und wie es montiert wird",
+  "material": "PLA", "infill": "20%", "layer": "0.2 mm", "supports": false,
+  "filament_g": 35, "print_min": 90,
+  "shapes": [
+    {"type":"box","size":[120,90,3],"at":[0,0,0]},
+    {"type":"cyl","r":1.6,"h":3,"at":[10,10,0],"axis":"z","cut":true}
+  ]
+}]
+Regeln für shapes: Maße in mm. "box": "at" ist die untere linke vordere Ecke, "size" [x,y,z]. "cyl": "at" ist der Mittelpunkt der Grundfläche, "r" Radius, "h" Länge entlang "axis" ("x","y" oder "z"). "cut": true schneidet das Volumen aus (Löcher, Aussparungen) – Schnitte wirken auf alle festen Formen. Jedes Teil liegt flach auf z=0 und ist druckbar ohne oder mit wenig Stützmaterial. Schraublöcher M3 = r 1.6, Wandstärke mind. 2 mm. Maße müssen exakt zu den gekauften Teilen passen (Motoren, Sensoren, Platinen-Lochabstände). Jedes Teil passt auf ein 200×200 mm Druckbett. 2 bis 5 Teile, jedes max. ca. 30 Formen.`;
+
+const FULL_SPEC = `Format:
 {
   "name": "kurzer Name des Roboters",
   "summary": "2-4 Sätze, was der Roboter kann und wie er funktioniert",
-  "svg": "<svg viewBox='0 0 400 300' xmlns='http://www.w3.org/2000/svg'>…</svg> – eine schöne, farbige Zeichnung des Roboters mit Beschriftungen der wichtigsten Teile",
+  "svg": "<svg viewBox='0 0 400 300' xmlns='http://www.w3.org/2000/svg'>…</svg> – farbige Zeichnung des Roboters mit Beschriftungen",
   "parts": [{"name":"Teil","qty":1,"price_eur":4.5,"note":"kurzer Hinweis"}],
   "tools": ["Lötkolben", "..."],
+  "wiring": ["Motor links IN1 -> Pin 5", "..."],
   "steps": ["Schritt 1 …", "..."],
+  "print_guide": ["Tipps zum Drucken der 3D-Teile …"],
+  "tips": ["Fehlersuche / Sicherheit …"],
   "language": "z.B. Arduino C++",
   "filename": "z.B. roboter.ino",
   "code": "vollständiger, lauffähiger, gut kommentierter Code mit Pin-Belegung oben"
 }
-price_eur ist der Stückpreis in Euro (realistische Preise 2026). Der Code muss zu den Teilen und der Pin-Belegung in der Bauanleitung passen.`;
+price_eur ist der Stückpreis in Euro (realistische Preise). Code, Verkabelung und Bauanleitung müssen zusammenpassen. Die Bauanleitung erwähnt, wann welches 3D-Druckteil montiert wird.`;
 
-async function ask(messages, maxTokens = 16000) {
+async function askText(prompt) {
+  if (sampleApi) return (await sampleApi(prompt, { modelTier: "complex" })).text;
   const key = $("key").value.trim();
-  if (!key) throw new Error("Bitte zuerst den API-Schlüssel eingeben.");
+  if (!key) throw new Error("Bitte zuerst den API-Schlüssel eingeben – oder den Demo-Roboter laden.");
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": key,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true"
-    },
-    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system: SYSTEM, messages })
+    headers: { "content-type":"application/json", "x-api-key":key, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" },
+    body: JSON.stringify({ model: MODEL, max_tokens: 32000, messages: [{ role: "user", content: prompt }] })
   });
   const data = await r.json();
   if (!r.ok) throw new Error(data.error?.message || ("Fehler " + r.status));
-  const text = data.content.filter(b => b.type === "text").map(b => b.text).join("");
-  const start = text.indexOf("{"), end = text.lastIndexOf("}");
-  return JSON.parse(text.slice(start, end + 1));
+  return data.content.filter(b => b.type === "text").map(b => b.text).join("");
 }
+async function askJson(prompt) {
+  const text = await askText(BASE + "\n\n" + prompt);
+  const s = text.indexOf("{"), e = text.lastIndexOf("}");
+  if (s < 0) throw new Error("Die KI hat keine gültige Antwort geliefert. Bitte nochmal versuchen.");
+  return JSON.parse(text.slice(s, e + 1));
+}
+const slim = r => { const { svg, ...rest } = r; return rest; };
 
 function status(msg, cls = "") { $("status").textContent = msg; $("status").className = cls; }
-const eur = n => (Number(n) || 0).toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+const eur = n => (Number(n) || 0).toLocaleString("de-DE", { style:"currency", currency:"EUR" });
 
+/* ---------- Anzeige ---------- */
 function cleanSvg(svg) {
   const doc = new DOMParser().parseFromString(svg || "", "image/svg+xml");
   const el = doc.documentElement;
   if (el.nodeName !== "svg") return "<p style='color:#333'>Keine Zeichnung erhalten.</p>";
   el.querySelectorAll("script, foreignObject").forEach(n => n.remove());
-  el.querySelectorAll("*").forEach(n => [...n.attributes].forEach(a => { if (/^on/i.test(a.name)) n.removeAttribute(a.name); }));
+  el.querySelectorAll("*").forEach(n => [...n.attributes].forEach(a => { if (/^on/i.test(a.name) || /javascript:/i.test(a.value)) n.removeAttribute(a.name); }));
   return new XMLSerializer().serializeToString(el);
 }
+function list(el, items, ordered) {
+  el.innerHTML = "";
+  (items || []).forEach(s => { const li = document.createElement("li"); li.textContent = s; el.appendChild(li); });
+}
+function filamentCost(r) { return (r.parts3d || []).reduce((a, p) => a + (p.filament_g || 0), 0) * 0.025; }
 
 function render(r) {
   current = r;
@@ -155,22 +241,237 @@ function render(r) {
   $("rsum").textContent = r.summary || "";
   $("design").innerHTML = cleanSvg(r.svg);
   const tb = $("parts"); tb.innerHTML = ""; let sum = 0;
-  (r.parts || []).forEach(p => {
-    const line = (p.qty || 1) * (p.price_eur || 0); sum += line;
+  const addRow = (name, qty, price) => {
     const tr = document.createElement("tr");
     tr.innerHTML = "<td></td><td class='num'></td><td class='num'></td>";
-    tr.children[0].textContent = p.name + (p.note ? " – " + p.note : "");
-    tr.children[1].textContent = p.qty || 1;
-    tr.children[2].textContent = eur(line);
-    tb.appendChild(tr);
-  });
+    tr.children[0].textContent = name; tr.children[1].textContent = qty; tr.children[2].textContent = eur(price);
+    tb.appendChild(tr); sum += price;
+  };
+  (r.parts || []).forEach(p => addRow(p.name + (p.note ? " – " + p.note : ""), p.qty || 1, (p.qty || 1) * (p.price_eur || 0)));
+  const fc = filamentCost(r);
+  if (fc) addRow("3D-Druck-Filament (" + (r.parts3d || []).reduce((a, p) => a + (p.filament_g || 0), 0) + " g PLA)", 1, fc);
   $("total").textContent = eur(sum);
   $("tools").textContent = (r.tools || []).join(", ");
-  $("steps").innerHTML = "";
-  (r.steps || []).forEach(s => { const li = document.createElement("li"); li.textContent = s; $("steps").appendChild(li); });
   $("lang").textContent = r.language ? "(" + r.language + ")" : "";
   $("code").value = r.code || "";
+  renderGuide(r);
+  render3dList(r);
   $("result").classList.remove("hidden");
+}
+
+function guideMarkdown(r) {
+  const L = [];
+  L.push("# " + (r.name || "Roboter") + " – Bauanleitung", "", r.summary || "", "");
+  L.push("## Einkaufsliste");
+  (r.parts || []).forEach(p => L.push(`- ${p.qty || 1}× ${p.name} (${eur((p.qty || 1) * (p.price_eur || 0))})${p.note ? " – " + p.note : ""}`));
+  L.push("", "**Werkzeug:** " + (r.tools || []).join(", "), "");
+  if (r.parts3d?.length) {
+    L.push("## 3D-Druckteile");
+    r.parts3d.forEach(p => L.push(`- **${p.name}** – ${p.purpose || ""} (${p.material || "PLA"}, Infill ${p.infill || "20%"}, Schicht ${p.layer || "0.2 mm"}, Stützmaterial: ${p.supports ? "ja" : "nein"}, ca. ${p.filament_g || "?"} g, ca. ${p.print_min || "?"} min)`));
+    (r.print_guide || []).forEach(s => L.push("- " + s));
+    L.push("");
+  }
+  if (r.wiring?.length) { L.push("## Verkabelung"); r.wiring.forEach(s => L.push("- " + s)); L.push(""); }
+  L.push("## Zusammenbau"); (r.steps || []).forEach((s, i) => L.push(`${i + 1}. ${s}`)); L.push("");
+  L.push("## Code hochladen", `Datei: ${r.filename || "roboter.txt"} (${r.language || ""}). Code aus dem Tab „Code“ kopieren oder herunterladen.`, "");
+  if (r.tips?.length) { L.push("## Tipps & Fehlersuche"); r.tips.forEach(s => L.push("- " + s)); }
+  return L.join("\n");
+}
+function renderGuide(r) {
+  const g = $("guide"); g.innerHTML = "";
+  const sec = (title, items, ordered) => {
+    if (!items?.length) return;
+    const h = document.createElement("h3"); h.textContent = title; g.appendChild(h);
+    const l = document.createElement(ordered ? "ol" : "ul"); list(l, items); g.appendChild(l);
+  };
+  sec("Einkaufsliste", (r.parts || []).map(p => `${p.qty || 1}× ${p.name}`));
+  sec("3D-Druckteile drucken", [
+    ...(r.parts3d || []).map(p => `${p.name}: ${p.material || "PLA"}, Infill ${p.infill || "20%"}, Schicht ${p.layer || "0.2 mm"}, Stützmaterial ${p.supports ? "ja" : "nein"}, ca. ${p.print_min || "?"} min – ${p.purpose || ""}`),
+    ...(r.print_guide || [])]);
+  sec("Verkabelung", r.wiring);
+  sec("Zusammenbau", r.steps, true);
+  sec("Tipps & Fehlersuche", r.tips);
+}
+
+/* ---------- 3D: Voxel-CSG → STL ---------- */
+function inside(s, x, y, z) {
+  const a = s.at || [0, 0, 0];
+  if (s.type === "box") { const q = s.size; return x >= a[0] && x <= a[0] + q[0] && y >= a[1] && y <= a[1] + q[1] && z >= a[2] && z <= a[2] + q[2]; }
+  const ax = s.axis || "z"; let u, v, w;
+  if (ax === "x") { w = x - a[0]; u = y - a[1]; v = z - a[2]; }
+  else if (ax === "y") { w = y - a[1]; u = x - a[0]; v = z - a[2]; }
+  else { w = z - a[2]; u = x - a[0]; v = y - a[1]; }
+  const r = s.r1 != null ? s.r1 + (s.r2 - s.r1) * (w / s.h) : s.r;
+  return w >= 0 && w <= s.h && u * u + v * v <= r * r;
+}
+function bounds(s) {
+  const a = s.at || [0, 0, 0];
+  if (s.type === "box") return [a, [a[0] + s.size[0], a[1] + s.size[1], a[2] + s.size[2]]];
+  const r = Math.max(s.r || 0, s.r1 || 0, s.r2 || 0), i = { x: 0, y: 1, z: 2 }[s.axis || "z"];
+  const lo = a.map((c, k) => k === i ? c : c - r), hi = a.map((c, k) => k === i ? c + s.h : c + r);
+  return [lo, hi];
+}
+function buildMesh(part) {
+  const solids = part.shapes.filter(s => !s.cut), cuts = part.shapes.filter(s => s.cut);
+  if (!solids.length) return new Float32Array(0);
+  const lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+  solids.forEach(s => { const [a, b] = bounds(s); for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], a[k]); hi[k] = Math.max(hi[k], b[k]); } });
+  let res = 0.4; const vol = (hi[0] - lo[0]) * (hi[1] - lo[1]) * (hi[2] - lo[2]);
+  while (vol / res ** 3 > 4e6) res *= 1.25;
+  const N = [0, 1, 2].map(k => Math.max(1, Math.round((hi[k] - lo[k]) / res)));
+  const [nx, ny, nz] = N, grid = new Uint8Array(nx * ny * nz);
+  const sb = solids.map(bounds), cb = cuts.map(bounds);
+  for (let k = 0; k < nz; k++) { const z = lo[2] + (k + .5) * res;
+    for (let j = 0; j < ny; j++) { const y = lo[1] + (j + .5) * res;
+      for (let i = 0; i < nx; i++) { const x = lo[0] + (i + .5) * res;
+        let on = false;
+        for (let n = 0; n < solids.length && !on; n++) { const b = sb[n]; if (x >= b[0][0] && x <= b[1][0] && y >= b[0][1] && y <= b[1][1] && z >= b[0][2] && z <= b[1][2] && inside(solids[n], x, y, z)) on = true; }
+        for (let n = 0; n < cuts.length && on; n++) { const b = cb[n]; if (x >= b[0][0] && x <= b[1][0] && y >= b[0][1] && y <= b[1][1] && z >= b[0][2] && z <= b[1][2] && inside(cuts[n], x, y, z)) on = false; }
+        grid[i + nx * (j + ny * k)] = on ? 1 : 0;
+  } } }
+  const get = (p) => p[0] >= 0 && p[1] >= 0 && p[2] >= 0 && p[0] < nx && p[1] < ny && p[2] < nz && grid[p[0] + nx * (p[1] + ny * p[2])];
+  const tris = [];
+  // Greedy-Meshing: pro Richtung und Schicht Flächen zu großen Rechtecken zusammenfassen
+  for (let d = 0; d < 3; d++) {
+    const u = (d + 1) % 3, v = (d + 2) % 3;
+    for (const sgn of [1, -1]) {
+      const mask = new Uint8Array(N[u] * N[v]);
+      for (let s = 0; s < N[d]; s++) {
+        const p = [0, 0, 0], q = [0, 0, 0];
+        for (let b = 0; b < N[v]; b++) for (let a = 0; a < N[u]; a++) {
+          p[d] = s; p[u] = a; p[v] = b; q[d] = s + sgn; q[u] = a; q[v] = b;
+          mask[a + b * N[u]] = get(p) && !get(q) ? 1 : 0;
+        }
+        for (let b = 0; b < N[v]; b++) for (let a = 0; a < N[u];) {
+          if (!mask[a + b * N[u]]) { a++; continue; }
+          let w = 1; while (a + w < N[u] && mask[a + w + b * N[u]]) w++;
+          let h = 1; outer: for (; b + h < N[v]; h++) for (let t = 0; t < w; t++) if (!mask[a + t + (b + h) * N[u]]) break outer;
+          for (let hh = 0; hh < h; hh++) for (let t = 0; t < w; t++) mask[a + t + (b + hh) * N[u]] = 0;
+          const plane = lo[d] + (s + (sgn > 0 ? 1 : 0)) * res;
+          const c = (aa, bb) => { const o = [0, 0, 0]; o[d] = plane; o[u] = lo[u] + aa * res; o[v] = lo[v] + bb * res; return o; };
+          const A = c(a, b), B = c(a + w, b), C = c(a + w, b + h), D = c(a, b + h);
+          if (sgn > 0) tris.push(A, B, C, A, C, D); else tris.push(A, C, B, A, D, C);
+          a += w;
+        }
+      }
+    }
+  }
+  const out = new Float32Array(tris.length * 3);
+  tris.forEach((t, i) => out.set(t, i * 3));
+  return out;
+}
+function toStl(pos, name) {
+  const n = pos.length / 9, buf = new ArrayBuffer(84 + n * 50), dv = new DataView(buf);
+  const hdr = ("KI Roboter-Designer: " + name).slice(0, 80);
+  for (let i = 0; i < hdr.length; i++) dv.setUint8(i, hdr.charCodeAt(i) & 127);
+  dv.setUint32(80, n, true);
+  for (let t = 0; t < n; t++) {
+    const o = 84 + t * 50, p = pos.subarray(t * 9, t * 9 + 9);
+    const ux = p[3] - p[0], uy = p[4] - p[1], uz = p[5] - p[2], vx = p[6] - p[0], vy = p[7] - p[1], vz = p[8] - p[2];
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; const l = Math.hypot(nx, ny, nz) || 1;
+    dv.setFloat32(o, nx / l, true); dv.setFloat32(o + 4, ny / l, true); dv.setFloat32(o + 8, nz / l, true);
+    for (let k = 0; k < 9; k++) dv.setFloat32(o + 12 + k * 4, p[k], true);
+  }
+  return buf;
+}
+function toScad(part) {
+  const f = s => {
+    const a = s.at || [0, 0, 0];
+    if (s.type === "box") return `translate([${a}]) cube([${s.size}]);`;
+    const rot = { x: "rotate([0,90,0])", y: "rotate([-90,0,0])", z: "" }[s.axis || "z"];
+    const r = s.r1 != null ? `r1=${s.r1}, r2=${s.r2}` : `r=${s.r}`;
+    return `translate([${a}]) ${rot} cylinder(h=${s.h}, ${r});`;
+  };
+  const sol = part.shapes.filter(s => !s.cut).map(f), cut = part.shapes.filter(s => s.cut).map(f);
+  return `// ${part.name} – erstellt mit dem KI Roboter-Designer\n// ${part.purpose || ""}\n$fn = 64;\n\ndifference() {\n  union() {\n    ${sol.join("\n    ")}\n  }\n  ${cut.join("\n  ")}\n}\n`;
+}
+const meshCache = new Map();
+function meshOf(part) { if (!meshCache.has(part)) meshCache.set(part, buildMesh(part)); return meshCache.get(part); }
+const fileBase = s => (s || "teil").toLowerCase().replace(/[äöüß]/g, c => ({ ä:"ae", ö:"oe", ü:"ue", ß:"ss" })[c]).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+function render3dList(r) {
+  const box = $("p3d"); box.innerHTML = "";
+  const ps = r.parts3d || [];
+  if (!ps.length) { box.innerHTML = "<p class='muted'>Noch keine 3D-Teile. Klicke unten, damit die KI welche konstruiert.</p>"; viewer.set(null); return; }
+  if (sel3d >= ps.length) sel3d = 0;
+  ps.forEach((p, i) => {
+    const d = document.createElement("div"); d.className = "part" + (i === sel3d ? " on" : "");
+    const b = document.createElement("b"); b.textContent = "▸ " + p.name; b.onclick = () => { sel3d = i; render3dList(r); };
+    const t = document.createElement("div"); t.className = "muted"; t.textContent = p.purpose || "";
+    const badges = document.createElement("div");
+    [p.material || "PLA", "Infill " + (p.infill || "20%"), p.supports ? "mit Stützen" : "ohne Stützen", "~" + (p.filament_g || "?") + " g", "~" + (p.print_min || "?") + " min"]
+      .forEach(x => { const s = document.createElement("span"); s.className = "badge"; s.textContent = x; badges.appendChild(s); });
+    const row = document.createElement("div"); row.className = "row";
+    const b1 = document.createElement("button"); b1.textContent = "STL herunterladen";
+    b1.onclick = () => save(fileBase(p.name) + ".stl", new Blob([toStl(meshOf(p), p.name)], { type: "model/stl" }));
+    const b2 = document.createElement("button"); b2.className = "sec"; b2.textContent = "OpenSCAD (.scad)";
+    b2.onclick = () => save(fileBase(p.name) + ".scad", new Blob([toScad(p)], { type: "text/plain" }));
+    row.append(b1, b2); d.append(b, t, badges, row); box.appendChild(d);
+  });
+  viewer.set(meshOf(ps[sel3d]));
+}
+
+/* ---------- 3D-Vorschau (WebGL) ---------- */
+const viewer = (() => {
+  const cv = $("viewer"), gl = cv.getContext("webgl");
+  let count = 0, rotX = -0.9, rotZ = 0.6, dist = 1, center = [0, 0, 0], size = 1, drag = null;
+  if (!gl) return { set() {} };
+  const sh = (t, src) => { const s = gl.createShader(t); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+  const prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, "attribute vec3 p;attribute vec3 n;uniform mat4 m;varying vec3 vn;void main(){vn=(m*vec4(n,0.)).xyz;gl_Position=m*vec4(p,1.);}"));
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, "precision mediump float;varying vec3 vn;void main(){float l=.35+.65*max(dot(normalize(vn),normalize(vec3(.4,.5,-.8))),0.);gl_FragColor=vec4(vec3(.16,.52,.95)*l+.05,1.);}"));
+  gl.linkProgram(prog); gl.useProgram(prog);
+  const pb = gl.createBuffer(), nb = gl.createBuffer();
+  const lp = gl.getAttribLocation(prog, "p"), ln = gl.getAttribLocation(prog, "n"), lm = gl.getUniformLocation(prog, "m");
+  function draw() {
+    const w = cv.clientWidth, h = cv.clientHeight, dpr = devicePixelRatio || 1;
+    if (cv.width !== w * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
+    gl.viewport(0, 0, cv.width, cv.height); gl.clearColor(.875, .9, .95, 1); gl.clear(16640); gl.enable(gl.DEPTH_TEST);
+    if (!count) return;
+    const cz = Math.cos(rotZ), sz = Math.sin(rotZ), cx = Math.cos(rotX), sx = Math.sin(rotX), s = 1.6 / (size * dist), asp = h / w;
+    // Rotation um Z, dann um X, Skalierung, orthografisch
+    const R = [cz, sz * cx, sz * sx, -sz, cz * cx, cz * sx, 0, -sx, cx];
+    const t = [0, 1, 2].map(i => -(center[0] * R[i] + center[1] * R[3 + i] + center[2] * R[6 + i]));
+    const m = [R[0] * s * asp, R[1] * s, -R[2] * s * .5, 0, R[3] * s * asp, R[4] * s, -R[5] * s * .5, 0, R[6] * s * asp, R[7] * s, -R[8] * s * .5, 0, t[0] * s * asp, t[1] * s, -t[2] * s * .5, 1];
+    gl.uniformMatrix4fv(lm, false, m); gl.drawArrays(gl.TRIANGLES, 0, count);
+  }
+  function set(pos) {
+    count = pos ? pos.length / 3 : 0;
+    if (count) {
+      const nrm = new Float32Array(pos.length), lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+      for (let t = 0; t < pos.length; t += 9) {
+        const ux = pos[t + 3] - pos[t], uy = pos[t + 4] - pos[t + 1], uz = pos[t + 5] - pos[t + 2], vx = pos[t + 6] - pos[t], vy = pos[t + 7] - pos[t + 1], vz = pos[t + 8] - pos[t + 2];
+        const n = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx], l = Math.hypot(...n) || 1;
+        for (let k = 0; k < 3; k++) { nrm.set(n.map(c => c / l), t + k * 3); for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], pos[t + k * 3 + a]); hi[a] = Math.max(hi[a], pos[t + k * 3 + a]); } }
+      }
+      center = lo.map((c, i) => (c + hi[i]) / 2); size = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]); dist = 1;
+      gl.bindBuffer(gl.ARRAY_BUFFER, pb); gl.bufferData(gl.ARRAY_BUFFER, pos, gl.STATIC_DRAW); gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp, 3, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, nb); gl.bufferData(gl.ARRAY_BUFFER, nrm, gl.STATIC_DRAW); gl.enableVertexAttribArray(ln); gl.vertexAttribPointer(ln, 3, gl.FLOAT, false, 0, 0);
+    }
+    draw();
+  }
+  cv.addEventListener("pointerdown", e => { drag = [e.clientX, e.clientY]; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener("pointermove", e => { if (!drag) return; rotZ += (e.clientX - drag[0]) * .01; rotX = Math.max(-3.1, Math.min(0, rotX + (e.clientY - drag[1]) * .01)); drag = [e.clientX, e.clientY]; draw(); });
+  cv.addEventListener("pointerup", () => drag = null);
+  cv.addEventListener("wheel", e => { e.preventDefault(); dist = Math.max(.2, Math.min(5, dist * (e.deltaY > 0 ? 1.1 : .9))); draw(); }, { passive: false });
+  addEventListener("resize", draw);
+  return { set, draw };
+})();
+
+/* ---------- Dateien speichern ---------- */
+async function save(name, blob) {
+  if (downloadsApi) { try { await downloadsApi.save({ filename: name, data: blob }); return; } catch (e) { if (e?.code === "declined") return; } }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/* ---------- Aktionen ---------- */
+async function gen3d(r) {
+  const p = await askJson(`Konstruiere die 3D-Druckteile für diesen Roboter (Gehäuse, Halterungen, Chassis – alles, was nicht gekauft wird).
+Roboter: ${JSON.stringify(slim(r))}
+Antworte mit {${PARTS3D_SPEC}, "print_guide": ["Drucktipps …"], "steps": ["aktualisierte Bauanleitung, die erwähnt wann welches Druckteil montiert wird …"]}`);
+  meshCache.clear();
+  return { ...r, parts3d: p.parts3d || [], print_guide: p.print_guide || r.print_guide, steps: p.steps?.length ? p.steps : r.steps };
 }
 
 $("go").onclick = async () => {
@@ -178,11 +479,22 @@ $("go").onclick = async () => {
   if (!desc) return status("Bitte beschreibe zuerst deinen Roboter.", "err");
   $("go").disabled = true; status("Die KI entwirft deinen Roboter… (kann 1–2 Minuten dauern)");
   try {
-    render(await ask([{ role: "user", content: `Plattform: ${$("platform").value}\n\nMein Roboter:\n${desc}` }]));
-    status("Fertig!", "ok");
-    $("result").scrollIntoView({ behavior: "smooth" });
+    let r = await askJson(`${FULL_SPEC}\n\nPlattform: ${$("platform").value}\n\nMein Roboter:\n${desc}`);
+    render(r); show("t-design");
+    if ($("want3d").checked) {
+      status("Entwurf fertig! Jetzt konstruiert die KI die 3D-Druckteile…");
+      r = await gen3d(r); render(r);
+    }
+    status("Fertig! Schau dir alle Tabs an – und probier den Roboter im Test-Labor aus.", "ok");
   } catch (e) { status(e.message, "err"); }
   $("go").disabled = false;
+};
+
+$("gen3d").onclick = async () => {
+  if (!current) return;
+  const b = $("gen3d"); b.disabled = true; b.textContent = "KI konstruiert…";
+  try { render(await gen3d({ ...current, code: $("code").value })); } catch (e) { alert(e.message); }
+  b.disabled = false; b.textContent = "3D-Teile von der KI (neu) konstruieren lassen";
 };
 
 $("fix").onclick = async () => {
@@ -190,12 +502,36 @@ $("fix").onclick = async () => {
   if (!current || !wish) return;
   $("fix").disabled = true; $("fix").textContent = "KI arbeitet…";
   try {
-    const updated = { ...current, code: $("code").value };
-    const r = await ask([{ role: "user", content:
-      `Hier ist der aktuelle Roboter als JSON (der Code wurde evtl. vom Benutzer bearbeitet):\n${JSON.stringify(updated)}\n\nÄnderungswunsch: ${wish}\n\nGib das komplette, aktualisierte JSON im selben Format zurück. Passe Teile, Schritte und Zeichnung nur an, wenn nötig.` }]);
-    render(r); $("change").value = "";
+    const cur = { ...current, code: $("code").value };
+    const r = await askJson(`Hier ist der aktuelle Roboter als JSON (der Code wurde evtl. vom Benutzer bearbeitet; die Zeichnung ist weggelassen):
+${JSON.stringify(slim(cur))}
+Änderungswunsch: ${wish}
+Gib ein JSON mit NUR den geänderten Feldern zurück (z.B. {"code": "...", "parts": [...]}). Mögliche Felder: name, summary, parts, tools, wiring, steps, tips, language, filename, code, svg, ${PARTS3D_SPEC.split(":")[0]}, print_guide.`);
+    if (r.parts3d) meshCache.clear();
+    render({ ...cur, ...r }); $("change").value = "";
   } catch (e) { alert(e.message); }
   $("fix").disabled = false; $("fix").textContent = "KI ändern lassen";
+};
+
+$("runtest").onclick = async () => {
+  if (!current) return;
+  const sc = $("scenario").value.trim() || "Normaler Start: Roboter wird eingeschaltet und läuft 20 Sekunden in einem Raum mit ein paar Hindernissen.";
+  $("runtest").disabled = true; $("teststatus").textContent = "Simulation läuft…"; $("serial").textContent = "…";
+  try {
+    const t = await askJson(`Simuliere Schritt für Schritt, was dieser Roboter-Code auf echter Hardware tun würde. Führe den Code gedanklich exakt aus (inkl. Bugs!), erfinde realistische Sensorwerte passend zur Test-Situation.
+Test-Situation: ${sc}
+Teile: ${JSON.stringify(current.parts)}
+Verkabelung: ${JSON.stringify(current.wiring || [])}
+Code (${current.language || ""}):
+${$("code").value}
+Antworte mit {"serial": "genaue Ausgabe des seriellen Monitors, Zeilen mit \\n getrennt, mit Zeitstempel [0.00s]", "behavior": "was der Roboter physisch macht, 2-5 Sätze", "checks": [{"ok": true, "text": "Prüfpunkt: Compiliert / Pins passen zur Verkabelung / Stromversorgung reicht / Logik erfüllt die Aufgabe / …"}]}`);
+    $("serial").textContent = t.serial || "(keine Ausgabe)";
+    $("behavior").textContent = t.behavior || "";
+    const ul = $("checks"); ul.innerHTML = "";
+    (t.checks || []).forEach(c => { const li = document.createElement("li"); li.className = c.ok ? "ok" : "warn"; li.textContent = (c.ok ? "✓ " : "⚠ ") + c.text; ul.appendChild(li); });
+    $("teststatus").textContent = "";
+  } catch (e) { $("teststatus").textContent = e.message; }
+  $("runtest").disabled = false;
 };
 
 $("copy").onclick = async () => {
@@ -203,19 +539,125 @@ $("copy").onclick = async () => {
   catch { $("code").select(); document.execCommand("copy"); }
   setTimeout(() => $("copy").textContent = "Kopieren", 1500);
 };
-
-$("dl").onclick = () => {
-  const blob = new Blob([$("code").value], { type: "text/plain" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = current?.filename || "roboter.txt";
-  a.click(); URL.revokeObjectURL(a.href);
-};
-
+$("dl").onclick = () => save(current?.filename || "roboter.txt", new Blob([$("code").value], { type: "text/plain" }));
+$("dlguide").onclick = () => current && save(fileBase(current.name) + "-anleitung.md", new Blob([guideMarkdown({ ...current, code: $("code").value })], { type: "text/markdown" }));
 $("code").addEventListener("keydown", e => {
-  if (e.key === "Tab") { e.preventDefault(); const t = e.target, s = t.selectionStart;
-    t.setRangeText("  ", s, t.selectionEnd, "end"); }
+  if (e.key === "Tab") { e.preventDefault(); const t = e.target; t.setRangeText("  ", t.selectionStart, t.selectionEnd, "end"); }
 });
+
+function show(id) {
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("hidden", t.id !== id));
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.t === id));
+  if (id === "t-3d") viewer.draw?.();
+}
+document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => show(b.dataset.t));
+
+/* ---------- Demo-Roboter (funktioniert ohne KI) ---------- */
+const DEMO = {
+  name: "Flitzi – der Hindernis-Ausweicher",
+  summary: "Ein zweirädriger Roboter mit Arduino Nano, der mit einem Ultraschallsensor Hindernisse erkennt und ihnen ausweicht. Das Chassis und die Halter kommen aus dem 3D-Drucker.",
+  svg: `<svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="12"><rect x="90" y="110" width="220" height="110" rx="14" fill="#4fb3ff" stroke="#1d5f99" stroke-width="3"/><rect x="60" y="150" width="30" height="70" rx="6" fill="#333"/><rect x="310" y="150" width="30" height="70" rx="6" fill="#333"/><rect x="150" y="70" width="100" height="40" rx="4" fill="#2d9d5f"/><circle cx="175" cy="90" r="14" fill="#ddd" stroke="#666"/><circle cx="225" cy="90" r="14" fill="#ddd" stroke="#666"/><rect x="160" y="140" width="80" height="30" fill="#1b7a3e"/><text x="170" y="160" fill="#fff">Arduino</text><rect x="150" y="180" width="100" height="26" fill="#f0c040"/><text x="165" y="198">4×AA Akku</text><text x="258" y="60">Ultraschall HC-SR04</text><text x="10" y="245">Getriebemotor + Rad</text><text x="250" y="245">Getriebemotor + Rad</text></svg>`,
+  parts: [
+    { name: "Arduino Nano (kompatibel)", qty: 1, price_eur: 6.5, note: "Gehirn des Roboters" },
+    { name: "L298N / MX1508 Motortreiber", qty: 1, price_eur: 2.5 },
+    { name: "TT-Getriebemotor mit Rad", qty: 2, price_eur: 3.5 },
+    { name: "HC-SR04 Ultraschallsensor", qty: 1, price_eur: 2.0 },
+    { name: "Kugelrolle (Caster)", qty: 1, price_eur: 1.5 },
+    { name: "4×AA Batteriehalter mit Schalter", qty: 1, price_eur: 2.0 },
+    { name: "Jumperkabel-Set", qty: 1, price_eur: 3.0 },
+    { name: "M3-Schrauben & Muttern Set", qty: 1, price_eur: 4.0 }
+  ],
+  tools: ["Kreuzschraubendreher", "3D-Drucker (oder Druckservice)", "USB-Kabel", "optional Lötkolben"],
+  wiring: ["Motortreiber IN1 → D5, IN2 → D6 (linker Motor)", "Motortreiber IN3 → D9, IN4 → D10 (rechter Motor)", "HC-SR04 TRIG → D2, ECHO → D3, VCC → 5V, GND → GND", "Batterie + → Motortreiber VCC und Arduino VIN, Batterie − → GND (gemeinsame Masse!)"],
+  steps: [
+    "Chassis-Platte, Sensor-Halter und Motor-Klemmen drucken (siehe 3D-Druckteile).",
+    "Die zwei TT-Motoren mit den Motor-Klemmen und M3-Schrauben unter die Chassis-Platte schrauben.",
+    "Kugelrolle vorne in die zwei Löcher an der Spitze der Platte schrauben.",
+    "Ultraschallsensor in den Sensor-Halter stecken und den Halter vorne auf die Platte schrauben.",
+    "Arduino, Motortreiber und Batteriehalter auf der Platte befestigen (Klettband oder Schrauben).",
+    "Alles laut Verkabelung verbinden. Gemeinsame Masse nicht vergessen!",
+    "Code hochladen, Räder anstecken, Schalter an – fertig."
+  ],
+  print_guide: ["Alle Teile in PLA, 0.2 mm Schichthöhe, 20 % Infill.", "Chassis-Platte flach drucken – keine Stützen nötig.", "Löcher mit einem 3-mm-Bohrer nacharbeiten, falls sie zu eng sind."],
+  tips: ["Dreht sich der Roboter im Kreis? Dann die Kabel eines Motors tauschen.", "Misst der Sensor immer 0? TRIG und ECHO vertauscht?", "Schwache Batterien lassen den Arduino neu starten – frische Akkus verwenden."],
+  language: "Arduino C++", filename: "flitzi.ino",
+  code: `// Flitzi – Hindernis-Ausweicher
+// Pin-Belegung
+const int IN1 = 5, IN2 = 6;    // linker Motor
+const int IN3 = 9, IN4 = 10;   // rechter Motor
+const int TRIG = 2, ECHO = 3;  // Ultraschall
+const int SPEED = 180;         // 0..255
+const int ABSTAND_CM = 20;     // ab hier ausweichen
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
+  pinMode(TRIG, OUTPUT); pinMode(ECHO, INPUT);
+  Serial.println("Flitzi startet!");
+}
+
+long messeAbstand() {
+  digitalWrite(TRIG, LOW); delayMicroseconds(2);
+  digitalWrite(TRIG, HIGH); delayMicroseconds(10);
+  digitalWrite(TRIG, LOW);
+  long dauer = pulseIn(ECHO, HIGH, 30000);
+  return dauer == 0 ? 999 : dauer / 58;
+}
+
+void fahre(int links, int rechts) {
+  analogWrite(IN1, links > 0 ? links : 0);  analogWrite(IN2, links < 0 ? -links : 0);
+  analogWrite(IN3, rechts > 0 ? rechts : 0); analogWrite(IN4, rechts < 0 ? -rechts : 0);
+}
+
+void loop() {
+  long cm = messeAbstand();
+  Serial.print("Abstand: "); Serial.print(cm); Serial.println(" cm");
+  if (cm < ABSTAND_CM) {
+    Serial.println("Hindernis! Weiche aus...");
+    fahre(-SPEED, -SPEED); delay(300);   // kurz zurück
+    fahre(SPEED, -SPEED);  delay(400);   // nach rechts drehen
+  } else {
+    fahre(SPEED, SPEED);                 // geradeaus
+  }
+  delay(60);
+}
+`,
+  parts3d: [
+    { name: "Chassis-Platte", purpose: "Grundplatte, trägt alles. Motoren unten, Elektronik oben.", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 38, print_min: 110,
+      shapes: [
+        { type: "box", size: [130, 90, 3], at: [0, 0, 0] },
+        { type: "cyl", r: 1.6, h: 3, at: [30, 10, 0], cut: true }, { type: "cyl", r: 1.6, h: 3, at: [50, 10, 0], cut: true },
+        { type: "cyl", r: 1.6, h: 3, at: [30, 80, 0], cut: true }, { type: "cyl", r: 1.6, h: 3, at: [50, 80, 0], cut: true },
+        { type: "cyl", r: 1.6, h: 3, at: [118, 38, 0], cut: true }, { type: "cyl", r: 1.6, h: 3, at: [118, 52, 0], cut: true },
+        { type: "cyl", r: 1.6, h: 3, at: [123, 35, 0], cut: true }, { type: "cyl", r: 1.6, h: 3, at: [123, 55, 0], cut: true },
+        { type: "box", size: [30, 12, 3], at: [65, 39, 0], cut: true },
+        { type: "cyl", r: 4, h: 3, at: [85, 20, 0], cut: true }, { type: "cyl", r: 4, h: 3, at: [85, 70, 0], cut: true }
+      ] },
+    { name: "Sensor-Halter", purpose: "Hält den HC-SR04 vorne aufrecht; wird mit 2 M3-Schrauben an die Platte geschraubt.", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 9, print_min: 35,
+      shapes: [
+        { type: "box", size: [50, 16, 3], at: [0, 0, 0] },
+        { type: "box", size: [50, 3, 26], at: [0, 13, 0] },
+        { type: "cyl", r: 8.3, h: 3, at: [12, 13, 14], axis: "y", cut: true },
+        { type: "cyl", r: 8.3, h: 3, at: [38, 13, 14], axis: "y", cut: true },
+        { type: "cyl", r: 1.6, h: 3, at: [5, 6, 0], cut: true }, { type: "cyl", r: 1.6, h: 3, at: [45, 6, 0], cut: true }
+      ] },
+    { name: "Motor-Klemme", purpose: "2× drucken. Klemmt je einen TT-Motor unter die Chassis-Platte.", material: "PLA", infill: "30%", layer: "0.2 mm", supports: false, filament_g: 6, print_min: 25,
+      shapes: [
+        { type: "box", size: [30, 26, 3], at: [0, 0, 0] },
+        { type: "box", size: [30, 3, 22], at: [0, 0, 0] }, { type: "box", size: [30, 3, 22], at: [0, 23, 0] },
+        { type: "cyl", r: 1.6, h: 3, at: [5, 1.5, 11], axis: "y", cut: true },
+        { type: "cyl", r: 1.6, h: 3, at: [25, 1.5, 11], axis: "y", cut: true }
+      ] }
+  ]
+};
+$("demo").onclick = () => {
+  meshCache.clear(); sel3d = 0;
+  render(JSON.parse(JSON.stringify(DEMO)));
+  $("scenario").value = "Ein Hindernis taucht 15 cm vor dem Roboter auf";
+  status("Demo-Roboter geladen – schau dir die 3D-Teile an. Für Test-Labor und eigene Entwürfe braucht es die KI.", "ok");
+  show("t-design");
+};
 </script>
 </body>
 </html>
