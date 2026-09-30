@@ -11,4 +11,5 @@ Einen Anthropic API-Key eingeben (console.anthropic.com) – er wird nur lokal i
 - **3D-Druckteile:** Die KI konstruiert passende Teile (Chassis, Halter …). Vorschau im Browser, Download als **STL** (direkt in den Slicer) oder **.scad** (in OpenSCAD genau anpassen).
 - **Anleitung:** Einkaufsliste, Druckeinstellungen, Verkabelung, Zusammenbau, Tipps – als .md herunterladbar.
 - **Test-Labor:** Die KI simuliert den Code in einer Test-Situation (serieller Monitor, Verhalten, Prüfung von Pins/Strom/Logik).
+- **Elegoo-Drucker:** Neptune 4 / 4 Plus / 4 Max / 3 Pro, Centauri Carbon (ElegooSlicer) sowie Mars 5 / Saturn 4 Resin (CHITUBOX). Die KI konstruiert passend zum Bauraum, jedes Teil zeigt an, ob es aufs Druckbett passt.
 - **Demo-Roboter:** Funktioniert ganz ohne KI/Schlüssel zum Ausprobieren.
