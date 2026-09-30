@@ -74,6 +74,7 @@
         <option value="n4plus">Elegoo Neptune 4 Plus (320×320×385)</option>
         <option value="n4max">Elegoo Neptune 4 Max (420×420×480)</option>
         <option value="n3pro">Elegoo Neptune 3 Pro (225×225×280)</option>
+        <option value="cc2">Elegoo Centauri Carbon 2 + CANVAS – 4 Farben (256×256×256)</option>
         <option value="cc">Elegoo Centauri Carbon (256×256×256)</option>
         <option value="mars5">Elegoo Mars 5 Ultra – Resin (153×77×165)</option>
         <option value="saturn4">Elegoo Saturn 4 Ultra – Resin (218×123×220)</option>
@@ -185,6 +186,7 @@ const PRINTERS = {
   n4plus: { name: "Elegoo Neptune 4 Plus", bed: [320, 320, 385], resin: false },
   n4max: { name: "Elegoo Neptune 4 Max", bed: [420, 420, 480], resin: false },
   n3pro: { name: "Elegoo Neptune 3 Pro", bed: [225, 225, 280], resin: false },
+  cc2: { name: "Elegoo Centauri Carbon 2 (CANVAS, 4 Farben)", bed: [256, 256, 256], resin: false, colors: 4 },
   cc: { name: "Elegoo Centauri Carbon", bed: [256, 256, 256], resin: false },
   mars5: { name: "Elegoo Mars 5 Ultra (Resin)", bed: [153, 77, 165], resin: true },
   saturn4: { name: "Elegoo Saturn 4 Ultra (Resin)", bed: [218, 123, 220], resin: true },
@@ -196,7 +198,7 @@ function printerRule() {
   return `Zieldrucker: ${p.name}, Bauraum ${b[0]}×${b[1]}×${b[2]} mm – jedes Teil MUSS da hineinpassen (mit 5 mm Rand), sonst in mehrere Teile aufteilen. ` +
     (p.resin
       ? `Resin-Drucker (MSLA): "material" z.B. "Elegoo ABS-Like Resin", "infill" = "hohl, 2 mm Wand" oder "massiv", "layer" = "0.05 mm", "supports" meist true. Tipps für CHITUBOX / VoxelDance Tango (Elegoo-Slicer für Resin): Belichtungszeit, Waschen in IPA, Nachhärten. Kleine, präzise Teile bevorzugen.`
-      : `FDM-Drucker: Einstellungen für ElegooSlicer (bzw. OrcaSlicer/Cura) angeben – z.B. PLA 210 °C Düse / 60 °C Bett, 0.4 mm Düse.`);
+      : (p.colors ? `MEHRFARBIG: Der Drucker kann bis zu ${p.colors} Farben in einem Teil drucken (CANVAS-System). Gib jedem Teil "colors": ["Weiß", "Schwarz", "Rot", …] (max. ${p.colors}, Filamentfarben) und jeder festen Form "color": 1..${p.colors} (Index in "colors", Standard 1). Nutze das sinnvoll: z.B. Augen, Logo, Beschriftungen, farbige Akzente – Farbflächen mind. 0.6 mm dick. In print_guide erklären: in ElegooSlicer alle STL-Dateien eines Teils gleichzeitig laden, als EIN Objekt mit mehreren Teilen übernehmen und jedem Teil den CANVAS-Slot zuweisen. ` : "") + `FDM-Drucker: Einstellungen für ElegooSlicer (bzw. OrcaSlicer/Cura) angeben – z.B. PLA 210 °C Düse / 60 °C Bett, 0.4 mm Düse.`);
 }
 function fitsBed(part) {
   const lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
@@ -349,7 +351,7 @@ function bounds(s) {
   const lo = a.map((c, k) => k === i ? c : c - r), hi = a.map((c, k) => k === i ? c + s.h : c + r);
   return [lo, hi];
 }
-function buildMesh(part) {
+function buildMesh(part, color) {
   const solids = part.shapes.filter(s => !s.cut), cuts = part.shapes.filter(s => s.cut);
   if (!solids.length) return new Float32Array(0);
   const lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
@@ -363,7 +365,7 @@ function buildMesh(part) {
     for (let j = 0; j < ny; j++) { const y = lo[1] + (j + .5) * res;
       for (let i = 0; i < nx; i++) { const x = lo[0] + (i + .5) * res;
         let on = false;
-        for (let n = 0; n < solids.length && !on; n++) { const b = sb[n]; if (x >= b[0][0] && x <= b[1][0] && y >= b[0][1] && y <= b[1][1] && z >= b[0][2] && z <= b[1][2] && inside(solids[n], x, y, z)) on = true; }
+        for (let n = 0; n < solids.length && !on; n++) { const b = sb[n]; if (x >= b[0][0] && x <= b[1][0] && y >= b[0][1] && y <= b[1][1] && z >= b[0][2] && z <= b[1][2] && inside(solids[n], x, y, z)) { on = !color || (solids[n].color || 1) === color; break; } }
         for (let n = 0; n < cuts.length && on; n++) { const b = cb[n]; if (x >= b[0][0] && x <= b[1][0] && y >= b[0][1] && y <= b[1][1] && z >= b[0][2] && z <= b[1][2] && inside(cuts[n], x, y, z)) on = false; }
         grid[i + nx * (j + ny * k)] = on ? 1 : 0;
   } } }
@@ -415,16 +417,30 @@ function toStl(pos, name) {
 function toScad(part) {
   const f = s => {
     const a = s.at || [0, 0, 0];
+    const c = colorsOf(part) ? `color("${({weiß:"white",schwarz:"black",rot:"red",blau:"blue",grün:"green",gelb:"yellow",orange:"orange",grau:"gray"})[(part.colors[(s.color || 1) - 1] || "").toLowerCase()] || "gray"}") ` : "";
+    return c + g();
+    function g() {
     if (s.type === "box") return `translate([${a}]) cube([${s.size}]);`;
     const rot = { x: "rotate([0,90,0])", y: "rotate([-90,0,0])", z: "" }[s.axis || "z"];
     const r = s.r1 != null ? `r1=${s.r1}, r2=${s.r2}` : `r=${s.r}`;
     return `translate([${a}]) ${rot} cylinder(h=${s.h}, ${r});`;
+    }
   };
   const sol = part.shapes.filter(s => !s.cut).map(f), cut = part.shapes.filter(s => s.cut).map(f);
   return `// ${part.name} – erstellt mit dem KI Roboter-Designer\n// ${part.purpose || ""}\n$fn = 64;\n\ndifference() {\n  union() {\n    ${sol.join("\n    ")}\n  }\n  ${cut.join("\n  ")}\n}\n`;
 }
 const meshCache = new Map();
-function meshOf(part) { if (!meshCache.has(part)) meshCache.set(part, buildMesh(part)); return meshCache.get(part); }
+function meshOf(part, color) { const k = part.name + "|" + (color || 0) + "|" + JSON.stringify(part.shapes);
+  if (!meshCache.has(k)) meshCache.set(k, buildMesh(part, color)); return meshCache.get(k); }
+const colorsOf = p => (printer().colors && p.colors && p.colors.length > 1) ? p.colors.slice(0, printer().colors) : null;
+const PALETTE = { weiß:[.93,.93,.93], weiss:[.93,.93,.93], schwarz:[.12,.12,.14], rot:[.85,.15,.15], blau:[.16,.45,.9], grün:[.2,.7,.3], gruen:[.2,.7,.3], gelb:[.95,.8,.15], orange:[.95,.5,.1], grau:[.55,.57,.6], silber:[.75,.76,.8], lila:[.55,.3,.8], pink:[.95,.45,.7], braun:[.5,.32,.18] };
+const DEFAULT_COLS = [[.16,.52,.95],[.95,.5,.1],[.2,.7,.3],[.85,.15,.15]];
+const rgbOf = (name, i) => PALETTE[(name || "").toLowerCase().split(/\s/)[0]] || DEFAULT_COLS[i % 4];
+function previewOf(p) {
+  const cs = colorsOf(p);
+  if (!cs) return [[meshOf(p), DEFAULT_COLS[0]]];
+  return cs.map((c, i) => [meshOf(p, i + 1), rgbOf(c, i)]);
+}
 const fileBase = s => (s || "teil").toLowerCase().replace(/[äöüß]/g, c => ({ ä:"ae", ö:"oe", ü:"ue", ß:"ss" })[c]).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 function render3dList(r) {
@@ -445,9 +461,15 @@ function render3dList(r) {
     b1.onclick = () => save(fileBase(p.name) + ".stl", new Blob([toStl(meshOf(p), p.name)], { type: "model/stl" }));
     const b2 = document.createElement("button"); b2.className = "sec"; b2.textContent = "OpenSCAD (.scad)";
     b2.onclick = () => save(fileBase(p.name) + ".scad", new Blob([toScad(p)], { type: "text/plain" }));
+    const cs = colorsOf(p);
+    if (cs) {
+      b1.textContent = "STL je Farbe (" + cs.length + " Dateien)";
+      b1.onclick = async () => { for (let i = 0; i < cs.length; i++) await save(fileBase(p.name) + "-farbe" + (i + 1) + "-" + fileBase(cs[i]) + ".stl", new Blob([toStl(meshOf(p, i + 1), p.name + " " + cs[i])], { type: "model/stl" })); };
+      const s = document.createElement("span"); s.className = "badge"; s.textContent = "Farben: " + cs.map((c, i) => (i + 1) + "=" + c).join(", "); badges.appendChild(s);
+    }
     row.append(b1, b2); d.append(b, t, badges, row); box.appendChild(d);
   });
-  viewer.set(meshOf(ps[sel3d]));
+  viewer.set(previewOf(ps[sel3d]));
 }
 
 /* ---------- 3D-Vorschau (WebGL) ---------- */
@@ -457,10 +479,10 @@ const viewer = (() => {
   if (!gl) return { set() {} };
   const sh = (t, src) => { const s = gl.createShader(t); gl.shaderSource(s, src); gl.compileShader(s); return s; };
   const prog = gl.createProgram();
-  gl.attachShader(prog, sh(gl.VERTEX_SHADER, "attribute vec3 p;attribute vec3 n;uniform mat4 m;varying vec3 vn;void main(){vn=(m*vec4(n,0.)).xyz;gl_Position=m*vec4(p,1.);}"));
-  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, "precision mediump float;varying vec3 vn;void main(){float l=.35+.65*max(dot(normalize(vn),normalize(vec3(.4,.5,-.8))),0.);gl_FragColor=vec4(vec3(.16,.52,.95)*l+.05,1.);}"));
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, "attribute vec3 p;attribute vec3 n;attribute vec3 c;uniform mat4 m;varying vec3 vn;varying vec3 vc;void main(){vc=c;vn=(m*vec4(n,0.)).xyz;gl_Position=m*vec4(p,1.);}"));
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, "precision mediump float;varying vec3 vn;varying vec3 vc;void main(){float l=.35+.65*max(dot(normalize(vn),normalize(vec3(.4,.5,-.8))),0.);gl_FragColor=vec4(vc*l+.05,1.);}"));
   gl.linkProgram(prog); gl.useProgram(prog);
-  const pb = gl.createBuffer(), nb = gl.createBuffer();
+  const pb = gl.createBuffer(), nb = gl.createBuffer(), cb = gl.createBuffer(), lc = gl.getAttribLocation(prog, "c");
   const lp = gl.getAttribLocation(prog, "p"), ln = gl.getAttribLocation(prog, "n"), lm = gl.getUniformLocation(prog, "m");
   function draw() {
     const w = cv.clientWidth, h = cv.clientHeight, dpr = devicePixelRatio || 1;
@@ -474,7 +496,12 @@ const viewer = (() => {
     const m = [R[0] * s * asp, R[1] * s, -R[2] * s * .5, 0, R[3] * s * asp, R[4] * s, -R[5] * s * .5, 0, R[6] * s * asp, R[7] * s, -R[8] * s * .5, 0, t[0] * s * asp, t[1] * s, -t[2] * s * .5, 1];
     gl.uniformMatrix4fv(lm, false, m); gl.drawArrays(gl.TRIANGLES, 0, count);
   }
-  function set(pos) {
+  function set(list) {
+    let pos = null, col = null;
+    if (list) {
+      const total = list.reduce((a, [m]) => a + m.length, 0); pos = new Float32Array(total); col = new Float32Array(total); let o = 0;
+      list.forEach(([m, rgb]) => { pos.set(m, o); for (let i = 0; i < m.length; i += 3) col.set(rgb, o + i); o += m.length; });
+    }
     count = pos ? pos.length / 3 : 0;
     if (count) {
       const nrm = new Float32Array(pos.length), lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
@@ -485,6 +512,7 @@ const viewer = (() => {
       }
       center = lo.map((c, i) => (c + hi[i]) / 2); size = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]); dist = 1;
       gl.bindBuffer(gl.ARRAY_BUFFER, pb); gl.bufferData(gl.ARRAY_BUFFER, pos, gl.STATIC_DRAW); gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp, 3, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, cb); gl.bufferData(gl.ARRAY_BUFFER, col, gl.STATIC_DRAW); gl.enableVertexAttribArray(lc); gl.vertexAttribPointer(lc, 3, gl.FLOAT, false, 0, 0);
       gl.bindBuffer(gl.ARRAY_BUFFER, nb); gl.bufferData(gl.ARRAY_BUFFER, nrm, gl.STATIC_DRAW); gl.enableVertexAttribArray(ln); gl.vertexAttribPointer(ln, 3, gl.FLOAT, false, 0, 0);
     }
     draw();
@@ -679,10 +707,11 @@ void loop() {
         { type: "box", size: [30, 12, 3], at: [65, 39, 0], cut: true },
         { type: "cyl", r: 4, h: 3, at: [85, 20, 0], cut: true }, { type: "cyl", r: 4, h: 3, at: [85, 70, 0], cut: true }
       ] },
-    { name: "Sensor-Halter", purpose: "Hält den HC-SR04 vorne aufrecht; wird mit 2 M3-Schrauben an die Platte geschraubt.", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 9, print_min: 35,
+    { name: "Sensor-Halter", purpose: "Hält den HC-SR04 vorne aufrecht; wird mit 2 M3-Schrauben an die Platte geschraubt. Auf Mehrfarb-Druckern mit weißem Zierstreifen.", colors: ["Blau", "Weiß"], material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 9, print_min: 35,
       shapes: [
         { type: "box", size: [50, 16, 3], at: [0, 0, 0] },
         { type: "box", size: [50, 3, 26], at: [0, 13, 0] },
+        { type: "box", size: [40, 1, 2.5], at: [5, 12, 23], color: 2 },
         { type: "cyl", r: 8.3, h: 3, at: [12, 13, 14], axis: "y", cut: true },
         { type: "cyl", r: 8.3, h: 3, at: [38, 13, 14], axis: "y", cut: true },
         { type: "cyl", r: 1.6, h: 3, at: [5, 6, 0], cut: true }, { type: "cyl", r: 1.6, h: 3, at: [45, 6, 0], cut: true }
