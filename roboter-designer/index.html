@@ -6,7 +6,9 @@
 <title>KI Roboter-Designer</title>
 <style>
   :root { --bg:#0f1420; --card:#182033; --line:#2a3550; --text:#e7ecf5; --muted:#93a0b8; --acc:#4fb3ff; --ok:#3ecf8e; --err:#ff6b6b; --warn:#ffc15e; }
-  :root[data-theme="light"] { --bg:#f3f5fa; --card:#fff; --line:#d6dcea; --text:#141a26; --muted:#5b6780; --acc:#0a74c9; }
+  :root { color-scheme:dark; }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --bg:#f3f5fa; --card:#fff; --line:#d6dcea; --text:#141a26; --muted:#5b6780; --acc:#0a74c9; --ok:#15894f; --err:#c62d2d; --warn:#a86500; color-scheme:light; } }
+  :root[data-theme="light"] { --bg:#f3f5fa; --card:#fff; --line:#d6dcea; --text:#141a26; --muted:#5b6780; --acc:#0a74c9; --ok:#15894f; --err:#c62d2d; --warn:#a86500; color-scheme:light; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui, sans-serif; }
   header { padding:24px 16px 8px; max-width:1100px; margin:auto; }
@@ -493,7 +495,7 @@ $("go").onclick = async () => {
 $("gen3d").onclick = async () => {
   if (!current) return;
   const b = $("gen3d"); b.disabled = true; b.textContent = "KI konstruiert…";
-  try { render(await gen3d({ ...current, code: $("code").value })); } catch (e) { alert(e.message); }
+  try { render(await gen3d({ ...current, code: $("code").value })); } catch (e) { status(e.message, "err"); }
   b.disabled = false; b.textContent = "3D-Teile von der KI (neu) konstruieren lassen";
 };
 
@@ -509,7 +511,7 @@ ${JSON.stringify(slim(cur))}
 Gib ein JSON mit NUR den geänderten Feldern zurück (z.B. {"code": "...", "parts": [...]}). Mögliche Felder: name, summary, parts, tools, wiring, steps, tips, language, filename, code, svg, ${PARTS3D_SPEC.split(":")[0]}, print_guide.`);
     if (r.parts3d) meshCache.clear();
     render({ ...cur, ...r }); $("change").value = "";
-  } catch (e) { alert(e.message); }
+  } catch (e) { status(e.message, "err"); }
   $("fix").disabled = false; $("fix").textContent = "KI ändern lassen";
 };
 
