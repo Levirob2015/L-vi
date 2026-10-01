@@ -5,6 +5,7 @@
 # auswaehlen. Danach laeuft das hier bei jedem Push automatisch.
 #
 # Ergebnis: https://levirob2015.github.io/L-vi/demo.html
+#           https://levirob2015.github.io/L-vi/roboter/  (KI Roboter-Designer)
 name: Vorschau veroeffentlichen
 
 on:
@@ -12,8 +13,10 @@ on:
     branches:
       - main
       - claude/app-hack-protection-hi30nk
+      - claude/ai-robot-designer-vedh5a
     paths:
       - "docs/**"
+      - "roboter-designer/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -43,6 +46,8 @@ jobs:
           cp docs/demo.html _site/index.html
           cp docs/demo.html _site/demo.html
           cp docs/dashboard.png _site/dashboard.png
+          mkdir -p _site/roboter
+          cp roboter-designer/index.html _site/roboter/index.html
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
