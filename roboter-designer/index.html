@@ -219,24 +219,21 @@ const PARTS3D_SPEC = () => `"parts3d": [{
 }]
 Regeln für shapes: Maße in mm. "box": "at" ist die untere linke vordere Ecke, "size" [x,y,z]. "cyl": "at" ist der Mittelpunkt der Grundfläche, "r" Radius, "h" Länge entlang "axis" ("x","y" oder "z"). "cut": true schneidet das Volumen aus (Löcher, Aussparungen) – Schnitte wirken auf alle festen Formen. Jedes Teil liegt flach auf z=0 und ist druckbar ohne oder mit wenig Stützmaterial. Schraublöcher M3 = r 1.6, Wandstärke mind. 2 mm. Maße müssen exakt zu den gekauften Teilen passen (Motoren, Sensoren, Platinen-Lochabstände). ${printerRule()} 2 bis 5 Teile, jedes max. ca. 30 Formen.`;
 
-const FULL_SPEC = `Format:
+// Schritt 1 ist absichtlich klein (schnell); Code, Anleitung, Zeichnung und 3D laufen danach gleichzeitig.
+const PLAN_SPEC = `Format (kurz und knapp halten!):
 {
   "name": "kurzer Name des Roboters",
-  "summary": "2-4 Sätze, was der Roboter kann und wie er funktioniert",
-  "parts": [{"name":"Teil","qty":1,"price_eur":4.5,"note":"kurzer Hinweis"}],
+  "summary": "2-3 Sätze, was der Roboter kann und wie er funktioniert",
+  "parts": [{"name":"Teil","qty":1,"price_eur":4.5,"note":"max. 6 Wörter"}],
   "tools": ["Lötkolben", "..."],
   "wiring": ["Motor links IN1 -> Pin 5", "..."],
-  "steps": ["Schritt 1 …", "..."],
-  "print_guide": ["Tipps zum Drucken der 3D-Teile …"],
-  "tips": ["Fehlersuche / Sicherheit …"],
   "language": "z.B. Arduino C++",
-  "filename": "z.B. roboter.ino",
-  "code": "vollständiger, lauffähiger, gut kommentierter Code mit Pin-Belegung oben"
+  "filename": "z.B. roboter.ino"
 }
-price_eur ist der Stückpreis in Euro (realistische Preise). Code, Verkabelung und Bauanleitung müssen zusammenpassen. Die Bauanleitung erwähnt, wann welches 3D-Druckteil montiert wird.`;
+price_eur ist der Stückpreis in Euro (realistische Preise). Die Verkabelung legt alle Pins verbindlich fest. Wenn mehrere gleiche Roboter gebaut werden, gilt qty für alle zusammen.`;
 
-async function askText(prompt, tier = "default") {
-  if (sampleApi) return (await sampleApi(prompt, { modelTier: tier })).text;
+async function askText(prompt, tier = "default", onText) {
+  if (sampleApi) return (await sampleApi(prompt, { modelTier: tier, onText: onText ? u => onText(u.text) : undefined })).text;
   const key = $("key").value.trim();
   if (!key) throw new Error("Bitte zuerst den API-Schlüssel eingeben – oder den Demo-Roboter laden.");
   const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -248,8 +245,8 @@ async function askText(prompt, tier = "default") {
   if (!r.ok) throw new Error(data.error?.message || ("Fehler " + r.status));
   return data.content.filter(b => b.type === "text").map(b => b.text).join("");
 }
-async function askJson(prompt) {
-  const text = await askText(BASE + "\n\n" + prompt);
+async function askJson(prompt, tier) {
+  const text = await askText(BASE + "\n\n" + prompt, tier);
   const s = text.indexOf("{"), e = text.lastIndexOf("}");
   if (s < 0) throw new Error("Die KI hat keine gültige Antwort geliefert. Bitte nochmal versuchen.");
   return JSON.parse(text.slice(s, e + 1));
@@ -572,23 +569,39 @@ Antworte mit {${PARTS3D_SPEC()}, "print_guide": ["Drucktipps speziell für den $
   return { ...r, parts3d: p.parts3d || [], print_guide: p.print_guide || r.print_guide, steps: p.steps?.length ? p.steps : r.steps };
 }
 
+const stripFence = t => t.replace(/^[\s\S]*?```[a-zA-Z+]*\n/, "").replace(/\n```[\s\S]*$/, "");
+async function genCode(r) {
+  const t = await askText(`Schreibe den vollständigen, lauffähigen, gut kommentierten Code (${r.language || $("platform").value}) für diesen Roboter. Pin-Belegung oben als Konstanten, exakt laut Verkabelung. Kommentare auf Deutsch.
+Roboter: ${JSON.stringify(slim(r))}
+Antworte NUR mit dem Code, ohne Erklärungen davor oder danach.`, "default", txt => { if (current === r) $("code").value = stripFence(txt); });
+  r.code = stripFence(t).trim() + "\n";
+}
+async function genGuide(r) {
+  const g = await askJson(`Schreibe die Bauanleitung für diesen Roboter. Roboter: ${JSON.stringify(slim(r))}
+3D-Drucker: ${printer().name}. ${$("want3d").checked ? "Es werden 3D-Druckteile (Chassis, Halter, Gehäuse) gedruckt – erwähne, wann sie montiert werden." : ""}
+Antworte mit {"steps": ["Schritt …"], "print_guide": ["Drucktipps für den ${printer().name} …"], "tips": ["Fehlersuche / Sicherheit …"]}. Kurz und klar, für Anfänger.`, "quick");
+  if (!r.steps?.length) r.steps = g.steps; r.print_guide = r.print_guide || g.print_guide; r.tips = g.tips;
+}
+
 $("go").onclick = async () => {
   const desc = $("desc").value.trim();
   if (!desc) return status("Bitte beschreibe zuerst deinen Roboter.", "err");
   $("go").disabled = true;
-  const t0 = Date.now(); let phase = "Die KI plant deinen Roboter (Teile, Kosten, Code)…";
-  const tick = setInterval(() => status(phase + " " + Math.round((Date.now() - t0) / 1000) + " s"), 1000);
+  const t0 = Date.now(), sec = () => Math.round((Date.now() - t0) / 1000);
+  let phase = "Die KI plant deinen Roboter (Teile & Kosten)…";
+  const tick = setInterval(() => status(phase + " " + sec() + " s"), 1000);
   try {
-    const r = await askJson(`${FULL_SPEC}\n\nPlattform: ${$("platform").value}\n\nMein Roboter:\n${desc}`);
-    r._svgBusy = true; r._3dBusy = $("want3d").checked;
+    const r = await askJson(`${PLAN_SPEC}\n\nPlattform: ${$("platform").value}\n\nMein Roboter:\n${desc}`, "quick");
+    r.code = "// Die KI schreibt den Code gerade…\n"; r.steps = []; r._svgBusy = true; r._3dBusy = $("want3d").checked;
     meshCache.clear(); render(r); show("t-design");
-    // Zeichnung und 3D-Teile gleichzeitig – der Rest ist schon zu sehen.
-    phase = "Fertig geplant! Zeichnung" + (r._3dBusy ? " und 3D-Teile werden" : " wird") + " erstellt…";
-    const jobs = [drawSvg(r)];
-    if (r._3dBusy) jobs.push(gen3d(r).then(x => { r.parts3d = x.parts3d; r.print_guide = x.print_guide; r.steps = x.steps; }).catch(e => { r._3dErr = e.message; }).finally(() => { r._3dBusy = false; if (current === r) render(r); }));
+    phase = "Teile & Kosten stehen! Code, Anleitung, Zeichnung" + (r._3dBusy ? " und 3D-Teile" : "") + " entstehen gleichzeitig…";
+    const errs = [];
+    const job = (p, what) => p.catch(e => errs.push(what + ": " + e.message)).finally(() => { if (current === r) render(r); });
+    const jobs = [job(genCode(r), "Code"), job(genGuide(r), "Anleitung"), drawSvg(r)];
+    if (r._3dBusy) jobs.push(job(gen3d(r).then(x => { r.parts3d = x.parts3d; if (x.print_guide) r.print_guide = x.print_guide; if (x.steps?.length) r.steps = x.steps; }), "3D-Teile").finally(() => { r._3dBusy = false; if (current === r) render(r); }));
     await Promise.all(jobs);
     clearInterval(tick);
-    status(r._3dErr ? "Fertig – aber die 3D-Teile haben nicht geklappt (" + r._3dErr + "). Im Tab „3D-Druckteile“ nochmal versuchen." : "Fertig in " + Math.round((Date.now() - t0) / 1000) + " s! Schau dir alle Tabs an – und probier den Roboter im Test-Labor aus.", r._3dErr ? "warn" : "ok");
+    status(errs.length ? "Fertig nach " + sec() + " s, aber nicht alles hat geklappt: " + errs.join("; ") : "Fertig in " + sec() + " s! Schau dir alle Tabs an – und probier den Roboter im Test-Labor aus.", errs.length ? "warn" : "ok");
   } catch (e) { clearInterval(tick); status(e.message, "err"); }
   $("go").disabled = false;
 };
