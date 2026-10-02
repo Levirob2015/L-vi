@@ -5,7 +5,7 @@
 # auswaehlen. Danach laeuft das hier bei jedem Push automatisch.
 #
 # Ergebnis: https://levirob2015.github.io/L-vi/demo.html
-#           https://levirob2015.github.io/L-vi/roboter/  (KI Roboter-Designer)
+#           https://levirob2015.github.io/L-vi/probot/  (ProBot)
 name: Vorschau veroeffentlichen
 
 on:
@@ -46,8 +46,8 @@ jobs:
           cp docs/demo.html _site/index.html
           cp docs/demo.html _site/demo.html
           cp docs/dashboard.png _site/dashboard.png
-          mkdir -p _site/roboter
-          cp roboter-designer/index.html _site/roboter/index.html
+          mkdir -p _site/probot
+          cp roboter-designer/index.html _site/probot/index.html
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
