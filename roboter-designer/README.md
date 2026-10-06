@@ -16,7 +16,7 @@ Einen Anthropic API-Key eingeben (console.anthropic.com) – er wird nur lokal i
 
 ## ProBot-KI (gratis, ohne Anmeldung)
 Standard-KI der Seite. Läuft komplett im Browser: Wissensbasis mit Bauteilen und Preisen, Pin-Belegungen,
-Code-Bausteinen, 3D-Teilen und Anleitungen für 6 Roboter-Arten (Hindernis-Ausweicher, Linienfolger,
+Code-Bausteinen, 3D-Teilen und Anleitungen für 11 Roboter-Arten (Hindernis-Ausweicher, Linienfolger, Sumo, Labyrinth-Löser, Laufroboter, Pflanzen-Gießroboter, Licht-Sucher,
 Bluetooth-Auto, Greifarm, Mini-Schwarm, Haustier) plus Extras. Die Beschreibung wird per Stichworten
 verstanden; optional lädt die Seite eine kleine Sprach-KI (Qwen2.5 1.5B über WebLLM, braucht WebGPU),
 die freie Beschreibungen besser versteht. Claude bleibt als Option für freie Ideen.

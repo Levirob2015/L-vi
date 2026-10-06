@@ -102,6 +102,7 @@
       <label class="muted"><input type="checkbox" id="want3d" checked style="width:auto"> 3D-Druckteile</label>
       <button id="go">Roboter entwerfen</button>
       <button class="sec" id="demo">Demo-Roboter laden (ohne KI)</button>
+      <button class="sec" id="openstudio">🛠 Studio öffnen – selbst bauen</button>
     </div>
     <p id="status"></p>
   </section>
@@ -926,7 +927,13 @@ const KB_PARTS = {
   lipo_mini: { name: "LiPo-Akku 3,7 V 150 mAh", price: 3.0 },
   wires:     { name: "Jumperkabel-Set", price: 3.0 },
   screws:    { name: "M2/M3-Schrauben & Muttern Set", price: 4.0 },
-  servo_ext: { name: "Servo-Halterungen & Kabelbinder", price: 2.0 }
+  servo_ext: { name: "Servo-Halterungen & Kabelbinder", price: 2.0 },
+  mpu6050:   { name: "Lagesensor MPU6050 (Gyro + Beschleunigung)", price: 3.0, note: "merkt Kippen und Drehen" },
+  dht22:     { name: "Temperatur- & Feuchtesensor DHT22", price: 4.0 },
+  soil:      { name: "Bodenfeuchte-Sensor kapazitiv v1.2", price: 1.5, note: "rostet nicht" },
+  pump:      { name: "Mini-Wasserpumpe 5 V + 1 m Schlauch", price: 3.5 },
+  mosfet:    { name: "MOSFET-Schaltmodul (z.B. IRF520/AO3400)", price: 1.5, note: "schaltet die Pumpe" },
+  usbpower:  { name: "USB-Netzteil 5 V / 2 A + Kabel", price: 6.0 }
 };
 
 /* ---------- Wissensbasis: Roboter-Arten ---------- */
@@ -941,6 +948,16 @@ const KB_TYPES = {
     summary: "ist ein Roboterarm mit drei Servos (Drehen, Heben, Greifen), der Dinge aufheben und ablegen kann" },
   schwarm: { label: "Mini-Schwarm-Roboter", words: ["schwarm", "ameise", "kommunizier", "untereinander", "zusammen", "team", "mehrere", "gruppe", "insekt", "biene"],
     summary: "sind winzige Roboter, die per Funk (ESP-NOW) miteinander reden: Findet einer das Ziel (helles Licht), ruft er die anderen, und alle kommen dazu" },
+  sumo: { label: "Sumo-Roboter", words: ["sumo", "kampf", "schieb", "arena", "ring", "wettkampf", "battle"],
+    summary: "sucht im Ring den Gegner, rammt ihn mit voller Kraft heraus und erkennt mit Bodensensoren den weißen Rand, damit er selbst nicht hinausfällt" },
+  labyrinth: { label: "Labyrinth-Löser", words: ["labyrinth", "irrgarten", "maze", "ausgang", "gänge", "wand folgen"],
+    summary: "findet den Weg durchs Labyrinth: Ein Ultraschallsensor auf einem Servo-Kopf schaut nach links und rechts, und der Roboter fährt immer in die freiere Richtung" },
+  laufroboter: { label: "Laufroboter (4 Beine)", words: ["lauf", "bein", "geh", "spinne", "krabbel", "vierbein", "hexapod", "läuft", "schritt", "dinosaurier", "tier mit beinen"],
+    summary: "läuft auf vier Beinen mit je einem Servo – ganz ohne Räder – und bleibt stehen, wenn etwas im Weg ist" },
+  pflanzen: { label: "Pflanzen-Gießroboter", words: ["pflanze", "gieß", "wasser", "blume", "garten", "erde", "bewässer", "topf"],
+    summary: "misst die Feuchtigkeit der Blumenerde und gießt automatisch mit einer kleinen Pumpe, wenn die Pflanze Durst hat" },
+  lichtsucher: { label: "Licht-Sucher", words: ["licht such", "lichtsuch", "sonne", "taschenlampe", "hell", "folgt dem licht", "motte", "solar"],
+    summary: "fährt mit zwei Lichtsensoren immer zur hellsten Stelle – z.B. einer Taschenlampe hinterher" },
   haustier: { label: "Haustier-Roboter", words: ["haustier", "freund", "süß", "augen", "gefühl", "emotion", "streichel", "spielen", "begleit", "katze", "hund"],
     summary: "ist ein kleiner Freund mit Display-Augen: Er fährt herum, freut sich, wenn man ihn streichelt, und piept fröhlich" }
 };
@@ -950,7 +967,10 @@ const KB_FEATURES = {
   buzzer: { label: "Summer/Töne", words: ["ton", "piep", "sound", "musik", "summer", "geräusch", "melodie"] },
   oled:   { label: "Display-Augen", words: ["display", "augen", "bildschirm", "gesicht", "oled", "anzeige"] },
   bt:     { label: "Bluetooth", words: ["bluetooth", "handy", "app", "fernsteuer"] },
-  us:     { label: "Abstandssensor", words: ["hindernis", "abstand", "ultraschall", "sensor", "wand"] }
+  us:     { label: "Abstandssensor", words: ["hindernis", "abstand", "ultraschall", "wand"] },
+  wlan:   { label: "WLAN-Steuerung (Webseite)", words: ["wlan", "wifi", "internet", "webseite", "browser", "online"] },
+  dht:    { label: "Temperatur & Luftfeuchte", words: ["temperatur", "feucht", "wetter", "klima", "warm", "kalt"] },
+  gyro:   { label: "Kipp-/Lagesensor", words: ["gyro", "kipp", "lage", "neigung", "umfall", "balance", "gleichgewicht"] }
 };
 
 /* ---------- Verstehen: Stichworte ---------- */
@@ -973,7 +993,7 @@ function kbUnderstand(text, platform) {
   let budget = null;
   const mb = t.match(/(\d+(?:[.,]\d+)?)\s*(€|euro|eur)/);
   if (mb) budget = parseFloat(mb[1].replace(",", "."));
-  const esp = /esp32/i.test(platform) || type === "schwarm" || t.includes("wlan") || t.includes("wifi");
+  const esp = /esp32/i.test(platform) || type === "schwarm" || features.includes("wlan");
   return { type, features, count, size, budget, esp, name: null, summary: null };
 }
 
@@ -1018,13 +1038,15 @@ function probotDesign(u) {
   if (T === "ausweicher" || T === "haustier") F.add("us");
   if (T === "btauto") F.add("bt");
   if (T === "haustier") { F.add("oled"); F.add("buzzer"); }
-  if (T === "schwarm") { F.delete("bt"); F.delete("oled"); F.delete("us"); F.add("leds"); }
-  if (T === "arm") F.delete("us");
-  const esp = u.esp || mini;
+  if (T === "schwarm") { ["bt", "oled", "us", "wlan", "dht", "gyro"].forEach(f => F.delete(f)); F.add("leds"); }   // winzig + Funk ist schon belegt
+  if (T === "arm" || T === "pflanzen") F.delete("us");
+  if (["sumo", "labyrinth", "laufroboter"].includes(T)) F.add("us");
+  if (T === "pflanzen" && !F.has("wlan")) F.add("oled");
+  const esp = u.esp || mini || F.has("wlan");
   const mcu = T === "schwarm" ? "c3" : esp ? "esp32" : "nano";
   const P = []; const add = (id, qty = 1) => P.push({ id, qty });
   add(mcu);
-  const drives = T !== "arm";
+  const drives = !["arm", "laufroboter", "pflanzen"].includes(T);
   if (drives) {
     if (mini) { add("drv8833"); add("n20", 2); add("caster_mini"); }
     else { add("l298"); add("tt", 2); add("caster"); }
@@ -1035,10 +1057,17 @@ function probotDesign(u) {
   if (T === "arm") { add("mg90", 2); add("sg90"); add("servo_ext"); }
   if (T === "schwarm") add("ldr");
   if (T === "haustier") add("touch");
+  if (T === "sumo") add("tcrt", 2);
+  if (T === "labyrinth") add("sg90");
+  if (T === "laufroboter") { add("mg90", 4); add("servo_ext"); }
+  if (T === "pflanzen") { add("soil"); add("pump"); add("mosfet"); }
+  if (T === "lichtsucher") add("ldr", 2);
+  if (F.has("dht")) add("dht22");
+  if (F.has("gyro")) add("mpu6050");
   if (F.has("leds")) add("ws2812");
   if (F.has("buzzer")) add("buzzer");
   if (F.has("oled")) add("oled");
-  add(mini ? "lipo_mini" : mcu === "nano" ? "aa4" : "lipo18650");
+  add(T === "pflanzen" ? "usbpower" : mini ? "lipo_mini" : mcu === "nano" ? "aa4" : "lipo18650");
   add("wires"); add("screws");
   const n = Math.max(1, u.count || 1);
   const parts = P.map(p => ({ name: KB_PARTS[p.id].name, qty: p.qty * (p.id === "wires" || p.id === "screws" ? 1 : n), price_eur: KB_PARTS[p.id].price, note: KB_PARTS[p.id].note }));
@@ -1046,8 +1075,8 @@ function probotDesign(u) {
   const pins = PINS[mcu];
   const wiring = probotWiring(mcu, pins, T, F, drives);
   const ty = KB_TYPES[T];
-  const name = u.name || ({ ausweicher: "Flitzi", linie: "Spurli", btauto: "Blue-Racer", arm: "Greifi", schwarm: "Ameisen-Schwarm", haustier: "Pixel" })[T];
-  const extras = [...F].filter(f => !(T === "ausweicher" && f === "us") && !(T === "btauto" && f === "bt")).map(f => KB_FEATURES[f].label);
+  const name = u.name || ({ ausweicher: "Flitzi", linie: "Spurli", btauto: "Blue-Racer", arm: "Greifi", schwarm: "Ameisen-Schwarm", haustier: "Pixel", sumo: "Rammbock", labyrinth: "Theseus", laufroboter: "Krabbel", pflanzen: "Gießkanne 2000", lichtsucher: "Motte" })[T];
+  const extras = [...F].filter(f => !(f === "us" && ["ausweicher", "sumo", "labyrinth", "laufroboter", "haustier"].includes(T)) && !(T === "btauto" && f === "bt")).map(f => KB_FEATURES[f].label);
   const summary = u.summary || `${name} ${ty.summary}${extras.length ? ". Extras: " + extras.join(", ") : ""}.${n > 1 ? ` Du baust ${n} Stück davon.` : ""}`;
   const r = {
     name, summary, parts,
@@ -1069,8 +1098,8 @@ function probotDesign(u) {
 }
 
 const PINS = {
-  nano:  { m: [5, 6, 3, 11], trig: 7, echo: 8, lineL: "A0", lineR: "A1", btRx: 2, btTx: 4, servo: [9, 10, 12], led: 12, buz: "A2", touch: "A3", ldr: "A6" },
-  esp32: { m: [25, 26, 27, 14], trig: 5, echo: 18, lineL: 34, lineR: 35, servo: [13, 12, 15], led: 4, buz: 19, touch: 32, ldr: 33 },
+  nano:  { m: [5, 6, 3, 11], trig: 7, echo: 8, lineL: "A0", lineR: "A1", btRx: 2, btTx: 4, servo: [9, 10, 12], legs: [9, 10, 12, 13], head: 9, led: 12, buz: "A2", touch: "A3", ldr: "A6", ldrL: "A6", ldrR: "A7", soil: "A0", pump: 10, dht: 13 },
+  esp32: { m: [25, 26, 27, 14], trig: 5, echo: 18, lineL: 34, lineR: 35, servo: [13, 12, 15], legs: [13, 12, 15, 2], head: 13, led: 4, buz: 19, touch: 32, ldr: 33, ldrL: 34, ldrR: 35, soil: 36, pump: 23, dht: 16 },
   c3:    { m: [0, 1, 2, 3], led: 8, ldr: 4, buz: 10, sda: 5, scl: 6 }
 };
 function probotWiring(mcu, p, T, F, drives) {
@@ -1084,6 +1113,13 @@ function probotWiring(mcu, p, T, F, drives) {
   if (F.has("buzzer")) w.push(`Summer + → ${p.buz}, − → GND`);
   if (F.has("oled")) w.push(`OLED: SDA → ${mcu === "nano" ? "A4" : mcu === "c3" ? p.sda : 21}, SCL → ${mcu === "nano" ? "A5" : mcu === "c3" ? p.scl : 22}, VCC → 3,3/5 V, GND → GND`);
   if (T === "haustier") w.push(`Touch-Sensor OUT → ${p.touch}`);
+  if (T === "sumo") w.push(`Rand-Sensoren (nach unten): links OUT → ${p.lineL}, rechts OUT → ${p.lineR}, VCC → 5V, GND → GND`);
+  if (T === "labyrinth") w.push(`Servo-Kopf (trägt den Ultraschallsensor): Signal → ${p.head}, + → 5V, − → GND`);
+  if (T === "laufroboter") w.push(`Bein-Servos: vorne links → ${p.legs[0]}, vorne rechts → ${p.legs[1]}, hinten links → ${p.legs[2]}, hinten rechts → ${p.legs[3]}; Servo-Strom direkt vom Akku, Masse verbinden`);
+  if (T === "pflanzen") w.push(`Bodenfeuchte-Sensor AOUT → ${p.soil}, VCC → ${mcu === "nano" ? "5V" : "3,3 V"}, GND → GND`, `MOSFET-Modul SIG → ${p.pump}; Pumpe an V+/V− des Moduls, Modul-Strom vom 5-V-Netzteil`);
+  if (T === "lichtsucher") w.push(`Lichtsensor links AO → ${p.ldrL}, rechts AO → ${p.ldrR}, VCC → ${mcu === "nano" ? "5V" : "3,3 V"}, GND → GND`);
+  if (F.has("dht")) w.push(`DHT22: DATA → ${p.dht} (10 kΩ nach VCC, bei Modulen schon drauf), VCC → 3,3/5 V, GND → GND`);
+  if (F.has("gyro")) w.push(`MPU6050: SDA → ${mcu === "nano" ? "A4" : 21}, SCL → ${mcu === "nano" ? "A5" : 22}, VCC → 3,3/5 V, GND → GND (teilt sich I2C mit dem Display)`);
   if (T === "schwarm") w.push(`Lichtsensor AO → ${p.ldr}; LiPo + → 5V-Pin des C3 (über Schalter), − → GND`);
   w.push("Gemeinsame Masse: Alle GND-Leitungen (Akku, Board, Motortreiber, Sensoren) müssen verbunden sein!");
   return w.filter(Boolean);
@@ -1094,11 +1130,14 @@ function probotCode(mcu, p, T, F, drives, name) {
   const L = [], esp = mcu !== "nano";
   L.push(`// ${name} – erstellt mit ProBot (${KB_TYPES[T].label})`, `// Board: ${KB_PARTS[mcu].name}`, "");
   if (F.has("leds")) L.push("#include <Adafruit_NeoPixel.h>   // Bibliothek: Adafruit NeoPixel");
-  if (T === "arm") L.push(esp ? "#include <ESP32Servo.h>          // Bibliothek: ESP32Servo" : "#include <Servo.h>");
+  if (["arm", "labyrinth", "laufroboter"].includes(T)) L.push(esp ? "#include <ESP32Servo.h>          // Bibliothek: ESP32Servo" : "#include <Servo.h>");
+  if (F.has("dht")) L.push("#include <DHT.h>                 // Bibliothek: DHT sensor library (Adafruit)");
+  if (F.has("gyro") && !F.has("oled")) L.push("#include <Wire.h>");
+  if (F.has("wlan")) L.push("#include <WiFi.h>", "#include <WebServer.h>");
   if (F.has("bt") && mcu === "nano") L.push("#include <SoftwareSerial.h>");
   if (F.has("bt") && mcu === "esp32") L.push("#include <BluetoothSerial.h>");
   if (F.has("oled")) L.push("#include <Wire.h>", "#include <Adafruit_SSD1306.h>     // Bibliothek: Adafruit SSD1306");
-  if (T === "schwarm") L.push("#include <WiFi.h>", "#include <esp_now.h>");
+  if (T === "schwarm") L.push(...(F.has("wlan") ? [] : ["#include <WiFi.h>"]), "#include <esp_now.h>");
   L.push("", "// ---- Pin-Belegung ----");
   if (drives) L.push(`const int IN1 = ${p.m[0]}, IN2 = ${p.m[1]};  // linker Motor`, `const int IN3 = ${p.m[2]}, IN4 = ${p.m[3]};  // rechter Motor`, `int SPEED = ${T === "schwarm" ? 160 : 180};                 // 0..255`);
   if (F.has("us") && T !== "schwarm") L.push(`const int TRIG = ${p.trig}, ECHO = ${p.echo};`, "const int ABSTAND_CM = 20;");
@@ -1108,6 +1147,13 @@ function probotCode(mcu, p, T, F, drives, name) {
   if (F.has("buzzer")) L.push(`const int SUMMER = ${p.buz};`);
   if (F.has("oled")) L.push("Adafruit_SSD1306 oled(128, 64, &Wire, -1);");
   if (T === "haustier") L.push(`const int TOUCH = ${p.touch};`);
+  if (T === "sumo") L.push(`const int RAND_L = ${p.lineL}, RAND_R = ${p.lineR};   // Bodensensoren für den weißen Ring-Rand`);
+  if (T === "labyrinth") L.push(`Servo kopf;`, `const int S_KOPF = ${p.head};`);
+  if (T === "laufroboter") L.push("Servo bein[4];", `const int BEIN_PINS[4] = {${p.legs.join(", ")}};   // VL, VR, HL, HR`);
+  if (T === "pflanzen") L.push(`const int ERDE = ${p.soil}, PUMPE = ${p.pump};`, `const int TROCKEN = ${mcu === "nano" ? 520 : 2600};      // ab hier gießen (Wert im seriellen Monitor ablesen!)`, "const int GIESS_MS = 2000;          // so lange läuft die Pumpe", "unsigned long letztesGiessen = 0;");
+  if (T === "lichtsucher") L.push(`const int LICHT_L = ${p.ldrL}, LICHT_R = ${p.ldrR};`);
+  if (F.has("dht")) L.push(`DHT dht(${p.dht}, DHT22);`, "unsigned long dhtZeit = 0;");
+  if (F.has("wlan")) L.push(`const char* WLAN_NAME = "${name.replace(/[^\w -]/g, "")}";   // eigenes WLAN des Roboters`, `const char* WLAN_PASS = "probot123";`, "WebServer server(80);");
   if (T === "schwarm") L.push(`const int LICHT = ${p.ldr};`, "const int LICHT_ZIEL = 2500;      // ab diesem Wert: Ziel gefunden (ausprobieren!)", "bool zielGefunden = false; unsigned long rufZeit = 0;");
   if (F.has("bt") && mcu === "nano") L.push(`SoftwareSerial bt(${p.btRx}, ${p.btTx});`);
   if (F.has("bt") && mcu === "esp32") L.push("BluetoothSerial bt;");
@@ -1145,6 +1191,32 @@ function probotCode(mcu, p, T, F, drives, name) {
     "  if (len > 0 && daten[0] == 'Z') { rufZeit = millis(); }   // ein anderer hat das Ziel gefunden",
     "}",
     "void rufen() { uint8_t m = 'Z'; esp_now_send(alle, &m, 1); }", "");
+  if (T === "laufroboter") L.push(
+    "// Ein Schritt = 4 Posen. Werte in Grad, 90 = Bein gerade.",
+    "const int SCHRITT[4][4] = { {60, 120, 90, 90}, {90, 90, 120, 60}, {120, 60, 90, 90}, {90, 90, 60, 120} };",
+    "void pose(const int w[4]) { for (int i = 0; i < 4; i++) bein[i].write(w[i]); delay(180); }",
+    "void laufen(int schritte) { for (int s = 0; s < schritte; s++) for (int k = 0; k < 4; k++) pose(SCHRITT[k]); }",
+    "void stehen() { int g[4] = {90, 90, 90, 90}; pose(g); }", "");
+  if (T === "labyrinth") L.push(
+    "long schaue(int winkel) { kopf.write(winkel); delay(300); return abstand(); }", "");
+  if (F.has("gyro")) L.push(
+    "bool umgekippt() {                   // MPU6050 direkt über I2C auslesen",
+    "  Wire.beginTransmission(0x68); Wire.write(0x3F); Wire.endTransmission(false);",
+    "  Wire.requestFrom(0x68, 2);",
+    "  int16_t z = Wire.read() << 8 | Wire.read();",
+    "  return z < 4000;                   // Z-Beschleunigung klein = liegt auf der Seite",
+    "}", "");
+  if (F.has("wlan")) {
+    const btns = drives ? "<p><a href=/vor><button>▲ Vor</button></a></p><p><a href=/links><button>◀</button></a> <a href=/stopp><button>■</button></a> <a href=/rechts><button>▶</button></a></p><p><a href=/zurueck><button>▼ Zurück</button></a></p>" : "";
+    L.push(
+      "String seite() {",
+      `  String s = "<!doctype html><meta name=viewport content='width=device-width'><style>button{font-size:28px;min-width:80px;margin:4px}</style><h1>${name.replace(/["<]/g, "")}</h1>${btns}";`,
+      ...(T === "pflanzen" ? ["  s += \"<p>Erde: \" + String(analogRead(ERDE)) + \"</p><p><a href=/giessen><button>Jetzt gießen</button></a></p>\";"] : []),
+      ...(F.has("dht") ? ["  s += \"<p>Temperatur: \" + String(dht.readTemperature(), 1) + \" °C, Feuchte: \" + String(dht.readHumidity(), 0) + \" %</p>\";"] : []),
+      "  return s;",
+      "}",
+      "void antwort() { server.send(200, \"text/html; charset=utf-8\", seite()); }", "");
+  }
   L.push("void setup() {", "  Serial.begin(115200);");
   if (drives) L.push("  pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT); pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);");
   if (F.has("us") && T !== "schwarm") L.push("  pinMode(TRIG, OUTPUT); pinMode(ECHO, INPUT);");
@@ -1157,8 +1229,28 @@ function probotCode(mcu, p, T, F, drives, name) {
   if (F.has("bt") && mcu === "nano") L.push("  bt.begin(9600);");
   if (F.has("bt") && mcu === "esp32") L.push(`  bt.begin("${name}");`);
   if (T === "schwarm") L.push("  WiFi.mode(WIFI_STA);", "  esp_now_init();", "  esp_now_peer_info_t peer = {}; memcpy(peer.peer_addr, alle, 6); esp_now_add_peer(&peer);", "  esp_now_register_recv_cb(empfangen);", "  randomSeed(analogRead(LICHT));");
+  if (T === "sumo") L.push("  pinMode(RAND_L, INPUT); pinMode(RAND_R, INPUT);", "  delay(5000);                        // Wettkampf-Regel: 5 Sekunden warten");
+  if (T === "labyrinth") L.push("  kopf.attach(S_KOPF); kopf.write(90);");
+  if (T === "laufroboter") L.push("  for (int i = 0; i < 4; i++) bein[i].attach(BEIN_PINS[i]);", "  stehen();");
+  if (T === "pflanzen") L.push("  pinMode(PUMPE, OUTPUT); digitalWrite(PUMPE, LOW);");
+  if (F.has("dht")) L.push("  dht.begin();");
+  if (F.has("gyro")) L.push("  Wire.begin(); Wire.beginTransmission(0x68); Wire.write(0x6B); Wire.write(0); Wire.endTransmission();   // MPU6050 aufwecken");
+  if (F.has("wlan")) L.push(
+    "  WiFi.softAP(WLAN_NAME, WLAN_PASS);   // Handy mit diesem WLAN verbinden, dann 192.168.4.1 öffnen",
+    "  server.on(\"/\", antwort);",
+    ...(drives ? ["  server.on(\"/vor\", [] { fahre(SPEED, SPEED); antwort(); });", "  server.on(\"/zurueck\", [] { fahre(-SPEED, -SPEED); antwort(); });", "  server.on(\"/links\", [] { fahre(-SPEED, SPEED); antwort(); });", "  server.on(\"/rechts\", [] { fahre(SPEED, -SPEED); antwort(); });", "  server.on(\"/stopp\", [] { fahre(0, 0); antwort(); });"] : []),
+    ...(T === "pflanzen" ? ["  server.on(\"/giessen\", [] { digitalWrite(PUMPE, HIGH); delay(GIESS_MS); digitalWrite(PUMPE, LOW); antwort(); });"] : []),
+    "  server.begin();",
+    "  Serial.println(WiFi.softAPIP());");
   L.push(`  Serial.println("${name} ist bereit!");`, "}", "");
   L.push("void loop() {");
+  if (F.has("wlan")) L.push("  server.handleClient();");
+  if (F.has("gyro")) L.push(`  if (umgekippt()) { ${drives ? "fahre(0, 0); " : ""}${F.has("buzzer") ? "piep(200); " : ""}Serial.println("Hilfe, umgekippt!"); delay(500); return; }`);
+  if (F.has("dht")) L.push(
+    "  if (millis() - dhtZeit > 2000) {",
+    "    dhtZeit = millis();",
+    "    Serial.print(\"Temperatur: \"); Serial.print(dht.readTemperature()); Serial.print(\" C  Feuchte: \"); Serial.println(dht.readHumidity());",
+    "  }");
   if (F.has("bt") && T !== "btauto") L.push(
     `  if (bt.available() && bt.read() == 'S') { ${drives ? "fahre(0, 0); " : ""}while (!bt.available()) delay(10); }   // Pause per Handy: S senden, weiter mit beliebiger Taste`);
   if (T === "ausweicher") L.push(
@@ -1227,6 +1319,51 @@ function probotCode(mcu, p, T, F, drives, name) {
     "  if (cm < ABSTAND_CM) { augen(false); fahre(-SPEED, SPEED); delay(400); }",
     "  else { augen(true); fahre(SPEED * 2 / 3, SPEED * 2 / 3); }",
     "  delay(60);");
+  if (T === "sumo") L.push(
+    "  // Rand-Sensor: LOW = weiß (je nach Modul umgekehrt – im seriellen Monitor prüfen)",
+    "  if (digitalRead(RAND_L) == LOW || digitalRead(RAND_R) == LOW) {",
+    "    fahre(-255, -255); delay(350); fahre(255, -255); delay(300);   // zurück vom Rand",
+    "    return;",
+    "  }",
+    "  long cm = abstand();",
+    "  if (cm < 60) { fahre(255, 255); " + (F.has("leds") ? "farbe(120, 0, 0); " : "") + "}   // Gegner gesehen: Angriff!",
+    "  else fahre(SPEED, -SPEED);           // drehen und suchen",
+    "  delay(10);");
+  if (T === "labyrinth") L.push(
+    "  long vorne = schaue(90);",
+    "  if (vorne > 18) { fahre(SPEED, SPEED); delay(150); return; }",
+    "  fahre(0, 0);",
+    "  long rechts = schaue(10), links = schaue(170);",
+    "  kopf.write(90);",
+    "  Serial.print(\"links \"); Serial.print(links); Serial.print(\"  rechts \"); Serial.println(rechts);",
+    "  if (rechts > 20 && rechts >= links) { fahre(SPEED, -SPEED); delay(330); }   // rechts frei: abbiegen",
+    "  else if (links > 20) { fahre(-SPEED, SPEED); delay(330); }",
+    "  else { fahre(SPEED, -SPEED); delay(660); }                                // Sackgasse: umdrehen");
+  if (T === "laufroboter") L.push(
+    "  if (abstand() < 15) {                 // etwas im Weg",
+    "    stehen();",
+    ...(F.has("buzzer") ? ["    piep(80);"] : []),
+    "    delay(500); return;",
+    "  }",
+    "  laufen(1);");
+  if (T === "pflanzen") L.push(
+    "  int erde = analogRead(ERDE);           // hoch = trocken (kapazitiver Sensor)",
+    "  Serial.print(\"Erde: \"); Serial.println(erde);",
+    ...(F.has("oled") ? ["  oled.clearDisplay(); oled.setTextColor(WHITE); oled.setTextSize(2); oled.setCursor(0, 0);", "  oled.println(erde > TROCKEN ? \"Durst!\" : \"Alles gut\"); oled.setTextSize(1); oled.print(\"Sensor: \"); oled.println(erde); oled.display();"] : []),
+    "  if (erde > TROCKEN && millis() - letztesGiessen > 60000) {   // höchstens 1x pro Minute",
+    "    digitalWrite(PUMPE, HIGH); delay(GIESS_MS); digitalWrite(PUMPE, LOW);",
+    "    letztesGiessen = millis();",
+    ...(F.has("leds") ? ["    farbe(0, 0, 120);"] : []),
+    "  }",
+    "  delay(1000);");
+  if (T === "lichtsucher") L.push(
+    "  int l = analogRead(LICHT_L), r = analogRead(LICHT_R);   // höher = heller (je nach Modul umgekehrt)",
+    "  int diff = l - r;",
+    `  if (l + r > ${mcu === "nano" ? 1800 : 7500}) { fahre(0, 0); ${F.has("leds") ? "farbe(120, 120, 0); " : ""}return; }   // sehr hell: angekommen`,
+    "  if (diff > 40)       fahre(SPEED / 3, SPEED);   // links heller",
+    "  else if (diff < -40) fahre(SPEED, SPEED / 3);",
+    "  else                 fahre(SPEED, SPEED);",
+    "  delay(20);");
   L.push("}");
   return L.join("\n") + "\n";
 }
@@ -1234,13 +1371,20 @@ function probotCode(mcu, p, T, F, drives, name) {
 /* ---------- Anleitung ---------- */
 function probotSteps(T, F, mini, n, mcu) {
   const s = ["3D-Teile drucken (Tab „3D-Druckteile“) und Stützreste entfernen."];
-  if (T !== "arm") {
+  if (T === "laufroboter") {
+    s.push("Die vier Servos in die Ecken der Körper-Platte schrauben (Achse nach unten).", "Code einmal starten: Alle Servos fahren auf 90°. Erst JETZT die Beine gerade nach unten auf die Servohörner schrauben.");
+  } else if (T === "pflanzen") {
+    s.push("Elektronik ins Gehäuse setzen, Pumpe in ein Wasserglas oder einen Tank legen, Schlauch zum Blumentopf führen und mit dem Schlauchhalter am Topfrand festklemmen.", "Bodenfeuchte-Sensor bis zur Markierung in die Erde stecken – die Elektronik oben darf nicht nass werden.");
+  } else if (T !== "arm") {
     s.push(mini ? "Die zwei N20-Motoren in die Aussparungen der Mini-Hülle stecken, Räder aufpressen, Mini-Kugelrolle vorne einkleben." : "Die zwei TT-Motoren mit den Motor-Klemmen unter die Chassis-Platte schrauben, Kugelrolle vorne anschrauben.");
     s.push("Motorkabel an den Motortreiber anschrauben oder anlöten.");
   } else {
     s.push("Grund-Servo (Drehen) in den Sockel schrauben, Arm-Teil auf das Servohorn schrauben.", "Hebe-Servo am Arm befestigen, Greifer-Servo mit den zwei Greiffingern an die Armspitze.", "Vor dem Zusammenbau alle Servos einmal auf 90° stellen (Code einmal starten), damit die Hörner gerade sitzen.");
   }
   if (F.has("us")) s.push("Abstandssensor in den Sensor-Halter stecken und vorne montieren.");
+  if (T === "sumo") s.push("Die zwei Rand-Sensoren vorne links und rechts nach unten zeigend montieren (3–5 mm über dem Boden).", "Die Schaufel vorne anschrauben – sie hebelt den Gegner aus.");
+  if (T === "labyrinth") s.push("Servo in den Kopf-Halter schrauben, Ultraschallsensor auf das Servohorn kleben. Bei 90° muss er genau nach vorne schauen.");
+  if (T === "lichtsucher") s.push("Die zwei Lichtsensoren vorne in den Halter stecken, leicht nach außen gedreht (wie Fühler).");
   if (T === "linie") s.push("Die zwei Liniensensoren 1–2 cm über dem Boden vorne montieren, ca. 2 cm auseinander. Empfindlichkeit am Drehregler einstellen.");
   if (F.has("oled")) s.push("Display hinter das Sichtfenster kleben – das sind die Augen.");
   if (F.has("leds")) s.push("LED-Ring oben aufkleben und anschließen.");
@@ -1259,6 +1403,13 @@ function probotPrintGuide() {
 }
 function probotTips(T, F, mcu) {
   const t = ["Dreht ein Rad falsch herum? Die zwei Kabel dieses Motors am Treiber tauschen.", "Startet das Board immer neu, wenn die Motoren anlaufen? Akku ist zu schwach – frisch laden oder einen Kondensator (470 µF) an den Motortreiber."];
+  if (T === "sumo") t.push("Mini-Sumo-Regeln: max. 10×10 cm und 500 g. Der Roboter wartet nach dem Einschalten 5 Sekunden.", "Mehr Schubkraft: Gummi-Reifen und Gewicht (z.B. Muttern) tief einbauen.");
+  if (T === "labyrinth") t.push("Fährt er schief? SPEED für den schnelleren Motor im Code etwas verringern.", "Die Drehzeit (330 ms) im Code anpassen, bis er genau 90° dreht.");
+  if (T === "laufroboter") t.push("Läuft er auf der Stelle? Die Winkel in SCHRITT[][] vergrößern (z.B. 50/130).", "MG90S-Servos brauchen zusammen bis zu 2 A – 18650-Akku verwenden, nicht 4×AA.");
+  if (T === "pflanzen") t.push("TROCKEN im Code einstellen: Sensor in trockene und in nasse Erde stecken, Werte ablesen, Mitte wählen.", "Wassertank tiefer als den Topf stellen, sonst läuft er durch den Schlauch leer.", "Elektronik und Wasser getrennt halten!");
+  if (T === "lichtsucher") t.push("Fährt er vom Licht weg? Die Sensoren links/rechts tauschen oder im Code l und r vertauschen.");
+  if (F.has("wlan")) t.push("WLAN-Steuerung: Handy mit dem WLAN des Roboters verbinden (Passwort probot123), dann im Browser 192.168.4.1 öffnen.");
+  if (F.has("dht")) t.push("DHT22 nicht öfter als alle 2 Sekunden auslesen – sonst kommen falsche Werte.");
   if (F.has("us")) t.push("Misst der Abstandssensor immer 0 oder 999? TRIG und ECHO vertauscht oder kein 5V.");
   if (T === "linie") t.push("Erkennt der Liniensensor nichts? Drehregler am Modul einstellen, bis die LED genau über der Linie umschaltet.");
   if (T === "arm") t.push("Zittern die Servos? Sie brauchen eigenen Strom (Akku), nicht vom USB-Kabel.");
@@ -1288,6 +1439,23 @@ function probotParts3d(T, F, mini, size) {
         { type: "cyl", r: 3, h: 1.6, at: [L - 8, W / 2, 0], cut: true }, { type: "cyl", r: 6, h: 1.6, at: [L / 2, W / 2, 0], cut: true }] });
     return P;
   }
+  if (T === "laufroboter") {
+    P.push({ name: "Körper-Platte", purpose: "Rumpf mit vier Servo-Aussparungen in den Ecken.", material: "PLA", infill: "25%", layer: "0.2 mm", supports: false, filament_g: 25, print_min: 80,
+      shapes: [{ type: "box", size: [110, 70, 4], at: [0, 0, 0] }, ...[[4, 4], [83, 4], [4, 53.5], [83, 53.5]].map(([x, y]) => ({ type: "box", size: [23, 12.5, 4], at: [x, y, 0], cut: true })),
+        { type: "box", size: [40, 20, 4], at: [35, 25, 0], cut: true }, ...holes([[30, 35], [80, 35]], 1.6, 4)] });
+    P.push({ name: "Bein", purpose: "4× drucken. Wird auf das Servohorn geschraubt.", material: "PLA", infill: "40%", layer: "0.2 mm", supports: false, filament_g: 4, print_min: 18,
+      shapes: [{ type: "box", size: [55, 10, 4], at: [0, 0, 0] }, { type: "cyl", r: 6, h: 4, at: [50, 5, 0] }, ...holes([[5, 5], [13, 5]], 1, 4)] });
+    if (F.has("us")) P.push({ name: "Sensor-Halter", purpose: "Hält den HC-SR04 vorne.", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 9, print_min: 35,
+      shapes: [{ type: "box", size: [50, 16, 3], at: [0, 0, 0] }, { type: "box", size: [50, 3, 26], at: [0, 13, 0] }, { type: "cyl", r: 8.3, h: 3, at: [12, 13, 14], axis: "y", cut: true }, { type: "cyl", r: 8.3, h: 3, at: [38, 13, 14], axis: "y", cut: true }, ...holes([[5, 6], [45, 6]])] });
+    return P;
+  }
+  if (T === "pflanzen") {
+    P.push({ name: "Elektronik-Gehäuse", purpose: "Spritzwassergeschützte Box für Board, MOSFET und Display.", material: "PETG (oder PLA)", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 35, print_min: 120,
+      shapes: [{ type: "box", size: [90, 60, 35], at: [0, 0, 0] }, { type: "box", size: [86, 56, 35], at: [2, 2, 2], cut: true }, { type: "box", size: [25, 14, 2], at: [32, 23, 0], cut: true }, { type: "cyl", r: 4, h: 3, at: [0, 30, 10], axis: "x", cut: true }, { type: "cyl", r: 3, h: 3, at: [87, 30, 10], axis: "x", cut: true }] });
+    P.push({ name: "Schlauchhalter", purpose: "Wird an den Topfrand geklemmt und hält das Schlauchende (Ø 5–8 mm).", material: "PETG (oder PLA)", infill: "30%", layer: "0.2 mm", supports: false, filament_g: 3, print_min: 15,
+      shapes: [{ type: "box", size: [30, 12, 3], at: [0, 0, 0] }, { type: "box", size: [3, 12, 25], at: [0, 0, 0] }, { type: "box", size: [3, 12, 25], at: [9, 0, 0] }, { type: "cyl", r: 6, h: 3, at: [24, 6, 0] }, { type: "cyl", r: 3.6, h: 3, at: [24, 6, 0], cut: true }] });
+    return P;
+  }
   if (T === "arm") {
     const R = Math.min(45, (printer().bed[1] - 6) / 2), o = R;
     P.push({ name: "Arm-Sockel", purpose: "Standfuß mit Aufnahme für den Dreh-Servo (MG90S).", material: "PLA", infill: "30%", layer: "0.2 mm", supports: false, filament_g: 40, print_min: 120,
@@ -1300,7 +1468,7 @@ function probotParts3d(T, F, mini, size) {
       shapes: [{ type: "box", size: [50, 10, 4], at: [0, 0, 0] }, { type: "box", size: [4, 10, 12], at: [46, 0, 0] }, ...holes([[6, 5], [14, 5]], 1, 4)] });
     return P;
   }
-  const bed = printer().bed, L = Math.min(130, bed[0] - 10), W = Math.min(90, bed[1] - 6), sx = L / 130, sy = W / 90;
+  const bed = printer().bed, L = Math.min(T === "sumo" ? 98 : 130, bed[0] - 10), W = Math.min(T === "sumo" ? 98 : 90, bed[1] - 6), sx = L / 130, sy = W / 90;
   const sc = pts => pts.map(([x, y]) => [x * sx, y * sy]);
   P.push({ name: "Chassis-Platte", purpose: "Grundplatte: Motoren unten, Elektronik oben.", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 38, print_min: 110,
     shapes: [{ type: "box", size: [L, W, 3], at: [0, 0, 0] }, ...holes(sc([[30, 10], [50, 10], [30, 80], [50, 80]])), ...holes([[L - 12, W / 2 - 7], [L - 12, W / 2 + 7], [L - 7, W / 2 - 10], [L - 7, W / 2 + 10]]),
@@ -1315,6 +1483,12 @@ function probotParts3d(T, F, mini, size) {
       { type: "cyl", r: 8.3, h: 3, at: [12, 13, 14], axis: "y", cut: true }, { type: "cyl", r: 8.3, h: 3, at: [38, 13, 14], axis: "y", cut: true }, ...holes([[5, 6], [45, 6]])] });
   if (T === "linie") P.push({ name: "Liniensensor-Halter", purpose: "Hält beide Liniensensoren 1–2 cm über dem Boden.", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 5, print_min: 20,
     shapes: [{ type: "box", size: [50, 14, 3], at: [0, 0, 0] }, ...holes([[10, 7], [40, 7], [25, 7]])] });
+  if (T === "sumo") P.push({ name: "Schaufel", purpose: "Keil vorne – schiebt unter den Gegner. Mit 2 M3-Schrauben an die Platte.", material: "PLA", infill: "60%", layer: "0.2 mm", supports: false, filament_g: 14, print_min: 45,
+    shapes: [{ type: "box", size: [W, 30, 2], at: [0, 0, 0] }, { type: "box", size: [W, 4, 12], at: [0, 26, 0] }, ...[0, 1, 2, 3, 4, 5].map(i => ({ type: "box", size: [W, 30 - i * 5, 2], at: [0, i * 5, 2 + i * 1.6] })), ...holes([[W / 2 - 15, 28], [W / 2 + 15, 28]], 1.6, 14)] });
+  if (T === "labyrinth") P.push({ name: "Kopf-Halter", purpose: "Trägt den Servo-Kopf vorne auf der Platte.", material: "PLA", infill: "25%", layer: "0.2 mm", supports: false, filament_g: 7, print_min: 30,
+    shapes: [{ type: "box", size: [40, 30, 3], at: [0, 0, 0] }, { type: "box", size: [32, 16, 18], at: [4, 7, 3] }, { type: "box", size: [23, 12.5, 18], at: [8.5, 8.75, 3], cut: true }, ...holes([[3, 3], [37, 3]])] });
+  if (T === "lichtsucher") P.push({ name: "Lichtsensor-Fühler", purpose: "Hält zwei Lichtsensor-Module V-förmig vorne.", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 5, print_min: 20,
+    shapes: [{ type: "box", size: [60, 14, 3], at: [0, 0, 0] }, { type: "box", size: [3, 14, 20], at: [6, 0, 0] }, { type: "box", size: [3, 14, 20], at: [51, 0, 0] }, ...holes([[30, 7]])] });
   if (F.has("oled")) P.push({ name: "Augen-Rahmen", purpose: "Rahmen für das OLED-Display (die Augen).", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 6, print_min: 25,
     shapes: [{ type: "box", size: [34, 30, 3], at: [0, 0, 0] }, { type: "box", size: [24, 13, 3], at: [5, 9, 0], cut: true }, ...holes([[3, 3], [31, 3], [3, 27], [31, 27]], 1.1)] });
   return P.slice(0, 5);
@@ -1328,6 +1502,12 @@ function probotSvg(r, T, F, mini) {
     g += `<ellipse cx="200" cy="255" rx="80" ry="16" fill="#4fb3ff" stroke="#1d5f99" stroke-width="3"/><rect x="185" y="200" width="30" height="55" fill="#2d6fb5"/>
 <rect x="190" y="110" width="20" height="100" rx="6" fill="#4fb3ff" transform="rotate(-25 200 205)"/><rect x="230" y="70" width="18" height="80" rx="6" fill="#4fb3ff" transform="rotate(50 240 140)"/>
 <path d="M300 95 l25 -10 M300 105 l25 10" stroke="#333" stroke-width="6" stroke-linecap="round"/>` + lab(230, 290, "Sockel + Dreh-Servo") + lab(300, 70, "Greifer") + lab(40, 150, "Hebe-Servo");
+  } else if (T === "laufroboter") {
+    g += `<rect x="110" y="110" width="180" height="60" rx="14" fill="#4fb3ff" stroke="#1d5f99" stroke-width="3"/>` + [[125, -1], [165, 1], [235, -1], [275, 1]].map(([x, d]) => `<path d="M${x} 165 l${d * 18} 50 l${d * -6} 45" stroke="#333" stroke-width="10" fill="none" stroke-linecap="round"/>`).join("") + `<rect x="270" y="90" width="50" height="22" rx="4" fill="#2d9d5f"/>` + lab(150, 95, "4 Servo-Beine") + lab(300, 80, "Sensor");
+  } else if (T === "pflanzen") {
+    g += `<path d="M60 180 h90 l-12 90 h-66z" fill="#b5651d"/><path d="M105 180 q-30 -60 -10 -110 M105 180 q30 -50 50 -90" stroke="#2d9d5f" stroke-width="6" fill="none"/><ellipse cx="95" cy="70" rx="18" ry="9" fill="#3cb371"/><ellipse cx="155" cy="90" rx="18" ry="9" fill="#3cb371"/>
+<rect x="120" y="150" width="8" height="70" fill="#444"/><rect x="230" y="140" width="110" height="70" rx="8" fill="#4fb3ff" stroke="#1d5f99" stroke-width="3"/><rect x="250" y="155" width="50" height="25" fill="#111"/><rect x="250" y="225" width="80" height="50" rx="6" fill="#9fd3ff" stroke="#1d5f99"/>
+<path d="M290 235 C 250 120, 160 130, 140 180" stroke="#1d5f99" stroke-width="4" fill="none"/>` + lab(240, 135, "Steuerung + Display") + lab(250, 292, "Wassertank + Pumpe") + lab(20, 290, "Feuchte-Sensor in der Erde");
   } else {
     const s = mini ? 0.6 : 1, cx = 200, cy = 160, w = 220 * s, h = 110 * s;
     g += `<rect x="${cx - w / 2}" y="${cy - h / 2}" width="${w}" height="${h}" rx="${mini ? 24 : 14}" fill="${T === "schwarm" ? "#c0392b" : "#4fb3ff"}" stroke="#1d5f99" stroke-width="3"/>
@@ -1336,6 +1516,9 @@ function probotSvg(r, T, F, mini) {
     if (F.has("oled")) g += `<rect x="${cx - 40}" y="${cy - 30}" width="80" height="40" rx="6" fill="#111"/><rect x="${cx - 28}" y="${cy - 22}" width="18" height="20" rx="6" fill="#fff"/><rect x="${cx + 10}" y="${cy - 22}" width="18" height="20" rx="6" fill="#fff"/>`;
     if (F.has("leds")) for (let i = 0; i < 8; i++) g += `<circle cx="${cx - 35 * s + i * 10 * s}" cy="${cy + h / 2 - 12 * s}" r="${4 * s}" fill="hsl(${i * 45},90%,55%)"/>`;
     if (T === "linie") g += `<rect x="${cx - 30}" y="${cy - h / 2 - 12}" width="60" height="10" fill="#222"/>` + lab(cx + 40, cy - h / 2 - 2, "Liniensensoren");
+    if (T === "sumo") g += `<path d="M${cx - w / 2} ${cy - h / 2} l20 -30 h${w - 40} l20 30z" fill="#888"/>` + lab(cx + w / 2, cy - h / 2 - 20, "Schaufel");
+    if (T === "labyrinth") g += `<circle cx="${cx}" cy="${cy - h / 2 - 50}" r="10" fill="#555"/>` + lab(cx + 60, cy - h / 2 - 50, "dreht sich (Servo)");
+    if (T === "lichtsucher") g += `<path d="M${cx - 30} ${cy - h / 2} l-25 -40 M${cx + 30} ${cy - h / 2} l25 -40" stroke="#333" stroke-width="4"/><circle cx="${cx - 55}" cy="${cy - h / 2 - 40}" r="8" fill="#ffd54a"/><circle cx="${cx + 55}" cy="${cy - h / 2 - 40}" r="8" fill="#ffd54a"/>` + lab(cx + 70, cy - h / 2 - 40, "Lichtsensoren");
     if (T === "schwarm") g += `<circle cx="${cx}" cy="${cy - 10}" r="7" fill="#ffd54a"/>` + lab(cx + 12, cy - 30, "Lichtsensor") + `<path d="M120 70 q20 -20 40 0 M100 60 q40 -40 80 0" stroke="#888" fill="none" stroke-width="2"/>` + lab(60, 40, "Funk (ESP-NOW)");
     g += lab(10, 290, "Rad + Motor") + lab(cx - 30, cy + h / 2 + 30, r.parts[0].name.split(" (")[0]);
   }
@@ -1352,7 +1535,7 @@ function updateEngine() {
   $("loadai").classList.toggle("hidden", !pb || !!probotEngine || !probotAiSupported() || !!window.claude);
   $("mode").textContent = pb ? (probotEngine ? "ProBot-KI + Sprach-KI" : "ProBot-KI") : (sampleApi ? "Claude (kein Schlüssel nötig)" : "Claude (API-Schlüssel)");
   $("engineinfo").textContent = pb
-    ? "ProBot-KI läuft komplett auf deinem Gerät: gratis, ohne Anmeldung, Ergebnis in unter 1 Sekunde. Sie kennt 6 Roboter-Arten (Hindernis-Ausweicher, Linienfolger, Bluetooth-Auto, Greifarm, Mini-Schwarm, Haustier) mit Extras (LEDs, Töne, Display-Augen, Bluetooth). " + (probotEngine ? "Die Sprach-KI ist geladen und versteht deine Beschreibung noch besser." : probotAiSupported() && !window.claude ? "Optional: Sprach-KI dazuladen, damit sie freie Beschreibungen besser versteht." : "")
+    ? "ProBot-KI läuft komplett auf deinem Gerät: gratis, ohne Anmeldung, Ergebnis in unter 1 Sekunde. Sie kennt " + Object.keys(KB_TYPES).length + " Roboter-Arten (" + Object.values(KB_TYPES).map(t => t.label).join(", ") + ") und " + Object.keys(KB_FEATURES).length + " Extras (" + Object.values(KB_FEATURES).map(f => f.label).join(", ") + "). " + (probotEngine ? "Die Sprach-KI ist geladen und versteht deine Beschreibung noch besser." : probotAiSupported() && !window.claude ? "Optional: Sprach-KI dazuladen, damit sie freie Beschreibungen besser versteht." : "")
     : "Claude versteht jede Idee, braucht aber ein Claude-Konto oder einen API-Schlüssel und etwas Zeit.";
   try { localStorage.setItem("engine", engine()); } catch {}
 }
@@ -1626,6 +1809,7 @@ $("s-jsonapply").onclick = () => {
   try { const j = JSON.parse($("s-json").value); current = { ...j, svg: j.svg ?? current?.svg }; meshCache.clear(); render(current); show("t-studio"); sFill(); status("JSON übernommen.", "ok"); }
   catch (err) { status("Fehler im JSON: " + err.message, "err"); }
 };
+$("openstudio").onclick = () => { sProject(); render(current); show("t-studio"); sFill(); setTimeout(() => stView.draw(), 50); $("t-studio").scrollIntoView({ behavior: "smooth" }); };
 $("s-test").onclick = () => { sProject(); show("t-test"); $("scenario").focus(); };
 $("code").addEventListener("input", () => { if (current) { current.code = $("code").value; sChanged(); } });
 document.querySelector('[data-t="t-studio"]').addEventListener("click", () => { sFill(); setTimeout(() => stView.draw(), 50); });
