@@ -106,6 +106,7 @@
         <button data-t="t-guide">Anleitung</button>
         <button data-t="t-code">Code</button>
         <button data-t="t-test">Test-Labor</button>
+        <button data-t="t-web">Recherche</button>
       </div>
     </section>
 
@@ -157,6 +158,19 @@
         <input id="change" placeholder="z.B. Mach den Roboter langsamer und lass die LEDs blinken" style="flex:1;min-width:200px">
         <button id="fix">KI ändern lassen</button>
       </div>
+    </section>
+
+    <section id="t-web" class="tab card hidden">
+      <h2>Recherche im Internet</h2>
+      <p class="muted">ProBot sucht in Wikipedia nach Erklärungen zu deinem Roboter und seinen Teilen und gibt dir Links zu Anleitungen, Videos, Beispiel-Code und aktuellen Preisen. Gratis, ohne Anmeldung.</p>
+      <div class="row">
+        <input id="webq" placeholder="Wonach suchen? z.B. ESP-NOW, Schwarmrobotik, HC-SR04" style="flex:1;min-width:200px">
+        <button id="websearch">Suchen</button>
+      </div>
+      <p id="webstatus" class="muted"></p>
+      <div id="webres" class="partlist"></div>
+      <h3>Weiter suchen</h3>
+      <div id="weblinks" class="row"></div>
     </section>
 
     <section id="t-test" class="tab card hidden">
@@ -337,6 +351,7 @@ function render(r) {
     const tr = document.createElement("tr");
     tr.innerHTML = "<td></td><td class='num'></td><td class='num'></td>";
     tr.children[0].textContent = name; tr.children[1].textContent = qty; tr.children[2].textContent = eur(price);
+    if (!/Filament/.test(name)) { const a = document.createElement("a"); a.href = "https://www.idealo.de/preisvergleich/MainSearchProductCategory.html?q=" + encodeURIComponent(name.split(" – ")[0].split(" (")[0]); a.target = "_blank"; a.rel = "noopener"; a.textContent = " Preis prüfen ↗"; a.style.fontSize = "12px"; tr.children[0].appendChild(a); }
     tb.appendChild(tr); sum += price;
   };
   (r.parts || []).forEach(p => addRow(p.name + (p.note ? " – " + p.note : ""), p.qty || 1, (p.qty || 1) * (p.price_eur || 0)));
@@ -1310,6 +1325,56 @@ for (const id of ["runtest", "fix"]) {
     : orig();
 }
 
+
+/* ---------- Recherche: Wikipedia (frei, CORS erlaubt) + Such-Links ---------- */
+async function wikiSearch(q) {
+  const u = "https://de.wikipedia.org/w/api.php?action=query&list=search&format=json&origin=*&srlimit=4&srsearch=" + encodeURIComponent(q);
+  const j = await (await fetch(u)).json();
+  const hits = j.query?.search || [];
+  return Promise.all(hits.map(async h => {
+    try {
+      const sres = await (await fetch("https://de.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(h.title.replace(/ /g, "_")))).json();
+      return { title: h.title, text: sres.extract || "", url: sres.content_urls?.desktop?.page || "https://de.wikipedia.org/wiki/" + encodeURIComponent(h.title) };
+    } catch { return { title: h.title, text: h.snippet.replace(/<[^>]+>/g, ""), url: "https://de.wikipedia.org/wiki/" + encodeURIComponent(h.title) }; }
+  }));
+}
+function webLinks(q) {
+  const L = [["YouTube-Videos", "https://www.youtube.com/results?search_query="], ["Anleitungen (Instructables)", "https://www.instructables.com/search/?q="],
+    ["Beispiel-Code (GitHub)", "https://github.com/search?type=repositories&q="], ["Preise (idealo)", "https://www.idealo.de/preisvergleich/MainSearchProductCategory.html?q="],
+    ["3D-Modelle (Printables)", "https://www.printables.com/search/models?q="], ["Google", "https://www.google.com/search?q="]];
+  const box = $("weblinks"); box.innerHTML = "";
+  L.forEach(([t, u]) => { const a = document.createElement("a"); a.href = u + encodeURIComponent(q); a.target = "_blank"; a.rel = "noopener"; a.textContent = t + " ↗"; a.className = "badge"; a.style.fontSize = "14px"; box.appendChild(a); });
+}
+async function runWeb(q) {
+  if (!q) return;
+  $("webq").value = q; webLinks(q);
+  $("webstatus").textContent = "Suche in Wikipedia…"; $("webres").innerHTML = "";
+  try {
+    const terms = q.split(/\s*[,;]\s*/).filter(Boolean).slice(0, 4);
+    const all = (await Promise.all(terms.map(wikiSearch))).flat();
+    const seen = new Set(), res = all.filter(x => !seen.has(x.title) && seen.add(x.title)).slice(0, 8);
+    $("webstatus").textContent = res.length ? res.length + " Treffer aus Wikipedia:" : "Keine Wikipedia-Treffer – probier die Links unten.";
+    res.forEach(x => {
+      const d = document.createElement("div"); d.className = "part";
+      const a = document.createElement("a"); a.href = x.url; a.target = "_blank"; a.rel = "noopener"; a.textContent = x.title + " ↗"; a.style.fontWeight = "700";
+      const t = document.createElement("div"); t.className = "muted"; t.textContent = x.text.slice(0, 400) + (x.text.length > 400 ? " …" : "");
+      d.append(a, t); $("webres").appendChild(d);
+    });
+  } catch (e) {
+    $("webstatus").textContent = window.claude
+      ? "Die Claude-Seite blockiert Internet-Abfragen aus Sicherheitsgründen. Auf der GitHub-Seite von ProBot funktioniert die Recherche – die Links unten gehen aber überall."
+      : "Keine Verbindung zu Wikipedia (" + e.message + "). Die Links unten funktionieren trotzdem.";
+  }
+}
+$("websearch").onclick = () => runWeb($("webq").value.trim());
+$("webq").addEventListener("keydown", e => { if (e.key === "Enter") runWeb($("webq").value.trim()); });
+document.querySelector('[data-t="t-web"]').addEventListener("click", () => {
+  if (!$("webq").value && current) {
+    const T = { "Mini-Schwarm": "Schwarmrobotik, ESP-NOW", "ESP-NOW": "Schwarmrobotik, ESP-NOW", "Linie": "Linienfolger", "Roboterarm": "Greifer, Servomotor", "Bluetooth": "Bluetooth, Arduino", "Display-Augen": "Sozialer Roboter, OLED" };
+    const hit = Object.keys(T).find(k => (current.summary + current.name).includes(k));
+    runWeb(hit ? T[hit] : (current.parts || []).slice(0, 2).map(p => p.name.split(" (")[0]).join(", ") || current.name);
+  }
+});
 </script>
 </body>
 </html>
