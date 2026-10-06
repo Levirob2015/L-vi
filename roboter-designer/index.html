@@ -16,6 +16,7 @@
   main { max-width:1100px; margin:auto; padding:16px; display:grid; gap:16px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; min-width:0; }
   .card h2 { margin:0 0 12px; font-size:18px; } .card h3 { margin:14px 0 6px; font-size:16px; }
+  select { max-width:100%; text-overflow:ellipsis; }
   textarea, input, select { width:100%; background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:10px; font:inherit; }
   textarea#desc { min-height:110px; resize:vertical; }
   button { background:var(--acc); color:#fff; border:0; border-radius:8px; padding:10px 16px; font-weight:600; cursor:pointer; font:inherit; font-weight:600; }
@@ -958,7 +959,9 @@ function kbUnderstand(text, platform) {
   const t = " " + text.toLowerCase() + " ";
   const score = {};
   for (const [id, ty] of Object.entries(KB_TYPES)) score[id] = ty.words.reduce((a, w) => a + (t.includes(w) ? 1 : 0), 0);
-  let type = Object.entries(score).sort((a, b) => b[1] - a[1])[0];
+  // bei Gleichstand gewinnt die speziellere Art (Bluetooth ist oft nur ein Extra)
+  const prio = ["schwarm", "arm", "haustier", "linie", "btauto", "ausweicher"];
+  let type = Object.entries(score).sort((a, b) => b[1] - a[1] || prio.indexOf(a[0]) - prio.indexOf(b[0]))[0];
   type = type[1] > 0 ? type[0] : "ausweicher";
   const features = Object.entries(KB_FEATURES).filter(([, f]) => f.words.some(w => t.includes(w))).map(([id]) => id);
   let count = 1;
@@ -1060,6 +1063,7 @@ function probotDesign(u) {
   const sum = parts.reduce((a, p) => a + p.qty * p.price_eur, 0);
   if (u.budget && sum > u.budget) r.tips.unshift(`Achtung: Die Teile kosten ca. ${Math.round(sum)} € – mehr als dein Budget von ${u.budget} €. Spartipp: Teile im Mehrfachpack (z.B. 5er-Sets) kaufen, oder Extras weglassen.`);
   else if (u.budget) r.tips.unshift(`Dein Budget von ${u.budget} € reicht: Die Teile kosten ca. ${Math.round(sum)} €.`);
+  if (T !== "arm" && !mini && r.parts3d.length && (printer().bed[0] - 10 < 130 || printer().bed[1] - 6 < 90)) r.tips.unshift(`Dein Drucker (${printer().name}) ist klein: Die Chassis-Platte wurde auf ${Math.min(130, printer().bed[0] - 10)}×${Math.min(90, printer().bed[1] - 6)} mm verkleinert. Prüfe, ob Motoren und Elektronik noch draufpassen.`);
   if (u.size && !mini) r.tips.unshift(`Hinweis: Mit Standard-Teilen wird der Roboter ca. 13 cm lang. Für kleiner als 7 cm braucht es Mini-Teile (N20-Motoren, ESP32-C3).`);
   return r;
 }
@@ -1156,7 +1160,7 @@ function probotCode(mcu, p, T, F, drives, name) {
   L.push(`  Serial.println("${name} ist bereit!");`, "}", "");
   L.push("void loop() {");
   if (F.has("bt") && T !== "btauto") L.push(
-    "  if (bt.available() && bt.read() == 'S') { fahre(0, 0); while (!bt.available()) delay(10); }   // Not-Stopp per Handy");
+    `  if (bt.available() && bt.read() == 'S') { ${drives ? "fahre(0, 0); " : ""}while (!bt.available()) delay(10); }   // Pause per Handy: S senden, weiter mit beliebiger Taste`);
   if (T === "ausweicher") L.push(
     "  long cm = abstand();",
     "  Serial.print(\"Abstand: \"); Serial.println(cm);",
@@ -1285,9 +1289,10 @@ function probotParts3d(T, F, mini, size) {
     return P;
   }
   if (T === "arm") {
+    const R = Math.min(45, (printer().bed[1] - 6) / 2), o = R;
     P.push({ name: "Arm-Sockel", purpose: "Standfuß mit Aufnahme für den Dreh-Servo (MG90S).", material: "PLA", infill: "30%", layer: "0.2 mm", supports: false, filament_g: 40, print_min: 120,
-      shapes: [{ type: "cyl", r: 45, h: 6, at: [45, 45, 0] }, { type: "box", size: [32, 16, 26], at: [29, 37, 6] }, { type: "box", size: [23, 12.5, 26], at: [33.5, 38.75, 6], cut: true },
-        ...holes([[15, 45], [75, 45], [45, 15], [45, 75]], 2, 6)] });
+      shapes: [{ type: "cyl", r: R, h: 6, at: [o, o, 0] }, { type: "box", size: [32, 16, 26], at: [o - 16, o - 8, 6] }, { type: "box", size: [23, 12.5, 26], at: [o - 11.5, o - 6.25, 6], cut: true },
+        ...holes([[o - R + 10, o], [o + R - 10, o], [o, o - R + 10], [o, o + R - 10]], 2, 6)] });
     P.push({ name: "Arm-Segment", purpose: "Oberarm, wird auf das Servohorn des Dreh-Servos geschraubt; trägt den Hebe-Servo.", material: "PLA", infill: "30%", layer: "0.2 mm", supports: false, filament_g: 15, print_min: 50,
       shapes: [{ type: "box", size: [100, 18, 5], at: [0, 0, 0] }, { type: "box", size: [24, 18, 14], at: [76, 0, 0] }, { type: "box", size: [23, 12.5, 14], at: [76.5, 2.75, 0], cut: true },
         { type: "cyl", r: 3.5, h: 5, at: [9, 9, 0], cut: true }, ...holes([[3, 9], [15, 9]], 1, 5)] });
@@ -1295,11 +1300,12 @@ function probotParts3d(T, F, mini, size) {
       shapes: [{ type: "box", size: [50, 10, 4], at: [0, 0, 0] }, { type: "box", size: [4, 10, 12], at: [46, 0, 0] }, ...holes([[6, 5], [14, 5]], 1, 4)] });
     return P;
   }
-  const L = 130, W = 90;
+  const bed = printer().bed, L = Math.min(130, bed[0] - 10), W = Math.min(90, bed[1] - 6), sx = L / 130, sy = W / 90;
+  const sc = pts => pts.map(([x, y]) => [x * sx, y * sy]);
   P.push({ name: "Chassis-Platte", purpose: "Grundplatte: Motoren unten, Elektronik oben.", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 38, print_min: 110,
-    shapes: [{ type: "box", size: [L, W, 3], at: [0, 0, 0] }, ...holes([[30, 10], [50, 10], [30, 80], [50, 80], [118, 38], [118, 52], [123, 35], [123, 55]]),
-      { type: "box", size: [30, 12, 3], at: [65, 39, 0], cut: true }, { type: "cyl", r: 4, h: 3, at: [85, 20, 0], cut: true }, { type: "cyl", r: 4, h: 3, at: [85, 70, 0], cut: true },
-      ...(T === "linie" ? holes([[124, 25], [124, 65]]) : [])] });
+    shapes: [{ type: "box", size: [L, W, 3], at: [0, 0, 0] }, ...holes(sc([[30, 10], [50, 10], [30, 80], [50, 80]])), ...holes([[L - 12, W / 2 - 7], [L - 12, W / 2 + 7], [L - 7, W / 2 - 10], [L - 7, W / 2 + 10]]),
+      { type: "box", size: [30 * sx, 12, 3], at: [65 * sx, W / 2 - 6, 0], cut: true }, { type: "cyl", r: 4, h: 3, at: [85 * sx, 20 * sy, 0], cut: true }, { type: "cyl", r: 4, h: 3, at: [85 * sx, 70 * sy, 0], cut: true },
+      ...(T === "linie" ? holes([[L - 6, W / 2 - 20], [L - 6, W / 2 + 20]]) : [])] });
   P.push({ name: "Motor-Klemme", purpose: "2× drucken. Klemmt je einen TT-Motor unter die Platte.", material: "PLA", infill: "30%", layer: "0.2 mm", supports: false, filament_g: 6, print_min: 25,
     shapes: [{ type: "box", size: [30, 26, 3], at: [0, 0, 0] }, { type: "box", size: [30, 3, 22], at: [0, 0, 0] }, { type: "box", size: [30, 3, 22], at: [0, 23, 0] },
       { type: "cyl", r: 1.6, h: 3, at: [5, 1.5, 11], axis: "y", cut: true }, { type: "cyl", r: 1.6, h: 3, at: [25, 1.5, 11], axis: "y", cut: true }] });
@@ -1397,7 +1403,7 @@ function quickCheck() {
   const bal = (o, c) => (strip.split(o).length - strip.split(c).length);
   ok(bal("{", "}") === 0, bal("{", "}") === 0 ? "Geschweifte Klammern { } passen zusammen" : `Klammern passen nicht: ${Math.abs(bal("{", "}"))} „${bal("{", "}") > 0 ? "}" : "{"}“ fehlt`);
   ok(bal("(", ")") === 0, bal("(", ")") === 0 ? "Runde Klammern ( ) passen zusammen" : "Runde Klammern ( ) passen nicht zusammen");
-  const lines = strip.split("\n").map(l => l.trim()).filter(l => l && !/[{};,]$/.test(l) && !/^#|^\}|^(if|else|for|while)\b|\)$|^(public|private):/.test(l));
+  const lines = strip.split("\n").map(l => l.trim()).filter(l => l && !/[{};,:]$/.test(l) && !/^#|^\}|^(if|else|for|while)\b|\)$|^(public|private):/.test(l));
   ok(!lines.length, lines.length ? `Vermutlich fehlt ein Semikolon „;“ bei: ${lines[0].slice(0, 50)}` : "Keine fehlenden Semikolons gefunden");
   const pins = new Set();
   (current.wiring || []).join(" ").replace(/(?:→|->)\s*(A?\d+)(?![\d.,]|\s*V)/g, (_, p) => pins.add(p));
