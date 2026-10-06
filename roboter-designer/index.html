@@ -45,6 +45,15 @@
   .part b { cursor:pointer; }
   .badge { display:inline-block; font-size:12px; border:1px solid var(--line); border-radius:99px; padding:1px 8px; margin:2px 4px 0 0; color:var(--muted); }
   #serial { background:#05080d; color:#8ef0a8; font:13px/1.4 ui-monospace, monospace; padding:10px; border-radius:8px; min-height:160px; max-height:320px; overflow:auto; white-space:pre-wrap; }
+  .studio-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:800px) { .studio-grid { grid-template-columns:1fr; } }
+  .shape { display:grid; grid-template-columns:repeat(auto-fill,minmax(70px,1fr)); gap:6px; align-items:end; border:1px solid var(--line); border-radius:8px; padding:8px; }
+  .shape label { font-size:12px; color:var(--muted); display:grid; gap:2px; }
+  .shape input, .shape select, #s-parts input { padding:6px; font-size:14px; }
+  .shape.cut { border-style:dashed; }
+  #s-parts td { padding:3px 2px; }
+  #s-svg, #s-json { font:13px/1.4 ui-monospace, monospace; min-height:180px; }
+  #s-view { width:100%; height:300px; background:#dfe6f2; border-radius:8px; display:block; touch-action:none; }
   .mode { font-size:13px; padding:4px 10px; border-radius:99px; border:1px solid var(--line); color:var(--muted); }
 </style>
 </head>
@@ -107,6 +116,7 @@
         <button data-t="t-code">Code</button>
         <button data-t="t-test">Test-Labor</button>
         <button data-t="t-web">Recherche</button>
+        <button data-t="t-studio">🛠 Studio</button>
       </div>
     </section>
 
@@ -160,6 +170,59 @@
       </div>
     </section>
 
+    <section id="t-studio" class="tab card hidden">
+      <h2>🛠 Studio – alles selbst gestalten</h2>
+      <p class="muted">Hier baust du deinen Roboter komplett von Hand: Teile und Preise, 3D-Teile Form für Form, Verkabelung, Anleitung, Zeichnung und Code. Alles wird automatisch in deinem Browser gespeichert. Das Test-Labor prüft dein Werk danach mit KI.</p>
+      <div class="row">
+        <button class="sec" id="s-new">Leeres Projekt</button>
+        <button class="sec" id="s-save">Projekt speichern (.json)</button>
+        <label class="sec" style="border:1px solid var(--line);border-radius:8px;padding:10px 16px;cursor:pointer;font-weight:600">Projekt öffnen<input type="file" id="s-open" accept=".json,application/json" hidden></label>
+        <button class="sec" id="s-test">Im Test-Labor prüfen →</button>
+      </div>
+
+      <h3>Name &amp; Beschreibung</h3>
+      <input id="s-name" placeholder="Name des Roboters">
+      <textarea id="s-sum" rows="2" placeholder="Was kann der Roboter?" style="margin-top:8px"></textarea>
+
+      <h3>Teileliste &amp; Kosten</h3>
+      <div style="overflow-x:auto"><table id="s-parts"><thead><tr><th>Teil</th><th class="num">Anz.</th><th class="num">€/Stück</th><th></th></tr></thead><tbody></tbody>
+      <tfoot><tr><td>Gesamt</td><td></td><td class="num" id="s-total"></td><td></td></tr></tfoot></table></div>
+      <div class="row"><button class="sec" id="s-addpart">+ Teil</button></div>
+
+      <h3>3D-Teile</h3>
+      <div class="studio-grid">
+        <div>
+          <div class="row" style="margin-top:0"><select id="s-p3d" style="flex:1"></select><button class="sec" id="s-add3d">+ Neues Teil</button><button class="sec" id="s-del3d">Teil löschen</button></div>
+          <div class="row"><input id="s-p3dname" placeholder="Name des 3D-Teils" style="flex:1"></div>
+          <div id="s-shapes" class="partlist" style="margin-top:10px"></div>
+          <div class="row"><button class="sec" id="s-addbox">+ Quader</button><button class="sec" id="s-addcyl">+ Zylinder</button><button class="sec" id="s-addhole">+ Loch (M3)</button></div>
+        </div>
+        <div>
+          <canvas id="s-view"></canvas>
+          <p class="muted">Ziehen zum Drehen. Gestrichelte Formen sind Ausschnitte (Löcher). Maße in mm, Teil liegt auf z = 0.</p>
+          <div class="row"><button id="s-stl">STL herunterladen</button><button class="sec" id="s-scad">.scad</button></div>
+        </div>
+      </div>
+
+      <div class="studio-grid" style="margin-top:8px">
+        <div><h3>Verkabelung (eine Zeile pro Verbindung)</h3><textarea id="s-wiring" rows="7"></textarea></div>
+        <div><h3>Bauanleitung (ein Schritt pro Zeile)</h3><textarea id="s-steps" rows="7"></textarea></div>
+      </div>
+
+      <h3>Zeichnung (SVG)</h3>
+      <div class="studio-grid">
+        <textarea id="s-svg" spellcheck="false" placeholder="<svg viewBox='0 0 400 300'>…</svg>"></textarea>
+        <div id="s-svgview" style="background:#fff;border-radius:8px;min-height:180px;overflow:hidden"></div>
+      </div>
+
+      <h3>Code</h3>
+      <p class="muted">Der Code steht im Tab „Code“ – dort direkt bearbeiten, kopieren oder herunterladen.</p>
+      <details><summary class="muted" style="cursor:pointer">Für Profis: ganzes Projekt als JSON bearbeiten</summary>
+        <textarea id="s-json" spellcheck="false" style="margin-top:8px"></textarea>
+        <div class="row"><button class="sec" id="s-jsonapply">JSON übernehmen</button></div>
+      </details>
+    </section>
+
     <section id="t-web" class="tab card hidden">
       <h2>Recherche im Internet</h2>
       <p class="muted">ProBot sucht in Wikipedia nach Erklärungen zu deinem Roboter und seinen Teilen und gibt dir Links zu Anleitungen, Videos, Beispiel-Code und aktuellen Preisen. Gratis, ohne Anmeldung.</p>
@@ -177,7 +240,7 @@
       <h2>Test-Labor</h2>
       <p class="muted">Teste deinen Roboter, bevor du ihn baust: Die KI führt den (auch von dir bearbeiteten) Code in Gedanken aus, simuliert die Sensoren und zeigt dir, was im seriellen Monitor erscheinen würde – plus eine Prüfung, ob Code, Teile und Verkabelung zusammenpassen.</p>
       <input id="scenario" placeholder="Test-Situation, z.B. Ein Hindernis taucht 15 cm vor dem Roboter auf">
-      <div class="row"><button id="runtest">Test starten</button><span id="teststatus" class="muted"></span></div>
+      <div class="row"><button id="runtest">Test starten</button><span class="muted">Mit Claude: echte Simulation. Mit ProBot-KI: sofortiger Schnell-Check.</span><span id="teststatus" class="muted"></span></div>
       <h3>Serieller Monitor (simuliert)</h3>
       <div id="serial">– noch kein Test –</div>
       <h3>Was der Roboter macht</h3><p id="behavior" class="muted">–</p>
@@ -360,7 +423,7 @@ function render(r) {
   $("total").textContent = eur(sum);
   $("tools").textContent = (r.tools || []).join(", ");
   $("lang").textContent = r.language ? "(" + r.language + ")" : "";
-  $("code").value = r.code || "";
+  if ($("code").value !== (r.code || "")) $("code").value = r.code || "";
   renderGuide(r);
   render3dList(r);
   $("result").classList.remove("hidden");
@@ -1318,11 +1381,40 @@ $("go").onclick = async () => {
 };
 
 // Test-Labor und „KI ändern lassen“ brauchen eine große KI.
-for (const id of ["runtest", "fix"]) {
-  const orig = $(id).onclick;
-  $(id).onclick = () => (engine() === "probot" && !sampleApi && !$("key").value.trim())
-    ? status("Dafür braucht es Claude (oben bei „KI“ umstellen). Den Code kannst du aber jederzeit selbst im Tab „Code“ bearbeiten.", "warn")
-    : orig();
+const hasBigAi = () => !!sampleApi || !!$("key").value.trim();
+{ const orig = $("fix").onclick;
+  $("fix").onclick = () => hasBigAi() ? orig() : status("„KI ändern lassen“ braucht Claude (oben bei „KI“ umstellen). Den Code kannst du aber jederzeit selbst bearbeiten.", "warn"); }
+{ const orig = $("runtest").onclick;
+  $("runtest").onclick = () => hasBigAi() ? orig() : quickCheck(); }
+
+// Schnell-Check ohne große KI: prüft Code, Verkabelung, Teile und 3D-Teile mit festen Regeln.
+function quickCheck() {
+  if (!current) return;
+  const code = $("code").value, C = [], ok = (b, t) => C.push({ ok: !!b, text: t });
+  const strip = code.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/"(\\.|[^"\\])*"/g, '""');
+  ok(/void\s+setup\s*\(/.test(strip), "setup() vorhanden");
+  ok(/void\s+loop\s*\(/.test(strip), "loop() vorhanden");
+  const bal = (o, c) => (strip.split(o).length - strip.split(c).length);
+  ok(bal("{", "}") === 0, bal("{", "}") === 0 ? "Geschweifte Klammern { } passen zusammen" : `Klammern passen nicht: ${Math.abs(bal("{", "}"))} „${bal("{", "}") > 0 ? "}" : "{"}“ fehlt`);
+  ok(bal("(", ")") === 0, bal("(", ")") === 0 ? "Runde Klammern ( ) passen zusammen" : "Runde Klammern ( ) passen nicht zusammen");
+  const lines = strip.split("\n").map(l => l.trim()).filter(l => l && !/[{};,]$/.test(l) && !/^#|^\}|^(if|else|for|while)\b|\)$|^(public|private):/.test(l));
+  ok(!lines.length, lines.length ? `Vermutlich fehlt ein Semikolon „;“ bei: ${lines[0].slice(0, 50)}` : "Keine fehlenden Semikolons gefunden");
+  const pins = new Set();
+  (current.wiring || []).join(" ").replace(/(?:→|->)\s*(A?\d+)(?![\d.,]|\s*V)/g, (_, p) => pins.add(p));
+  const miss = [...pins].filter(p => !new RegExp("\\b" + p + "\\b").test(strip));
+  ok(!miss.length, miss.length ? `Diese Pins aus der Verkabelung kommen im Code nicht vor: ${miss.join(", ")}` : pins.size ? `Alle ${pins.size} Pins aus der Verkabelung stehen im Code` : "Keine Pins in der Verkabelung angegeben");
+  const libs = { "Adafruit_NeoPixel": /ws2812|neopixel|led-ring/i, "Servo": /servo/i, "Adafruit_SSD1306": /oled|display/i, "BluetoothSerial": /esp32/i, "SoftwareSerial": /hc-05|bluetooth/i };
+  for (const [lib, re] of Object.entries(libs)) if (new RegExp("#include\\s*<" + lib).test(code)) ok((current.parts || []).some(p => re.test(p.name)), `Bibliothek ${lib}: passendes Teil ${(current.parts || []).some(p => re.test(p.name)) ? "ist in der Teileliste" : "fehlt in der Teileliste"}`);
+  if (/analogWrite/.test(strip) && /Servo\.h/.test(code) && /\b(9|10)\b/.test((current.wiring || []).join(" ")) && /nano/i.test(JSON.stringify(current.parts))) ok(false, "Achtung Nano: Die Servo-Bibliothek blockiert PWM auf Pin 9 und 10 – Motoren dort laufen nicht.");
+  const motors = (current.parts || []).filter(p => /motor/i.test(p.name) && !/treiber/i.test(p.name)).reduce((a, p) => a + (p.qty || 0), 0);
+  if (motors) ok((current.parts || []).some(p => /treiber|driver|l298|drv8833|mx1508/i.test(p.name)), "Motoren brauchen einen Motortreiber – " + ((current.parts || []).some(p => /treiber|driver|l298|drv8833|mx1508/i.test(p.name)) ? "vorhanden" : "fehlt in der Teileliste!"));
+  ok((current.parts || []).some(p => /akku|batter|lipo|18650/i.test(p.name)), "Stromversorgung (Akku/Batterie) " + ((current.parts || []).some(p => /akku|batter|lipo|18650/i.test(p.name)) ? "ist geplant" : "fehlt in der Teileliste"));
+  for (const p of current.parts3d || []) { const f = fitsBed(p); ok(f.ok, `3D-Teil „${p.name}“ (${f.size}) ${f.ok ? "passt auf" : "ist zu groß für"} ${printer().name}`); }
+  $("serial").textContent = "Der Schnell-Check simuliert keinen Ablauf. Für eine echte Simulation mit seriellem Monitor oben bei „KI“ auf Claude umstellen.";
+  $("behavior").textContent = "Geprüft wurden Code-Aufbau, Klammern, Semikolons, Pins, Bibliotheken, Teile und 3D-Größen – ohne KI, sofort.";
+  const ul = $("checks"); ul.innerHTML = "";
+  C.forEach(c => { const li = document.createElement("li"); li.className = c.ok ? "ok" : "warn"; li.textContent = (c.ok ? "✓ " : "⚠ ") + c.text; ul.appendChild(li); });
+  $("teststatus").textContent = C.filter(c => !c.ok).length ? C.filter(c => !c.ok).length + " Hinweis(e) gefunden" : "Alles in Ordnung!";
 }
 
 
@@ -1375,6 +1467,165 @@ document.querySelector('[data-t="t-web"]').addEventListener("click", () => {
     runWeb(hit ? T[hit] : (current.parts || []).slice(0, 2).map(p => p.name.split(" (")[0]).join(", ") || current.name);
   }
 });
+
+/* ---------- Studio: alles manuell ---------- */
+const stView = (() => {   // zweite 3D-Ansicht nur fürs Studio (gleiche Technik wie die Vorschau)
+  const cv = $("s-view"), gl = cv.getContext("webgl");
+  if (!gl) return { set() {} };
+  let count = 0, rx = -0.9, rz = 0.6, ctr = [0, 0, 0], size = 1, drag = null;
+  const sh = (t, src) => { const x = gl.createShader(t); gl.shaderSource(x, src); gl.compileShader(x); return x; };
+  const pr = gl.createProgram();
+  gl.attachShader(pr, sh(gl.VERTEX_SHADER, "attribute vec3 p;attribute vec3 n;attribute vec3 c;uniform mat4 m;varying vec3 vn;varying vec3 vc;void main(){vc=c;vn=(m*vec4(n,0.)).xyz;gl_Position=m*vec4(p,1.);}"));
+  gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, "precision mediump float;varying vec3 vn;varying vec3 vc;void main(){float l=.35+.65*max(dot(normalize(vn),normalize(vec3(.4,.5,-.8))),0.);gl_FragColor=vec4(vc*l+.05,1.);}"));
+  gl.linkProgram(pr); gl.useProgram(pr);
+  const bp = gl.createBuffer(), bn = gl.createBuffer(), bc = gl.createBuffer();
+  const lp = gl.getAttribLocation(pr, "p"), ln = gl.getAttribLocation(pr, "n"), lc = gl.getAttribLocation(pr, "c"), lm = gl.getUniformLocation(pr, "m");
+  function draw() {
+    const w = cv.clientWidth, h = cv.clientHeight, d = devicePixelRatio || 1;
+    if (!w) return;
+    if (cv.width !== w * d) { cv.width = w * d; cv.height = h * d; }
+    gl.viewport(0, 0, cv.width, cv.height); gl.clearColor(.875, .9, .95, 1); gl.clear(16640); gl.enable(gl.DEPTH_TEST);
+    if (!count) return;
+    const cz = Math.cos(rz), sz = Math.sin(rz), cx = Math.cos(rx), sx = Math.sin(rx), s = 1.6 / size, a = h / w;
+    const R = [cz, sz * cx, sz * sx, -sz, cz * cx, cz * sx, 0, -sx, cx];
+    const t = [0, 1, 2].map(i => -(ctr[0] * R[i] + ctr[1] * R[3 + i] + ctr[2] * R[6 + i]));
+    gl.uniformMatrix4fv(lm, false, [R[0] * s * a, R[1] * s, -R[2] * s * .5, 0, R[3] * s * a, R[4] * s, -R[5] * s * .5, 0, R[6] * s * a, R[7] * s, -R[8] * s * .5, 0, t[0] * s * a, t[1] * s, -t[2] * s * .5, 1]);
+    gl.drawArrays(gl.TRIANGLES, 0, count);
+  }
+  function set(list) {
+    const total = list.reduce((a, [m]) => a + m.length, 0), pos = new Float32Array(total), col = new Float32Array(total), nrm = new Float32Array(total);
+    let o = 0; list.forEach(([m, rgb]) => { pos.set(m, o); for (let i = 0; i < m.length; i += 3) col.set(rgb, o + i); o += m.length; });
+    count = total / 3;
+    const lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+    for (let i = 0; i < total; i += 9) {
+      const u = [pos[i + 3] - pos[i], pos[i + 4] - pos[i + 1], pos[i + 5] - pos[i + 2]], v = [pos[i + 6] - pos[i], pos[i + 7] - pos[i + 1], pos[i + 8] - pos[i + 2]];
+      const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]], l = Math.hypot(...n) || 1;
+      for (let k = 0; k < 3; k++) { nrm.set(n.map(c => c / l), i + k * 3); for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], pos[i + k * 3 + a]); hi[a] = Math.max(hi[a], pos[i + k * 3 + a]); } }
+    }
+    if (count) { ctr = lo.map((c, i) => (c + hi[i]) / 2); size = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) || 1; }
+    for (const [b, data, loc] of [[bp, pos, lp], [bn, nrm, ln], [bc, col, lc]]) { gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0); }
+    draw();
+  }
+  cv.addEventListener("pointerdown", e => { drag = [e.clientX, e.clientY]; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener("pointermove", e => { if (!drag) return; rz += (e.clientX - drag[0]) * .01; rx = Math.max(-3.1, Math.min(0, rx + (e.clientY - drag[1]) * .01)); drag = [e.clientX, e.clientY]; draw(); });
+  cv.addEventListener("pointerup", () => drag = null);
+  return { set, draw };
+})();
+
+let sSel = 0, sTimer = null;
+const sNum = v => { const n = parseFloat(String(v).replace(",", ".")); return isFinite(n) ? n : 0; };
+function sProject() {
+  if (!current) { current = { name: "Mein Roboter", summary: "", parts: [], tools: [], wiring: [], steps: [], parts3d: [], code: "// Dein Code\nvoid setup() {\n}\n\nvoid loop() {\n}\n", language: "Arduino C++", filename: "roboter.ino", svg: "" }; render(current); }
+  current.parts ||= []; current.parts3d ||= []; current.wiring ||= []; current.steps ||= [];
+  return current;
+}
+function sChanged(full) {   // speichern + Hauptansicht nachziehen (gedrosselt)
+  clearTimeout(sTimer);
+  sTimer = setTimeout(() => {
+    current.code = $("code").value;
+    try { localStorage.setItem("probot-studio", JSON.stringify(slim({ ...current, svg: current.svg }))); localStorage.setItem("probot-studio-svg", current.svg || ""); } catch {}
+    const tab = document.querySelector(".tab:not(.hidden)")?.id;
+    render(current); if (tab) show(tab);
+    if (full) sFill();
+  }, 250);
+}
+function sFill() {
+  const r = sProject();
+  $("s-name").value = r.name || ""; $("s-sum").value = r.summary || "";
+  $("s-wiring").value = (r.wiring || []).join("\n"); $("s-steps").value = (r.steps || []).join("\n");
+  $("s-svg").value = r.svg || ""; $("s-svgview").innerHTML = cleanSvg(r.svg) || "<p class='muted' style='padding:12px;color:#556'>Noch keine Zeichnung – SVG-Code links eingeben.</p>";
+  sParts(); s3dList(); $("s-json").value = JSON.stringify(slim({ ...r, code: $("code").value }), null, 2);
+}
+function sParts() {
+  const tb = $("s-parts").tBodies[0]; tb.innerHTML = ""; let sum = 0;
+  current.parts.forEach((p, i) => {
+    sum += (p.qty || 0) * (p.price_eur || 0);
+    const tr = document.createElement("tr");
+    const inp = (val, w, cb, num) => { const x = document.createElement("input"); x.value = val ?? ""; x.style.width = w; if (num) x.inputMode = "decimal"; x.oninput = () => { cb(x.value); sTotal(); sChanged(); }; const td = document.createElement("td"); td.appendChild(x); return td; };
+    tr.append(inp(p.name, "100%", v => p.name = v), inp(p.qty, "56px", v => p.qty = sNum(v), 1), inp(p.price_eur, "72px", v => p.price_eur = sNum(v), 1));
+    const del = document.createElement("button"); del.className = "sec"; del.textContent = "✕"; del.onclick = () => { current.parts.splice(i, 1); sParts(); sChanged(); };
+    const td = document.createElement("td"); td.appendChild(del); tr.appendChild(td); tb.appendChild(tr);
+  });
+  sTotal();
+}
+function sTotal() { $("s-total").textContent = eur(current.parts.reduce((a, p) => a + (p.qty || 0) * (p.price_eur || 0), 0)); }
+function s3dList() {
+  const ps = current.parts3d, sel = $("s-p3d"); sel.innerHTML = "";
+  if (sSel >= ps.length) sSel = Math.max(0, ps.length - 1);
+  ps.forEach((p, i) => sel.add(new Option(p.name || "Teil " + (i + 1), i)));
+  sel.value = sSel; s3dShapes();
+}
+function s3dShapes() {
+  const box = $("s-shapes"); box.innerHTML = "";
+  const p = current.parts3d[sSel];
+  $("s-p3dname").value = p ? p.name : "";
+  if (!p) { box.innerHTML = "<p class='muted'>Noch kein 3D-Teil – „+ Neues Teil“ drücken.</p>"; stView.set([]); return; }
+  p.shapes.forEach((sh, i) => {
+    const d = document.createElement("div"); d.className = "shape" + (sh.cut ? " cut" : "");
+    const field = (label, get, set, opts) => {
+      const l = document.createElement("label"); l.textContent = label;
+      let x;
+      if (opts) { x = document.createElement("select"); opts.forEach(o => x.add(new Option(o[1], o[0]))); x.value = String(get()); x.onchange = () => { set(x.value); s3dUpdate(); if (label === "Form" || label === "Art") s3dShapes(); }; }
+      else { x = document.createElement("input"); x.value = Math.round(get() * 100) / 100; x.inputMode = "decimal"; x.oninput = () => { set(sNum(x.value)); s3dUpdate(); }; }
+      l.appendChild(x); d.appendChild(l);
+    };
+    field("Form", () => sh.type, v => { sh.type = v; if (v === "box") { sh.size ||= [10, 10, 10]; } else { sh.r ||= 5; sh.h ||= 10; } }, [["box", "Quader"], ["cyl", "Zylinder"]]);
+    field("Art", () => sh.cut ? "1" : "0", v => sh.cut = v === "1", [["0", "fest"], ["1", "Loch/Ausschnitt"]]);
+    ["x", "y", "z"].forEach((a, k) => field(a, () => (sh.at || [0, 0, 0])[k], v => { sh.at ||= [0, 0, 0]; sh.at[k] = v; }));
+    if (sh.type === "box") ["Länge", "Breite", "Höhe"].forEach((a, k) => field(a, () => sh.size[k], v => sh.size[k] = v));
+    else { field("Radius", () => sh.r, v => sh.r = v); field("Länge", () => sh.h, v => sh.h = v); field("Richtung", () => sh.axis || "z", v => sh.axis = v, [["z", "hoch"], ["x", "x"], ["y", "y"]]); }
+    if (printer().colors > 1) field("Farbe", () => sh.color || 1, v => sh.color = +v, [...Array(printer().colors)].map((_, k) => [String(k + 1), (p.colors?.[k] || "Farbe " + (k + 1))]));
+    const del = document.createElement("button"); del.className = "sec"; del.textContent = "✕"; del.title = "Form löschen";
+    del.onclick = () => { p.shapes.splice(i, 1); s3dShapes(); s3dUpdate(); };
+    d.appendChild(del); box.appendChild(d);
+  });
+  s3dUpdate(true);
+}
+function s3dUpdate(noSave) {
+  const p = current.parts3d[sSel]; if (!p) return;
+  if (printer().colors > 1 && p.shapes.some(s => (s.color || 1) > 1) && !p.colors) p.colors = ["Weiß", "Schwarz", "Rot", "Blau"].slice(0, printer().colors);
+  meshCache.clear();
+  try { stView.set(p.shapes.some(s => !s.cut) ? previewOf(p) : []); } catch (e) { console.warn(e); }
+  if (!noSave) { sel3d = sSel; sChanged(); }
+}
+function sDl(name, blob) { save(name, blob); }
+
+$("s-name").oninput = () => { current.name = $("s-name").value; sChanged(); };
+$("s-sum").oninput = () => { current.summary = $("s-sum").value; sChanged(); };
+$("s-wiring").oninput = () => { current.wiring = $("s-wiring").value.split("\n").filter(x => x.trim()); sChanged(); };
+$("s-steps").oninput = () => { current.steps = $("s-steps").value.split("\n").filter(x => x.trim()); sChanged(); };
+$("s-svg").oninput = () => { current.svg = $("s-svg").value; $("s-svgview").innerHTML = cleanSvg(current.svg) || ""; sChanged(); };
+$("s-addpart").onclick = () => { sProject().parts.push({ name: "Neues Teil", qty: 1, price_eur: 0 }); sParts(); sChanged(); };
+$("s-p3d").onchange = () => { sSel = +$("s-p3d").value; s3dShapes(); };
+$("s-p3dname").oninput = () => { const p = current.parts3d[sSel]; if (p) { p.name = $("s-p3dname").value; $("s-p3d").options[sSel].text = p.name; sChanged(); } };
+$("s-add3d").onclick = () => { sProject().parts3d.push({ name: "Neues Teil " + (current.parts3d.length + 1), purpose: "selbst konstruiert", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, shapes: [{ type: "box", size: [40, 30, 3], at: [0, 0, 0] }] }); sSel = current.parts3d.length - 1; s3dList(); sChanged(); };
+$("s-del3d").onclick = () => { if (!current?.parts3d?.length) return; current.parts3d.splice(sSel, 1); s3dList(); sChanged(); };
+const sAdd = sh => { const p = current?.parts3d?.[sSel]; if (!p) return status("Erst ein 3D-Teil anlegen („+ Neues Teil“).", "warn"); p.shapes.push(sh); s3dShapes(); s3dUpdate(); };
+$("s-addbox").onclick = () => sAdd({ type: "box", size: [10, 10, 10], at: [0, 0, 0] });
+$("s-addcyl").onclick = () => sAdd({ type: "cyl", r: 5, h: 10, at: [10, 10, 0], axis: "z" });
+$("s-addhole").onclick = () => sAdd({ type: "cyl", r: 1.6, h: 50, at: [5, 5, -1], axis: "z", cut: true });
+$("s-stl").onclick = () => { const p = current?.parts3d?.[sSel]; if (!p) return; const cs = colorsOf(p);
+  if (cs) cs.forEach((c, i) => save(fileBase(p.name) + "-farbe" + (i + 1) + ".stl", new Blob([toStl(meshOf(p, i + 1), p.name)])));
+  else save(fileBase(p.name) + ".stl", new Blob([toStl(meshOf(p), p.name)], { type: "model/stl" })); };
+$("s-scad").onclick = () => { const p = current?.parts3d?.[sSel]; if (p) save(fileBase(p.name) + ".scad", new Blob([toScad(p)], { type: "text/plain" })); };
+$("s-new").onclick = () => { current = null; meshCache.clear(); sSel = 0; sProject(); show("t-studio"); sFill(); sChanged(); };
+$("s-save").onclick = () => { const r = sProject(); save(fileBase(r.name) + ".probot.json", new Blob([JSON.stringify({ ...slim(r), svg: r.svg, code: $("code").value }, null, 2)], { type: "application/json" })); };
+$("s-open").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try { current = JSON.parse(await f.text()); meshCache.clear(); sSel = 0; render(current); show("t-studio"); sFill(); status("Projekt „" + current.name + "“ geöffnet.", "ok"); }
+  catch (err) { status("Die Datei ist kein gültiges ProBot-Projekt: " + err.message, "err"); }
+  e.target.value = "";
+};
+$("s-jsonapply").onclick = () => {
+  try { const j = JSON.parse($("s-json").value); current = { ...j, svg: j.svg ?? current?.svg }; meshCache.clear(); render(current); show("t-studio"); sFill(); status("JSON übernommen.", "ok"); }
+  catch (err) { status("Fehler im JSON: " + err.message, "err"); }
+};
+$("s-test").onclick = () => { sProject(); show("t-test"); $("scenario").focus(); };
+$("code").addEventListener("input", () => { if (current) { current.code = $("code").value; sChanged(); } });
+document.querySelector('[data-t="t-studio"]').addEventListener("click", () => { sFill(); setTimeout(() => stView.draw(), 50); });
+$("printer").addEventListener("change", () => { if (current) s3dShapes(); });
+// Letztes Studio-Projekt wiederherstellen
+try { const j = localStorage.getItem("probot-studio"); if (j && !current) { current = JSON.parse(j); current.svg = localStorage.getItem("probot-studio-svg") || ""; render(current); status("Dein letztes Projekt „" + current.name + "“ ist wieder da (Tab „🛠 Studio“).", "ok"); } } catch {}
 </script>
 </body>
 </html>
