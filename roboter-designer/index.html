@@ -447,6 +447,7 @@ function guideMarkdown(r) {
   L.push("## Zusammenbau"); (r.steps || []).forEach((s, i) => L.push(`${i + 1}. ${s}`)); L.push("");
   L.push("## Code hochladen", `Datei: ${r.filename || "roboter.txt"} (${r.language || ""}). Code aus dem Tab „Code“ kopieren oder herunterladen.`, "");
   if (r.tips?.length) { L.push("## Tipps & Fehlersuche"); r.tips.forEach(s => L.push("- " + s)); }
+  if (r.glossary?.length) { L.push("", "## Bauteile erklärt"); r.glossary.forEach(s => L.push("- " + s)); }
   return L.join("\n");
 }
 function renderGuide(r) {
@@ -463,6 +464,7 @@ function renderGuide(r) {
   sec("Verkabelung", r.wiring);
   sec("Zusammenbau", r.steps, true);
   sec("Tipps & Fehlersuche", r.tips);
+  sec("Bauteile erklärt", r.glossary);
 }
 
 /* ---------- 3D: Voxel-CSG → STL ---------- */
@@ -933,7 +935,50 @@ const KB_PARTS = {
   soil:      { name: "Bodenfeuchte-Sensor kapazitiv v1.2", price: 1.5, note: "rostet nicht" },
   pump:      { name: "Mini-Wasserpumpe 5 V + 1 m Schlauch", price: 3.5 },
   mosfet:    { name: "MOSFET-Schaltmodul (z.B. IRF520/AO3400)", price: 1.5, note: "schaltet die Pumpe" },
-  usbpower:  { name: "USB-Netzteil 5 V / 2 A + Kabel", price: 6.0 }
+  usbpower:  { name: "USB-Netzteil 5 V / 2 A + Kabel", price: 6.0 },
+  pir:       { name: "Bewegungsmelder HC-SR501 (PIR)", price: 2.0, note: "spürt Menschen und Tiere" },
+  irrecv:    { name: "IR-Empfänger VS1838B + Fernbedienung", price: 2.5 },
+  tcs:       { name: "Farbsensor TCS34725", price: 6.0, note: "erkennt Farben" },
+  solarpanel:{ name: "Mini-Solarzelle 6 V / 1 W", price: 4.0 },
+  bumper:    { name: "Mikroschalter mit Hebel (Stoßsensor)", price: 0.5 },
+  fan:       { name: "Radiallüfter 5 V 50 mm (Saugturbine)", price: 4.0 },
+  pen:       { name: "Filzstift + Gummiband", price: 1.0 }
+};
+
+/* ---------- Wissensbasis: Bauteile erklärt ---------- */
+const KB_INFO = {
+  nano: "Arduino Nano – kleiner Mikrocontroller (16 MHz). Führt deinen Code aus, 5-V-Logik, wird über USB programmiert.",
+  esp32: "ESP32 – schneller Mikrocontroller (240 MHz, 2 Kerne) mit WLAN und Bluetooth eingebaut. 3,3-V-Logik!",
+  c3: "ESP32-C3 SuperMini – briefmarkengroßer ESP32 mit WLAN/ESP-NOW. Ideal für winzige Roboter.",
+  l298: "Motortreiber – das Board liefert zu wenig Strom für Motoren. Der Treiber verstärkt die Signale und kann die Drehrichtung umkehren (H-Brücke).",
+  drv8833: "DRV8833 – kleiner, sparsamer Motortreiber für zwei Mini-Motoren bis 1,2 A.",
+  tt: "TT-Getriebemotor – Gleichstrommotor mit Getriebe (ca. 1:48), langsam aber kräftig. Standard bei Bastel-Robotern.",
+  n20: "N20-Motor – sehr kleiner Getriebemotor aus Metall, für Mini-Roboter.",
+  caster: "Kugelrolle – drittes Rad, das sich in jede Richtung dreht, damit der Roboter mit zwei Antriebsrädern nicht umkippt.",
+  hcsr04: "HC-SR04 – misst Abstand mit Ultraschall wie eine Fledermaus: sendet ein Piepen und misst, wie lange das Echo braucht (Zeit ÷ 58 = cm).",
+  tcrt: "TCRT5000 – Infrarot-LED + Lichtsensor. Weiß reflektiert viel, Schwarz wenig – so erkennt er Linien und Ränder.",
+  hc05: "HC-05 – Bluetooth-Modul. Das Handy schickt Buchstaben (z.B. F für vorwärts), der Arduino liest sie wie über ein Kabel.",
+  sg90: "Servo – Motor, der auf einen genauen Winkel (0–180°) fährt und dort bleibt. Gesteuert mit einem Pulssignal.",
+  mg90: "MG90S – Servo mit Metallgetriebe, stärker und haltbarer als der SG90.",
+  ws2812: "WS2812B – „intelligente“ LEDs: Jede LED kann über nur EINE Datenleitung eine eigene Farbe bekommen.",
+  buzzer: "Piezo-Summer – macht Töne. Mit tone() kann man sogar Melodien spielen.",
+  oled: "OLED-Display – kleiner Bildschirm (128×64 Pixel), angeschlossen über I2C (nur 2 Datenleitungen: SDA und SCL).",
+  touch: "TTP223 – Berührungssensor. Merkt einen Finger durch dünnes Plastik hindurch.",
+  ldr: "Fotowiderstand – sein Widerstand sinkt bei Licht. Der analoge Eingang misst das als Zahl.",
+  mpu6050: "MPU6050 – misst Beschleunigung und Drehung in 3 Achsen. Damit merkt der Roboter, ob er kippt oder sich dreht.",
+  dht22: "DHT22 – misst Temperatur (±0,5 °C) und Luftfeuchtigkeit. Höchstens alle 2 Sekunden abfragen.",
+  soil: "Kapazitiver Bodenfeuchte-Sensor – misst, wie nass die Erde ist, ohne Metall in der Erde (rostet nicht).",
+  pump: "Mini-Pumpe – kleine Tauchpumpe, die Wasser durch einen Schlauch drückt.",
+  mosfet: "MOSFET – elektronischer Schalter: Ein schwaches Signal vom Board schaltet einen starken Strom (z.B. für Pumpe oder Lüfter).",
+  pir: "PIR-Bewegungsmelder – sieht Wärmestrahlung. Wenn sich etwas Warmes (Mensch, Katze) bewegt, gibt er HIGH aus.",
+  irrecv: "IR-Empfänger – empfängt die unsichtbaren Lichtblitze einer TV-Fernbedienung. Jede Taste hat einen eigenen Code.",
+  tcs: "TCS34725 – Farbsensor mit eigener LED. Misst, wie viel Rot, Grün und Blau ein Gegenstand zurückwirft.",
+  solarpanel: "Solarzelle – macht aus Licht Strom. Am meisten, wenn sie genau zur Sonne zeigt.",
+  bumper: "Mikroschalter – klickt, wenn der Roboter irgendwo anstößt. Einfachster Hindernis-Sensor.",
+  fan: "Radiallüfter – saugt Luft an und bläst sie zur Seite. Erzeugt den Sog für einen Mini-Staubsauger.",
+  aa4: "4×AA-Batterien – liefern ca. 6 V. Einfach, aber schwerer und schneller leer als Akkus.",
+  lipo18650: "18650-Akku – starker Lithium-Akku (3,7 V), wiederaufladbar mit dem TP4056-Laderegler.",
+  lipo_mini: "LiPo-Akku – leichter, flacher Lithium-Akku für Mini-Roboter. Nie tiefentladen oder beschädigen!"
 };
 
 /* ---------- Wissensbasis: Roboter-Arten ---------- */
@@ -958,19 +1003,34 @@ const KB_TYPES = {
     summary: "misst die Feuchtigkeit der Blumenerde und gießt automatisch mit einer kleinen Pumpe, wenn die Pflanze Durst hat" },
   lichtsucher: { label: "Licht-Sucher", words: ["licht such", "lichtsuch", "sonne", "taschenlampe", "hell", "folgt dem licht", "motte", "solar"],
     summary: "fährt mit zwei Lichtsensoren immer zur hellsten Stelle – z.B. einer Taschenlampe hinterher" },
+  rover: { label: "Mars-Rover (Gelände)", words: ["rover", "mars", "gelände", "offroad", "erkunden", "expedition", "mond", "planet", "allrad", "4wd", "panzer"],
+    summary: "ist ein robuster Geländewagen mit Allradantrieb: Er erkundet selbstständig, weicht Hindernissen aus und meldet seine Messwerte" },
+  wache: { label: "Wach-Roboter (Alarm)", words: ["alarm", "wache", "wächter", "einbrecher", "sicherheit", "bewach", "dieb", "überwach", "bewegungsmelder", "polizei"],
+    summary: "patrouilliert durchs Zimmer und schlägt mit Sirene und rotem Blinklicht Alarm, sobald sich jemand bewegt" },
+  zeichner: { label: "Mal-Roboter", words: ["mal", "zeichn", "stift", "kunst", "bild", "malen", "schreib", "turtle", "muster"],
+    summary: "fährt mit einem Stift über Papier und zeichnet Formen wie Quadrat, Stern und Spirale – ein Servo hebt und senkt den Stift" },
+  sortierer: { label: "Farb-Sortierer", words: ["sortier", "farb", "farbe", "smarties", "m&m", "lego", "steine sortieren", "bonbon", "kugeln"],
+    summary: "erkennt mit einem Farbsensor die Farbe von Süßigkeiten oder Legosteinen und lenkt sie mit einer Servo-Rutsche in den richtigen Becher" },
+  solar: { label: "Sonnen-Folger (Solar)", words: ["solar", "sonne", "sonnenfolg", "photovoltaik", "strom erzeugen", "solarpanel", "tracker"],
+    summary: "dreht seine Solarzelle mit einem Servo immer genau zur Sonne – zwei Lichtsensoren vergleichen, welche Seite heller ist" },
+  staubsauger: { label: "Mini-Staubsauger", words: ["staubsaug", "saug", "putz", "kehr", "sauber", "krümel", "dreck", "boden reinig"],
+    summary: "fährt kreuz und quer, saugt mit einem Lüfter Krümel auf und dreht um, wenn sein Stoßfänger irgendwo anstößt" },
   haustier: { label: "Haustier-Roboter", words: ["haustier", "freund", "süß", "augen", "gefühl", "emotion", "streichel", "spielen", "begleit", "katze", "hund"],
     summary: "ist ein kleiner Freund mit Display-Augen: Er fährt herum, freut sich, wenn man ihn streichelt, und piept fröhlich" }
 };
 
 const KB_FEATURES = {
-  leds:   { label: "bunte LEDs", words: ["led", "licht", "leucht", "bunt", "farb", "blink"] },
-  buzzer: { label: "Summer/Töne", words: ["ton", "piep", "sound", "musik", "summer", "geräusch", "melodie"] },
+  leds:   { label: "bunte LEDs", words: ["led", "leucht", "bunt", "blink", "licht"] },
+  buzzer: { label: "Summer/Töne", words: ["ton", "piep", "sound", "summer", "geräusch"] },
+  musik:  { label: "Melodien", words: ["musik", "melodie", "lied", "singt", "song", "tanz"] },
+  ir:     { label: "TV-Fernbedienung", words: ["fernbedienung", "infrarot", "tv-fernbedienung", "ir-"] },
+  pir:    { label: "Bewegungsmelder", words: ["bewegungsmelder", "bewegung", "pir", "jemand kommt", "menschen erkennen"] },
   oled:   { label: "Display-Augen", words: ["display", "augen", "bildschirm", "gesicht", "oled", "anzeige"] },
   bt:     { label: "Bluetooth", words: ["bluetooth", "handy", "app", "fernsteuer"] },
   us:     { label: "Abstandssensor", words: ["hindernis", "abstand", "ultraschall", "wand"] },
   wlan:   { label: "WLAN-Steuerung (Webseite)", words: ["wlan", "wifi", "internet", "webseite", "browser", "online"] },
   dht:    { label: "Temperatur & Luftfeuchte", words: ["temperatur", "feucht", "wetter", "klima", "warm", "kalt"] },
-  gyro:   { label: "Kipp-/Lagesensor", words: ["gyro", "kipp", "lage", "neigung", "umfall", "balance", "gleichgewicht"] }
+  gyro:   { label: "Kipp-/Lagesensor", words: ["gyro", "kipp", "lagesensor", "neigung", "umfall", "balance", "gleichgewicht"] }
 };
 
 /* ---------- Verstehen: Stichworte ---------- */
@@ -980,7 +1040,7 @@ function kbUnderstand(text, platform) {
   const score = {};
   for (const [id, ty] of Object.entries(KB_TYPES)) score[id] = ty.words.reduce((a, w) => a + (t.includes(w) ? 1 : 0), 0);
   // bei Gleichstand gewinnt die speziellere Art (Bluetooth ist oft nur ein Extra)
-  const prio = ["schwarm", "arm", "haustier", "linie", "btauto", "ausweicher"];
+  const prio = ["schwarm", "sortierer", "solar", "zeichner", "staubsauger", "wache", "sumo", "labyrinth", "laufroboter", "pflanzen", "lichtsucher", "arm", "haustier", "linie", "rover", "btauto", "ausweicher"];
   let type = Object.entries(score).sort((a, b) => b[1] - a[1] || prio.indexOf(a[0]) - prio.indexOf(b[0]))[0];
   type = type[1] > 0 ? type[0] : "ausweicher";
   const features = Object.entries(KB_FEATURES).filter(([, f]) => f.words.some(w => t.includes(w))).map(([id]) => id);
@@ -1038,17 +1098,22 @@ function probotDesign(u) {
   if (T === "ausweicher" || T === "haustier") F.add("us");
   if (T === "btauto") F.add("bt");
   if (T === "haustier") { F.add("oled"); F.add("buzzer"); }
-  if (T === "schwarm") { ["bt", "oled", "us", "wlan", "dht", "gyro"].forEach(f => F.delete(f)); F.add("leds"); }   // winzig + Funk ist schon belegt
-  if (T === "arm" || T === "pflanzen") F.delete("us");
-  if (["sumo", "labyrinth", "laufroboter"].includes(T)) F.add("us");
+  if (T === "schwarm") { ["bt", "oled", "us", "wlan", "dht", "gyro", "pir", "ir"].forEach(f => F.delete(f)); F.add("leds"); }   // winzig + Funk ist schon belegt
+  const STATIC = ["arm", "laufroboter", "pflanzen", "sortierer", "solar"];
+  if (STATIC.includes(T) || T === "zeichner") F.delete("us");
+  if (["sumo", "labyrinth", "laufroboter", "rover", "wache"].includes(T)) F.add("us");
+  if (T === "wache") { F.add("pir"); F.add("buzzer"); F.add("leds"); }
+  if (F.has("musik")) F.add("buzzer");
+  if (T === "sortierer" || T === "solar") ["bt", "ir"].forEach(f => F.delete(f));
   if (T === "pflanzen" && !F.has("wlan")) F.add("oled");
-  const esp = u.esp || mini || F.has("wlan");
+  const esp = u.esp || mini || F.has("wlan") || (F.has("pir") && F.has("bt")) || (T === "haustier" && F.has("ir"));
   const mcu = T === "schwarm" ? "c3" : esp ? "esp32" : "nano";
   const P = []; const add = (id, qty = 1) => P.push({ id, qty });
   add(mcu);
-  const drives = !["arm", "laufroboter", "pflanzen"].includes(T);
+  const drives = !STATIC.includes(T);
   if (drives) {
     if (mini) { add("drv8833"); add("n20", 2); add("caster_mini"); }
+    else if (T === "rover") { add("l298"); add("tt", 4); }
     else { add("l298"); add("tt", 2); add("caster"); }
   }
   if (F.has("us")) add("hcsr04");
@@ -1064,10 +1129,16 @@ function probotDesign(u) {
   if (T === "lichtsucher") add("ldr", 2);
   if (F.has("dht")) add("dht22");
   if (F.has("gyro")) add("mpu6050");
+  if (F.has("pir")) add("pir");
+  if (F.has("ir")) add("irrecv");
+  if (T === "zeichner") { add("sg90"); add("pen"); }
+  if (T === "sortierer") { add("tcs"); add("sg90", 2); }
+  if (T === "solar") { add("ldr", 2); add("mg90"); add("solarpanel"); }
+  if (T === "staubsauger") { add("bumper", 2); add("fan"); add("mosfet"); }
   if (F.has("leds")) add("ws2812");
   if (F.has("buzzer")) add("buzzer");
   if (F.has("oled")) add("oled");
-  add(T === "pflanzen" ? "usbpower" : mini ? "lipo_mini" : mcu === "nano" ? "aa4" : "lipo18650");
+  add(T === "pflanzen" || T === "sortierer" ? "usbpower" : mini ? "lipo_mini" : mcu === "nano" ? "aa4" : "lipo18650");
   add("wires"); add("screws");
   const n = Math.max(1, u.count || 1);
   const parts = P.map(p => ({ name: KB_PARTS[p.id].name, qty: p.qty * (p.id === "wires" || p.id === "screws" ? 1 : n), price_eur: KB_PARTS[p.id].price, note: KB_PARTS[p.id].note }));
@@ -1075,8 +1146,8 @@ function probotDesign(u) {
   const pins = PINS[mcu];
   const wiring = probotWiring(mcu, pins, T, F, drives);
   const ty = KB_TYPES[T];
-  const name = u.name || ({ ausweicher: "Flitzi", linie: "Spurli", btauto: "Blue-Racer", arm: "Greifi", schwarm: "Ameisen-Schwarm", haustier: "Pixel", sumo: "Rammbock", labyrinth: "Theseus", laufroboter: "Krabbel", pflanzen: "Gießkanne 2000", lichtsucher: "Motte" })[T];
-  const extras = [...F].filter(f => !(f === "us" && ["ausweicher", "sumo", "labyrinth", "laufroboter", "haustier"].includes(T)) && !(T === "btauto" && f === "bt")).map(f => KB_FEATURES[f].label);
+  const name = u.name || ({ ausweicher: "Flitzi", linie: "Spurli", btauto: "Blue-Racer", arm: "Greifi", schwarm: "Ameisen-Schwarm", haustier: "Pixel", sumo: "Rammbock", labyrinth: "Theseus", laufroboter: "Krabbel", pflanzen: "Gießkanne 2000", lichtsucher: "Motte", rover: "Curiosity Jr.", wache: "Wachhund 3000", zeichner: "Picasso-Bot", sortierer: "Farbenfroh", solar: "Sonnenblume", staubsauger: "Krümelmonster" })[T];
+  const extras = [...F].filter(f => !(f === "us" && ["ausweicher", "sumo", "labyrinth", "laufroboter", "haustier", "rover", "wache"].includes(T)) && !(T === "wache" && ["pir", "buzzer", "leds"].includes(f)) && !(T === "btauto" && f === "bt")).map(f => KB_FEATURES[f].label);
   const summary = u.summary || `${name} ${ty.summary}${extras.length ? ". Extras: " + extras.join(", ") : ""}.${n > 1 ? ` Du baust ${n} Stück davon.` : ""}`;
   const r = {
     name, summary, parts,
@@ -1086,6 +1157,7 @@ function probotDesign(u) {
     steps: probotSteps(T, F, mini, n, mcu),
     print_guide: probotPrintGuide(),
     tips: probotTips(T, F, mcu),
+    glossary: [...new Set(P.map(p => p.id))].filter(id => KB_INFO[id]).map(id => KB_INFO[id]),
     parts3d: probotParts3d(T, F, mini, u.size)
   };
   r.svg = probotSvg(r, T, F, mini);
@@ -1098,8 +1170,8 @@ function probotDesign(u) {
 }
 
 const PINS = {
-  nano:  { m: [5, 6, 3, 11], trig: 7, echo: 8, lineL: "A0", lineR: "A1", btRx: 2, btTx: 4, servo: [9, 10, 12], legs: [9, 10, 12, 13], head: 9, led: 12, buz: "A2", touch: "A3", ldr: "A6", ldrL: "A6", ldrR: "A7", soil: "A0", pump: 10, dht: 13 },
-  esp32: { m: [25, 26, 27, 14], trig: 5, echo: 18, lineL: 34, lineR: 35, servo: [13, 12, 15], legs: [13, 12, 15, 2], head: 13, led: 4, buz: 19, touch: 32, ldr: 33, ldrL: 34, ldrR: 35, soil: 36, pump: 23, dht: 16 },
+  nano:  { m: [5, 6, 3, 11], trig: 7, echo: 8, lineL: "A0", lineR: "A1", btRx: 2, btTx: 4, servo: [9, 10, 12], legs: [9, 10, 12, 13], head: 9, led: 12, buz: "A2", touch: "A3", ldr: "A6", ldrL: "A6", ldrR: "A7", soil: "A0", pump: 10, dht: 13, pir: 2, ir: "A3", fan: 10, pen: 9, servo2: 10, bumpL: "A0", bumpR: "A1" },
+  esp32: { m: [25, 26, 27, 14], trig: 5, echo: 18, lineL: 34, lineR: 35, servo: [13, 12, 15], legs: [13, 12, 15, 2], head: 13, led: 4, buz: 19, touch: 32, ldr: 33, ldrL: 34, ldrR: 35, soil: 36, pump: 23, dht: 16, pir: 17, ir: 39, fan: 23, pen: 13, servo2: 12, bumpL: 32, bumpR: 33 },
   c3:    { m: [0, 1, 2, 3], led: 8, ldr: 4, buz: 10, sda: 5, scl: 6 }
 };
 function probotWiring(mcu, p, T, F, drives) {
@@ -1118,6 +1190,13 @@ function probotWiring(mcu, p, T, F, drives) {
   if (T === "laufroboter") w.push(`Bein-Servos: vorne links → ${p.legs[0]}, vorne rechts → ${p.legs[1]}, hinten links → ${p.legs[2]}, hinten rechts → ${p.legs[3]}; Servo-Strom direkt vom Akku, Masse verbinden`);
   if (T === "pflanzen") w.push(`Bodenfeuchte-Sensor AOUT → ${p.soil}, VCC → ${mcu === "nano" ? "5V" : "3,3 V"}, GND → GND`, `MOSFET-Modul SIG → ${p.pump}; Pumpe an V+/V− des Moduls, Modul-Strom vom 5-V-Netzteil`);
   if (T === "lichtsucher") w.push(`Lichtsensor links AO → ${p.ldrL}, rechts AO → ${p.ldrR}, VCC → ${mcu === "nano" ? "5V" : "3,3 V"}, GND → GND`);
+  if (T === "rover") w.push("Rover: Die zwei linken Motoren parallel an Motor-Ausgang A, die zwei rechten parallel an Ausgang B (gleiche Polung!)");
+  if (F.has("pir")) w.push(`PIR-Bewegungsmelder: OUT → ${p.pir}, VCC → 5V, GND → GND`);
+  if (F.has("ir")) w.push(`IR-Empfänger: OUT → ${p.ir}, VCC → ${mcu === "nano" ? "5V" : "3,3 V"}, GND → GND`);
+  if (T === "zeichner") w.push(`Stift-Servo: Signal → ${p.pen}, + → 5V, − → GND`);
+  if (T === "sortierer") w.push(`Farbsensor TCS34725: SDA → ${mcu === "nano" ? "A4" : 21}, SCL → ${mcu === "nano" ? "A5" : 22}, VIN → 5V, GND → GND`, `Rutschen-Servo → ${p.servo[0]}, Zuführ-Servo → ${p.servo2}; Servo-Strom vom 5-V-Netzteil`);
+  if (T === "solar") w.push(`Lichtsensor links AO → ${p.ldrL}, rechts AO → ${p.ldrR}`, `Dreh-Servo → ${p.servo[0]}`, "Solarzelle: an ein Multimeter oder eine kleine LED anschließen, um die Leistung zu sehen");
+  if (T === "staubsauger") w.push(`Stoßschalter links → ${p.bumpL}, rechts → ${p.bumpR} (anderes Bein an GND, interner Pull-up)`, `Lüfter über MOSFET: SIG → ${p.fan}, Lüfter an V+/V−`);
   if (F.has("dht")) w.push(`DHT22: DATA → ${p.dht} (10 kΩ nach VCC, bei Modulen schon drauf), VCC → 3,3/5 V, GND → GND`);
   if (F.has("gyro")) w.push(`MPU6050: SDA → ${mcu === "nano" ? "A4" : 21}, SCL → ${mcu === "nano" ? "A5" : 22}, VCC → 3,3/5 V, GND → GND (teilt sich I2C mit dem Display)`);
   if (T === "schwarm") w.push(`Lichtsensor AO → ${p.ldr}; LiPo + → 5V-Pin des C3 (über Schalter), − → GND`);
@@ -1131,6 +1210,9 @@ function probotCode(mcu, p, T, F, drives, name) {
   L.push(`// ${name} – erstellt mit ProBot (${KB_TYPES[T].label})`, `// Board: ${KB_PARTS[mcu].name}`, "");
   if (F.has("leds")) L.push("#include <Adafruit_NeoPixel.h>   // Bibliothek: Adafruit NeoPixel");
   if (["arm", "labyrinth", "laufroboter"].includes(T)) L.push(esp ? "#include <ESP32Servo.h>          // Bibliothek: ESP32Servo" : "#include <Servo.h>");
+  if (["zeichner", "sortierer", "solar"].includes(T) && !["arm", "labyrinth", "laufroboter"].includes(T)) L.push(esp ? "#include <ESP32Servo.h>          // Bibliothek: ESP32Servo" : "#include <Servo.h>");
+  if (T === "sortierer") L.push("#include <Adafruit_TCS34725.h>   // Bibliothek: Adafruit TCS34725");
+  if (F.has("ir")) L.push("#include <IRremote.hpp>           // Bibliothek: IRremote (v4)");
   if (F.has("dht")) L.push("#include <DHT.h>                 // Bibliothek: DHT sensor library (Adafruit)");
   if (F.has("gyro") && !F.has("oled")) L.push("#include <Wire.h>");
   if (F.has("wlan")) L.push("#include <WiFi.h>", "#include <WebServer.h>");
@@ -1152,6 +1234,12 @@ function probotCode(mcu, p, T, F, drives, name) {
   if (T === "laufroboter") L.push("Servo bein[4];", `const int BEIN_PINS[4] = {${p.legs.join(", ")}};   // VL, VR, HL, HR`);
   if (T === "pflanzen") L.push(`const int ERDE = ${p.soil}, PUMPE = ${p.pump};`, `const int TROCKEN = ${mcu === "nano" ? 520 : 2600};      // ab hier gießen (Wert im seriellen Monitor ablesen!)`, "const int GIESS_MS = 2000;          // so lange läuft die Pumpe", "unsigned long letztesGiessen = 0;");
   if (T === "lichtsucher") L.push(`const int LICHT_L = ${p.ldrL}, LICHT_R = ${p.ldrR};`);
+  if (F.has("pir")) L.push(`const int PIR = ${p.pir};`, "int alarme = 0;");
+  if (F.has("ir")) L.push(`const int IR_PIN = ${p.ir};`);
+  if (T === "zeichner") L.push("Servo stift;", `const int S_STIFT = ${p.pen};`, "const int STIFT_OBEN = 90, STIFT_UNTEN = 30;", "const int MS_PRO_CM = 45;      // Fahrzeit für 1 cm – ausmessen!", "const int MS_PRO_GRAD = 6;     // Drehzeit für 1 Grad – ausmessen!", "bool fertig = false;");
+  if (T === "sortierer") L.push("Adafruit_TCS34725 farbsensor(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_4X);", "Servo rutsche, zufuehrer;", `const int S_RUTSCHE = ${p.servo[0]}, S_ZUFUEHR = ${p.servo2};`);
+  if (T === "solar") L.push("Servo dreher;", `const int S_DREH = ${p.servo[0]};`, `const int LICHT_L = ${p.ldrL}, LICHT_R = ${p.ldrR};`, "int winkel = 90;");
+  if (T === "staubsauger") L.push(`const int STOSS_L = ${p.bumpL}, STOSS_R = ${p.bumpR}, LUEFTER = ${p.fan};`);
   if (F.has("dht")) L.push(`DHT dht(${p.dht}, DHT22);`, "unsigned long dhtZeit = 0;");
   if (F.has("wlan")) L.push(`const char* WLAN_NAME = "${name.replace(/[^\w -]/g, "")}";   // eigenes WLAN des Roboters`, `const char* WLAN_PASS = "probot123";`, "WebServer server(80);");
   if (T === "schwarm") L.push(`const int LICHT = ${p.ldr};`, "const int LICHT_ZIEL = 2500;      // ab diesem Wert: Ziel gefunden (ausprobieren!)", "bool zielGefunden = false; unsigned long rufZeit = 0;");
@@ -1197,6 +1285,18 @@ function probotCode(mcu, p, T, F, drives, name) {
     "void pose(const int w[4]) { for (int i = 0; i < 4; i++) bein[i].write(w[i]); delay(180); }",
     "void laufen(int schritte) { for (int s = 0; s < schritte; s++) for (int k = 0; k < 4; k++) pose(SCHRITT[k]); }",
     "void stehen() { int g[4] = {90, 90, 90, 90}; pose(g); }", "");
+  if (F.has("musik")) L.push(
+    "// Melodie: Frequenz (Hz) und Länge (ms) – \"Alle meine Entchen\"",
+    "const int TOENE[] = {262, 294, 330, 349, 392, 392, 440, 440, 440, 440, 392};",
+    "const int DAUER[] = {250, 250, 250, 250, 500, 500, 250, 250, 250, 250, 900};",
+    "void melodie() { for (int i = 0; i < 11; i++) { tone(SUMMER, TOENE[i], DAUER[i]); delay(DAUER[i] + 40); } noTone(SUMMER); }", "");
+  if (T === "zeichner") L.push(
+    "void stiftRunter(bool r) { stift.write(r ? STIFT_UNTEN : STIFT_OBEN); delay(250); }",
+    "void geradeaus(int cm) { fahre(SPEED, SPEED); delay(cm * MS_PRO_CM); fahre(0, 0); delay(100); }",
+    "void drehe(int grad) { fahre(SPEED, -SPEED); delay(grad * MS_PRO_GRAD); fahre(0, 0); delay(100); }",
+    "void quadrat(int cm) { for (int i = 0; i < 4; i++) { geradeaus(cm); drehe(90); } }",
+    "void stern(int cm) { for (int i = 0; i < 5; i++) { geradeaus(cm); drehe(144); } }",
+    "void spirale() { for (int i = 1; i <= 12; i++) { geradeaus(i); drehe(60); } }", "");
   if (T === "labyrinth") L.push(
     "long schaue(int winkel) { kopf.write(winkel); delay(300); return abstand(); }", "");
   if (F.has("gyro")) L.push(
@@ -1233,6 +1333,13 @@ function probotCode(mcu, p, T, F, drives, name) {
   if (T === "labyrinth") L.push("  kopf.attach(S_KOPF); kopf.write(90);");
   if (T === "laufroboter") L.push("  for (int i = 0; i < 4; i++) bein[i].attach(BEIN_PINS[i]);", "  stehen();");
   if (T === "pflanzen") L.push("  pinMode(PUMPE, OUTPUT); digitalWrite(PUMPE, LOW);");
+  if (F.has("pir")) L.push("  pinMode(PIR, INPUT);", "  delay(2000);                        // PIR braucht kurz zum Aufwärmen");
+  if (F.has("ir")) L.push("  IrReceiver.begin(IR_PIN);");
+  if (T === "zeichner") L.push("  stift.attach(S_STIFT); stiftRunter(false);");
+  if (T === "sortierer") L.push("  rutsche.attach(S_RUTSCHE); zufuehrer.attach(S_ZUFUEHR); zufuehrer.write(0);", "  if (!farbsensor.begin()) Serial.println(\"Farbsensor nicht gefunden – Kabel prüfen!\");");
+  if (T === "solar") L.push("  dreher.attach(S_DREH); dreher.write(winkel);");
+  if (T === "staubsauger") L.push("  pinMode(STOSS_L, INPUT_PULLUP); pinMode(STOSS_R, INPUT_PULLUP);", "  pinMode(LUEFTER, OUTPUT); digitalWrite(LUEFTER, HIGH);   // Saugen an");
+  if (F.has("musik")) L.push("  melodie();");
   if (F.has("dht")) L.push("  dht.begin();");
   if (F.has("gyro")) L.push("  Wire.begin(); Wire.beginTransmission(0x68); Wire.write(0x6B); Wire.write(0); Wire.endTransmission();   // MPU6050 aufwecken");
   if (F.has("wlan")) L.push(
@@ -1245,6 +1352,19 @@ function probotCode(mcu, p, T, F, drives, name) {
   L.push(`  Serial.println("${name} ist bereit!");`, "}", "");
   L.push("void loop() {");
   if (F.has("wlan")) L.push("  server.handleClient();");
+  if (F.has("ir")) L.push(
+    "  if (IrReceiver.decode()) {           // Tasten der Elegoo-Fernbedienung (andere: Code im seriellen Monitor ablesen)",
+    "    int taste = IrReceiver.decodedIRData.command;",
+    "    Serial.print(\"IR-Taste: 0x\"); Serial.println(taste, HEX);",
+    "    IrReceiver.resume();",
+    ...(drives ? [
+    "    if (taste == 0x46) fahre(SPEED, SPEED);          // ▲",
+    "    else if (taste == 0x15) fahre(-SPEED, -SPEED);   // ▼",
+    "    else if (taste == 0x44) fahre(-SPEED, SPEED);    // ◀",
+    "    else if (taste == 0x43) fahre(SPEED, -SPEED);    // ▶",
+    "    else if (taste == 0x40) { fahre(0, 0); delay(3000); }   // OK = 3 s Pause"] : []),
+    ...(F.has("musik") ? ["    if (taste == 0x16) melodie();                    // * = Musik"] : []),
+    "  }");
   if (F.has("gyro")) L.push(`  if (umgekippt()) { ${drives ? "fahre(0, 0); " : ""}${F.has("buzzer") ? "piep(200); " : ""}Serial.println("Hilfe, umgekippt!"); delay(500); return; }`);
   if (F.has("dht")) L.push(
     "  if (millis() - dhtZeit > 2000) {",
@@ -1253,7 +1373,56 @@ function probotCode(mcu, p, T, F, drives, name) {
     "  }");
   if (F.has("bt") && T !== "btauto") L.push(
     `  if (bt.available() && bt.read() == 'S') { ${drives ? "fahre(0, 0); " : ""}while (!bt.available()) delay(10); }   // Pause per Handy: S senden, weiter mit beliebiger Taste`);
-  if (T === "ausweicher") L.push(
+  if (T === "wache") L.push(
+    "  if (digitalRead(PIR) == HIGH) {      // Bewegung!",
+    "    fahre(0, 0); alarme++;",
+    "    Serial.print(\"ALARM Nr. \"); Serial.println(alarme);",
+    "    for (int i = 0; i < 6; i++) { farbe(255, 0, 0); digitalWrite(SUMMER, HIGH); delay(150); farbe(0, 0, 255); digitalWrite(SUMMER, LOW); delay(150); }",
+    ...(F.has("musik") ? [] : []),
+    "    farbe(0, 0, 0);",
+    "    return;",
+    "  }",
+    "  // Patrouille: ein Stück fahren, umschauen (stehen, damit der PIR ruhig messen kann)",
+    "  if (abstand() < ABSTAND_CM) { fahre(-SPEED, SPEED); delay(400); }",
+    "  fahre(SPEED * 2 / 3, SPEED * 2 / 3); delay(800);",
+    "  fahre(0, 0); farbe(0, 20, 0); delay(1500);");
+  if (T === "zeichner") L.push(
+    "  if (fertig) return;                  // nur einmal zeichnen – Reset-Taste für ein neues Bild",
+    "  stiftRunter(true);  quadrat(10);  stiftRunter(false);",
+    "  geradeaus(15);",
+    "  stiftRunter(true);  stern(10);    stiftRunter(false);",
+    "  geradeaus(15);",
+    "  stiftRunter(true);  spirale();    stiftRunter(false);",
+    ...(F.has("buzzer") ? ["  piep(300);"] : []),
+    "  fertig = true;");
+  if (T === "sortierer") L.push(
+    "  zufuehrer.write(60); delay(400);       // ein Teil vor den Sensor schieben",
+    "  float r, g, b; farbsensor.getRGB(&r, &g, &b);",
+    "  Serial.print(\"R \"); Serial.print(r); Serial.print(\" G \"); Serial.print(g); Serial.print(\" B \"); Serial.println(b);",
+    "  int ziel;",
+    "  if (r > g && r > b)      ziel = 30;    // rot  -> Becher 1",
+    "  else if (g > r && g > b) ziel = 90;    // grün -> Becher 2",
+    "  else                     ziel = 150;   // blau/sonst -> Becher 3",
+    "  rutsche.write(ziel); delay(300);",
+    "  zufuehrer.write(120); delay(400);      // fallen lassen",
+    "  zufuehrer.write(0); delay(400);");
+  if (T === "solar") L.push(
+    "  int l = analogRead(LICHT_L), r = analogRead(LICHT_R);",
+    "  if (l - r > 30 && winkel < 170) winkel++;   // links heller -> nach links drehen",
+    "  if (r - l > 30 && winkel > 10)  winkel--;",
+    "  dreher.write(winkel);",
+    "  Serial.print(\"Winkel: \"); Serial.println(winkel);",
+    "  delay(40);");
+  if (T === "staubsauger") L.push(
+    "  bool l = digitalRead(STOSS_L) == LOW, r = digitalRead(STOSS_R) == LOW;   // gedrückt = LOW",
+    "  if (l || r) {",
+    "    fahre(-SPEED, -SPEED); delay(300);",
+    "    if (l) fahre(SPEED, -SPEED); else fahre(-SPEED, SPEED);",
+    "    delay(random(300, 800));",
+    "  }",
+    "  fahre(SPEED * 2 / 3, SPEED * 2 / 3);",
+    "  delay(10);");
+  if (T === "ausweicher" || T === "rover") L.push(
     "  long cm = abstand();",
     "  Serial.print(\"Abstand: \"); Serial.println(cm);",
     "  if (cm < ABSTAND_CM) {",
@@ -1373,6 +1542,10 @@ function probotSteps(T, F, mini, n, mcu) {
   const s = ["3D-Teile drucken (Tab „3D-Druckteile“) und Stützreste entfernen."];
   if (T === "laufroboter") {
     s.push("Die vier Servos in die Ecken der Körper-Platte schrauben (Achse nach unten).", "Code einmal starten: Alle Servos fahren auf 90°. Erst JETZT die Beine gerade nach unten auf die Servohörner schrauben.");
+  } else if (T === "sortierer") {
+    s.push("Farbsensor unter das Fenster der Prüfkammer schrauben (LED zeigt nach oben ins Fenster).", "Zuführ-Servo seitlich an die Kammer, Rutschen-Servo darunter; Rutsche auf das Servohorn.", "Drei Becher im Halbkreis unter die Rutsche stellen (30°, 90°, 150°).");
+  } else if (T === "solar") {
+    s.push("Servo in den Sockel schrauben, Panel-Halter auf das Servohorn.", "Solarzelle in den Halter kleben, die zwei Lichtsensoren links und rechts in die Ohren des Halters – getrennt durch die Mittelwand.");
   } else if (T === "pflanzen") {
     s.push("Elektronik ins Gehäuse setzen, Pumpe in ein Wasserglas oder einen Tank legen, Schlauch zum Blumentopf führen und mit dem Schlauchhalter am Topfrand festklemmen.", "Bodenfeuchte-Sensor bis zur Markierung in die Erde stecken – die Elektronik oben darf nicht nass werden.");
   } else if (T !== "arm") {
@@ -1382,6 +1555,11 @@ function probotSteps(T, F, mini, n, mcu) {
     s.push("Grund-Servo (Drehen) in den Sockel schrauben, Arm-Teil auf das Servohorn schrauben.", "Hebe-Servo am Arm befestigen, Greifer-Servo mit den zwei Greiffingern an die Armspitze.", "Vor dem Zusammenbau alle Servos einmal auf 90° stellen (Code einmal starten), damit die Hörner gerade sitzen.");
   }
   if (F.has("us")) s.push("Abstandssensor in den Sensor-Halter stecken und vorne montieren.");
+  if (T === "rover") s.push("Rover: Vier Motoren mit vier Motor-Klemmen montieren. Links zwei Motoren zusammen an Ausgang A, rechts an B.");
+  if (T === "wache") s.push("PIR-Bewegungsmelder oben in die Kuppel stecken (Linse nach außen). Am Poti „Sx“ die Empfindlichkeit, an „Tx“ die Haltezeit auf Minimum stellen.");
+  if (T === "zeichner") s.push("Stifthalter in die Mitte zwischen die Räder schrauben, Stift einsetzen und mit Gummiband nach unten ziehen. Servo hebt ihn über einen Hebel an.");
+  if (T === "staubsauger") s.push("Lüfter über das Saugloch schrauben (Ansaugseite nach unten), Stoßfänger vorne mit den zwei Mikroschaltern dahinter.");
+  if (F.has("ir")) s.push("IR-Empfänger nach vorne oder oben zeigend montieren, damit die Fernbedienung ihn sieht.");
   if (T === "sumo") s.push("Die zwei Rand-Sensoren vorne links und rechts nach unten zeigend montieren (3–5 mm über dem Boden).", "Die Schaufel vorne anschrauben – sie hebelt den Gegner aus.");
   if (T === "labyrinth") s.push("Servo in den Kopf-Halter schrauben, Ultraschallsensor auf das Servohorn kleben. Bei 90° muss er genau nach vorne schauen.");
   if (T === "lichtsucher") s.push("Die zwei Lichtsensoren vorne in den Halter stecken, leicht nach außen gedreht (wie Fühler).");
@@ -1408,6 +1586,14 @@ function probotTips(T, F, mcu) {
   if (T === "laufroboter") t.push("Läuft er auf der Stelle? Die Winkel in SCHRITT[][] vergrößern (z.B. 50/130).", "MG90S-Servos brauchen zusammen bis zu 2 A – 18650-Akku verwenden, nicht 4×AA.");
   if (T === "pflanzen") t.push("TROCKEN im Code einstellen: Sensor in trockene und in nasse Erde stecken, Werte ablesen, Mitte wählen.", "Wassertank tiefer als den Topf stellen, sonst läuft er durch den Schlauch leer.", "Elektronik und Wasser getrennt halten!");
   if (T === "lichtsucher") t.push("Fährt er vom Licht weg? Die Sensoren links/rechts tauschen oder im Code l und r vertauschen.");
+  if (T === "rover") t.push("Rover dreht schlecht? Panzer-Lenkung braucht Grip-Unterschied – auf Teppich langsamer drehen (SPEED kleiner) oder Gummireifen nehmen.");
+  if (T === "wache") t.push("Fehlalarme? Den PIR nicht auf Heizungen oder Fenster richten und beim Fahren nicht auswerten (er misst nur im Stand).");
+  if (T === "zeichner") t.push("Quadrat nicht geschlossen? MS_PRO_GRAD anpassen, bis 4× drehen genau 360° ergibt. MS_PRO_CM mit einem Lineal einstellen.", "Glattes Papier auf dem Boden festkleben, damit es nicht verrutscht.");
+  if (T === "sortierer") t.push("Farben werden verwechselt? Werte im seriellen Monitor ablesen und die Regeln (r > g …) anpassen. Gleichmäßiges Licht hilft.", "Smarties/M&Ms passen gut, Legosteine 2×2 auch.");
+  if (T === "solar") t.push("Zappelt der Servo? Die 30 in der Bedingung größer machen (z.B. 60) – das ist die Toleranz.");
+  if (T === "staubsauger") t.push("Der Lüfter saugt nur leichte Krümel/Papierschnipsel – kein echter Staubsauger-Ersatz.", "Saugloch 2–4 mm über dem Boden ist am besten.");
+  if (F.has("ir")) t.push("Andere Fernbedienung? Taste drücken, Code im seriellen Monitor ablesen und im Code bei 0x46 usw. eintragen.");
+  if (F.has("musik")) t.push("Eigene Melodie: Frequenzen in TOENE[] ändern (C=262, D=294, E=330, F=349, G=392, A=440, H=494, c=523).");
   if (F.has("wlan")) t.push("WLAN-Steuerung: Handy mit dem WLAN des Roboters verbinden (Passwort probot123), dann im Browser 192.168.4.1 öffnen.");
   if (F.has("dht")) t.push("DHT22 nicht öfter als alle 2 Sekunden auslesen – sonst kommen falsche Werte.");
   if (F.has("us")) t.push("Misst der Abstandssensor immer 0 oder 999? TRIG und ECHO vertauscht oder kein 5V.");
@@ -1449,6 +1635,36 @@ function probotParts3d(T, F, mini, size) {
       shapes: [{ type: "box", size: [50, 16, 3], at: [0, 0, 0] }, { type: "box", size: [50, 3, 26], at: [0, 13, 0] }, { type: "cyl", r: 8.3, h: 3, at: [12, 13, 14], axis: "y", cut: true }, { type: "cyl", r: 8.3, h: 3, at: [38, 13, 14], axis: "y", cut: true }, ...holes([[5, 6], [45, 6]])] });
     return P;
   }
+  if (T === "sortierer") {
+    P.push({ name: "Prüfkammer", purpose: "Hier liegt das Teil vor dem Farbsensor; unten Fenster für den Sensor, seitlich Schlitz für den Zuführ-Servo.", material: "PLA", infill: "25%", layer: "0.2 mm", supports: false, filament_g: 30, print_min: 100,
+      colors: c ? ["Weiß", "Schwarz"] : undefined,
+      shapes: [{ type: "box", size: [60, 60, 40], at: [0, 0, 0] }, { type: "box", size: [30, 30, 40], at: [15, 15, 5], cut: true }, { type: "box", size: [12, 12, 5], at: [24, 24, 0], cut: true },
+        { type: "box", size: [16, 32, 10], at: [0, 14, 8], cut: true }, { type: "box", size: [16, 20, 10], at: [44, 20, 5], cut: true }, ...holes([[5, 5], [55, 5], [5, 55], [55, 55]], 1.6, 40),
+        ...(c ? [{ type: "box", size: [30, 1, 4], at: [15, 0, 30], color: 2 }] : [])] });
+    P.push({ name: "Rutsche", purpose: "Wird auf das Servohorn geschraubt und leitet die Teile in die Becher.", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 8, print_min: 30,
+      shapes: [{ type: "box", size: [80, 22, 2], at: [0, 0, 0] }, { type: "box", size: [80, 2, 8], at: [0, 0, 0] }, { type: "box", size: [80, 2, 8], at: [0, 20, 0] }, ...holes([[6, 11], [14, 11]], 1, 2)] });
+    return P;
+  }
+  if (T === "solar") {
+    P.push({ name: "Sockel", purpose: "Standfuß mit Aufnahme für den Dreh-Servo.", material: "PLA", infill: "25%", layer: "0.2 mm", supports: false, filament_g: 25, print_min: 80,
+      shapes: [{ type: "box", size: [70, 70, 4], at: [0, 0, 0] }, { type: "box", size: [32, 16, 26], at: [19, 27, 4] }, { type: "box", size: [23, 12.5, 26], at: [23.5, 28.75, 4], cut: true }, ...holes([[6, 6], [64, 6], [6, 64], [64, 64]], 2, 4)] });
+    P.push({ name: "Panel-Halter", purpose: "Hält die Solarzelle; die Mittelwand trennt die zwei Lichtsensoren (Schatten-Prinzip).", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 18, print_min: 60,
+      colors: c ? ["Schwarz", "Gelb"] : undefined,
+      shapes: [{ type: "box", size: [100, 72, 3], at: [0, 0, 0] }, { type: "box", size: [3, 72, 25], at: [48.5, 0, 0], color: c ? 2 : undefined }, { type: "cyl", r: 3, h: 3, at: [20, 36, 0], cut: true }, { type: "cyl", r: 3, h: 3, at: [80, 36, 0], cut: true }, ...holes([[46, 10], [54, 10]], 1, 3)] });
+    return P;
+  }
+  if (T === "staubsauger") {
+    const R = Math.min(70, (printer().bed[1] - 6) / 2);
+    P.push({ name: "Rund-Chassis", purpose: "Runder Körper wie ein echter Saugroboter, mit Saugloch und Radausschnitten.", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 45, print_min: 140,
+      colors: c ? ["Weiß", "Grau"] : undefined,
+      shapes: [{ type: "cyl", r: R, h: 3, at: [R, R, 0] }, { type: "box", size: [40, 12, 3], at: [R - 20, R * 0.35, 0], cut: true }, { type: "box", size: [24, 30, 3], at: [2, R - 15, 0], cut: true }, { type: "box", size: [24, 30, 3], at: [2 * R - 26, R - 15, 0], cut: true },
+        ...holes([[R - 30, R], [R + 30, R], [R, R + 40]]), ...(c ? [{ type: "box", size: [20, 4, 1], at: [R - 10, R + 50, 3], color: 2 }] : [])] });
+    P.push({ name: "Stoßfänger", purpose: "Bogen vorne, drückt bei Kontakt auf die Mikroschalter.", material: "PLA", infill: "30%", layer: "0.2 mm", supports: false, filament_g: 8, print_min: 30,
+      shapes: [{ type: "box", size: [R * 1.4, 4, 18], at: [0, 0, 0] }, { type: "box", size: [6, 10, 18], at: [R * 0.25, 4, 0] }, { type: "box", size: [6, 10, 18], at: [R * 1.15 - 6, 4, 0] }] });
+    P.push({ name: "Motor-Klemme", purpose: "2× drucken. Klemmt je einen TT-Motor unter das Chassis.", material: "PLA", infill: "30%", layer: "0.2 mm", supports: false, filament_g: 6, print_min: 25,
+      shapes: [{ type: "box", size: [30, 26, 3], at: [0, 0, 0] }, { type: "box", size: [30, 3, 22], at: [0, 0, 0] }, { type: "box", size: [30, 3, 22], at: [0, 23, 0] }, { type: "cyl", r: 1.6, h: 3, at: [5, 1.5, 11], axis: "y", cut: true }, { type: "cyl", r: 1.6, h: 3, at: [25, 1.5, 11], axis: "y", cut: true }] });
+    return P;
+  }
   if (T === "pflanzen") {
     P.push({ name: "Elektronik-Gehäuse", purpose: "Spritzwassergeschützte Box für Board, MOSFET und Display.", material: "PETG (oder PLA)", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 35, print_min: 120,
       shapes: [{ type: "box", size: [90, 60, 35], at: [0, 0, 0] }, { type: "box", size: [86, 56, 35], at: [2, 2, 2], cut: true }, { type: "box", size: [25, 14, 2], at: [32, 23, 0], cut: true }, { type: "cyl", r: 4, h: 3, at: [0, 30, 10], axis: "x", cut: true }, { type: "cyl", r: 3, h: 3, at: [87, 30, 10], axis: "x", cut: true }] });
@@ -1483,6 +1699,12 @@ function probotParts3d(T, F, mini, size) {
       { type: "cyl", r: 8.3, h: 3, at: [12, 13, 14], axis: "y", cut: true }, { type: "cyl", r: 8.3, h: 3, at: [38, 13, 14], axis: "y", cut: true }, ...holes([[5, 6], [45, 6]])] });
   if (T === "linie") P.push({ name: "Liniensensor-Halter", purpose: "Hält beide Liniensensoren 1–2 cm über dem Boden.", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 5, print_min: 20,
     shapes: [{ type: "box", size: [50, 14, 3], at: [0, 0, 0] }, ...holes([[10, 7], [40, 7], [25, 7]])] });
+  if (T === "rover") P[1].purpose = "4× drucken (Allrad!). Klemmt je einen TT-Motor unter die Platte.";
+  if (T === "wache") P.push({ name: "PIR-Kuppel", purpose: "Turm für den Bewegungsmelder – so sieht er über Möbel hinweg.", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 12, print_min: 50,
+    colors: c ? ["Schwarz", "Rot"] : undefined,
+    shapes: [{ type: "cyl", r: 18, h: 40, at: [18, 18, 0] }, { type: "cyl", r: 15.5, h: 38, at: [18, 18, 2] , cut: true }, { type: "cyl", r: 12, h: 2, at: [18, 18, 0], cut: true }, ...(c ? [{ type: "cyl", r: 18.5, h: 3, at: [18, 18, 34], color: 2 }, { type: "cyl", r: 15.5, h: 3, at: [18, 18, 34], cut: true }] : [])] });
+  if (T === "zeichner") P.push({ name: "Stifthalter", purpose: "Röhre für einen Filzstift (Ø bis 11 mm) mit Halterung für den Hebe-Servo.", material: "PLA", infill: "30%", layer: "0.2 mm", supports: false, filament_g: 10, print_min: 40,
+    shapes: [{ type: "box", size: [50, 30, 3], at: [0, 0, 0] }, { type: "cyl", r: 8, h: 30, at: [12, 15, 0] }, { type: "cyl", r: 5.8, h: 30, at: [12, 15, 0], cut: true }, { type: "box", size: [23, 12.5, 3], at: [24, 8.75, 0], cut: true }, ...holes([[4, 4], [46, 4], [4, 26], [46, 26]])] });
   if (T === "sumo") P.push({ name: "Schaufel", purpose: "Keil vorne – schiebt unter den Gegner. Mit 2 M3-Schrauben an die Platte.", material: "PLA", infill: "60%", layer: "0.2 mm", supports: false, filament_g: 14, print_min: 45,
     shapes: [{ type: "box", size: [W, 30, 2], at: [0, 0, 0] }, { type: "box", size: [W, 4, 12], at: [0, 26, 0] }, ...[0, 1, 2, 3, 4, 5].map(i => ({ type: "box", size: [W, 30 - i * 5, 2], at: [0, i * 5, 2 + i * 1.6] })), ...holes([[W / 2 - 15, 28], [W / 2 + 15, 28]], 1.6, 14)] });
   if (T === "labyrinth") P.push({ name: "Kopf-Halter", purpose: "Trägt den Servo-Kopf vorne auf der Platte.", material: "PLA", infill: "25%", layer: "0.2 mm", supports: false, filament_g: 7, print_min: 30,
@@ -1504,6 +1726,14 @@ function probotSvg(r, T, F, mini) {
 <path d="M300 95 l25 -10 M300 105 l25 10" stroke="#333" stroke-width="6" stroke-linecap="round"/>` + lab(230, 290, "Sockel + Dreh-Servo") + lab(300, 70, "Greifer") + lab(40, 150, "Hebe-Servo");
   } else if (T === "laufroboter") {
     g += `<rect x="110" y="110" width="180" height="60" rx="14" fill="#4fb3ff" stroke="#1d5f99" stroke-width="3"/>` + [[125, -1], [165, 1], [235, -1], [275, 1]].map(([x, d]) => `<path d="M${x} 165 l${d * 18} 50 l${d * -6} 45" stroke="#333" stroke-width="10" fill="none" stroke-linecap="round"/>`).join("") + `<rect x="270" y="90" width="50" height="22" rx="4" fill="#2d9d5f"/>` + lab(150, 95, "4 Servo-Beine") + lab(300, 80, "Sensor");
+  } else if (T === "sortierer") {
+    g += `<rect x="150" y="60" width="100" height="70" rx="6" fill="#4fb3ff" stroke="#1d5f99" stroke-width="3"/><circle cx="200" cy="40" r="10" fill="red"/><circle cx="222" cy="40" r="10" fill="green"/><circle cx="178" cy="40" r="10" fill="blue"/>
+<path d="M200 140 L120 220" stroke="#555" stroke-width="12" stroke-linecap="round"/>` + ["#e33", "#3a3", "#33e"].map((c, i) => `<path d="M${70 + i * 110} 230 h60 l-8 50 h-44z" fill="${c}" opacity=".8"/>`).join("") + lab(260, 100, "Farbsensor") + lab(130, 175, "Rutsche (Servo)") + lab(20, 298, "Becher");
+  } else if (T === "solar") {
+    g += `<rect x="170" y="230" width="60" height="50" fill="#2d6fb5"/><g transform="rotate(-20 200 200)"><rect x="110" y="170" width="180" height="20" fill="#333"/><rect x="115" y="120" width="170" height="50" fill="#1d3f8a" stroke="#9cf" stroke-width="2"/><rect x="198" y="100" width="4" height="70" fill="#000"/><circle cx="160" cy="112" r="6" fill="#ffd54a"/><circle cx="240" cy="112" r="6" fill="#ffd54a"/></g>
+<circle cx="340" cy="50" r="28" fill="#ffd54a"/>` + lab(240, 290, "Servo dreht") + lab(30, 100, "Solarzelle") + lab(290, 100, "Sonne");
+  } else if (T === "staubsauger") {
+    g += `<circle cx="200" cy="160" r="110" fill="#eee" stroke="#555" stroke-width="4"/><circle cx="200" cy="160" r="35" fill="#9aa"/><path d="M110 90 A110 110 0 0 1 290 90" stroke="#333" stroke-width="10" fill="none"/><rect x="170" y="215" width="60" height="14" rx="4" fill="#444"/>` + lab(160, 30, "Stoßfänger") + lab(250, 165, "Lüfter") + lab(240, 245, "Saugloch");
   } else if (T === "pflanzen") {
     g += `<path d="M60 180 h90 l-12 90 h-66z" fill="#b5651d"/><path d="M105 180 q-30 -60 -10 -110 M105 180 q30 -50 50 -90" stroke="#2d9d5f" stroke-width="6" fill="none"/><ellipse cx="95" cy="70" rx="18" ry="9" fill="#3cb371"/><ellipse cx="155" cy="90" rx="18" ry="9" fill="#3cb371"/>
 <rect x="120" y="150" width="8" height="70" fill="#444"/><rect x="230" y="140" width="110" height="70" rx="8" fill="#4fb3ff" stroke="#1d5f99" stroke-width="3"/><rect x="250" y="155" width="50" height="25" fill="#111"/><rect x="250" y="225" width="80" height="50" rx="6" fill="#9fd3ff" stroke="#1d5f99"/>
@@ -1516,6 +1746,9 @@ function probotSvg(r, T, F, mini) {
     if (F.has("oled")) g += `<rect x="${cx - 40}" y="${cy - 30}" width="80" height="40" rx="6" fill="#111"/><rect x="${cx - 28}" y="${cy - 22}" width="18" height="20" rx="6" fill="#fff"/><rect x="${cx + 10}" y="${cy - 22}" width="18" height="20" rx="6" fill="#fff"/>`;
     if (F.has("leds")) for (let i = 0; i < 8; i++) g += `<circle cx="${cx - 35 * s + i * 10 * s}" cy="${cy + h / 2 - 12 * s}" r="${4 * s}" fill="hsl(${i * 45},90%,55%)"/>`;
     if (T === "linie") g += `<rect x="${cx - 30}" y="${cy - h / 2 - 12}" width="60" height="10" fill="#222"/>` + lab(cx + 40, cy - h / 2 - 2, "Liniensensoren");
+    if (T === "rover") g += `<rect x="${cx - w / 2 - 28}" y="${cy - h / 2 - 5}" width="28" height="50" rx="6" fill="#333"/><rect x="${cx + w / 2}" y="${cy - h / 2 - 5}" width="28" height="50" rx="6" fill="#333"/>` + lab(cx - 30, cy - h / 2 - 50, "Allradantrieb");
+    if (T === "wache") g += `<rect x="${cx - 18}" y="${cy - 60}" width="36" height="45" rx="8" fill="#222"/><circle cx="${cx}" cy="${cy - 60}" r="18" fill="#fff" stroke="#999"/>` + lab(cx + 25, cy - 70, "Bewegungsmelder");
+    if (T === "zeichner") g += `<rect x="${cx - 6}" y="${cy + 10}" width="12" height="60" fill="#e33"/><path d="M40 280 h80 l40 -40 l-20 -30 l-60 40z" fill="none" stroke="#e33" stroke-width="3"/>` + lab(cx + 15, cy + 60, "Stift");
     if (T === "sumo") g += `<path d="M${cx - w / 2} ${cy - h / 2} l20 -30 h${w - 40} l20 30z" fill="#888"/>` + lab(cx + w / 2, cy - h / 2 - 20, "Schaufel");
     if (T === "labyrinth") g += `<circle cx="${cx}" cy="${cy - h / 2 - 50}" r="10" fill="#555"/>` + lab(cx + 60, cy - h / 2 - 50, "dreht sich (Servo)");
     if (T === "lichtsucher") g += `<path d="M${cx - 30} ${cy - h / 2} l-25 -40 M${cx + 30} ${cy - h / 2} l25 -40" stroke="#333" stroke-width="4"/><circle cx="${cx - 55}" cy="${cy - h / 2 - 40}" r="8" fill="#ffd54a"/><circle cx="${cx + 55}" cy="${cy - h / 2 - 40}" r="8" fill="#ffd54a"/>` + lab(cx + 70, cy - h / 2 - 40, "Lichtsensoren");
