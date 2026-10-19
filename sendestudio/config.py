@@ -27,6 +27,27 @@ class FtpConfig:
 
 
 @dataclass
+class KiConfig:
+    """KI-Anbieter. Schluessel besser als Umgebungsvariable setzen
+    (ANTHROPIC_API_KEY, OPENAI_API_KEY) - dann stehen sie in keiner Datei."""
+
+    #: Texte (Shownotes, Titel, Kapitel, Skripte) - Claude von Anthropic.
+    anthropic_schluessel: str = ""
+    text_modell: str = "claude-opus-5-5"
+    #: Bilder, KI-Stimme, Transkription - OpenAI oder ein kompatibler Dienst.
+    openai_schluessel: str = ""
+    openai_url: str = "https://api.openai.com/v1"
+    bild_modell: str = "gpt-image-2"
+    stimme_modell: str = "gpt-4o-mini-tts"
+    stimme: str = "coral"
+    #: whisper-1 liefert Zeitmarken - die braucht der Kapitel-Vorschlag.
+    transkript_modell: str = "whisper-1"
+    #: Hoechstens so viele KI-Auftraege pro Tag - schuetzt vor Kostenfallen,
+    #: auch wenn jemand die Sitzung uebernimmt. 0 = KI aus.
+    tageslimit: int = 50
+
+
+@dataclass
 class Config:
     #: Ordner fuer Datenbank und Mediendateien.
     daten: str = "sendestudio-daten"
@@ -54,6 +75,7 @@ class Config:
     #: Tresor schliesst sich, sobald niemand mehr angemeldet ist.
     leerlauf_minuten: int = 60
     ftp: FtpConfig = field(default_factory=FtpConfig)
+    ki: KiConfig = field(default_factory=KiConfig)
     #: Woher die Datei geladen wurde - relative Pfade gelten von dort aus.
     quelle: str = field(default="", repr=False)
 
@@ -77,6 +99,12 @@ class Config:
             raise ValueError("basis_url muss mit http:// oder https:// beginnen")
         if self.max_upload_mb <= 0:
             raise ValueError("max_upload_mb muss positiv sein")
+        if self.ki.tageslimit < 0:
+            raise ValueError("ki.tageslimit darf nicht negativ sein")
+        if not self.ki.openai_url.startswith("https://") and not self.ki.openai_url.startswith(
+                ("http://127.0.0.1", "http://localhost")):
+            # Sonst ginge der API-Schluessel unverschluesselt uebers Netz.
+            raise ValueError("ki.openai_url muss mit https:// beginnen")
         if not 1 <= self.leerlauf_minuten <= 24 * 60:
             raise ValueError("leerlauf_minuten muss zwischen 1 und 1440 liegen")
         for netz in self.studio_netze + self.vertraute_proxys:
@@ -97,14 +125,19 @@ def laden(pfad: str = STANDARD_PFAD) -> Config:
     if not isinstance(roh, dict):
         raise ValueError(f"{pfad}: erwartet ein JSON-Objekt")
     ftp_roh = roh.pop("ftp", {}) or {}
-    bekannt = set(Config.__dataclass_fields__) - {"ftp", "quelle"}
+    ki_roh = roh.pop("ki", {}) or {}
+    bekannt = set(Config.__dataclass_fields__) - {"ftp", "ki", "quelle"}
     unbekannt = set(roh) - bekannt
     if unbekannt:
         raise ValueError(f"{pfad}: unbekannte Einstellung(en): {', '.join(sorted(unbekannt))}")
     unbekannt = set(ftp_roh) - set(FtpConfig.__dataclass_fields__)
     if unbekannt:
         raise ValueError(f"{pfad}: unbekannte FTP-Einstellung(en): {', '.join(sorted(unbekannt))}")
-    cfg = Config(**roh, ftp=FtpConfig(**ftp_roh), quelle=os.path.abspath(pfad))
+    unbekannt = set(ki_roh) - set(KiConfig.__dataclass_fields__)
+    if unbekannt:
+        raise ValueError(f"{pfad}: unbekannte KI-Einstellung(en): {', '.join(sorted(unbekannt))}")
+    cfg = Config(**roh, ftp=FtpConfig(**ftp_roh), ki=KiConfig(**ki_roh),
+                 quelle=os.path.abspath(pfad))
     cfg.validate()
     return cfg
 

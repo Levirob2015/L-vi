@@ -358,3 +358,17 @@ def test_pfad_tricks_bei_medien(server):
     for pfad in ("/medien/../sendestudio.db", "/medien/%2e%2e%2fsendestudio.db",
                  "/medien/.hochladen-x", "/s/../../etc/passwd"):
         assert c("GET", pfad)[0] == 404, pfad
+
+
+def test_mp3_dauer_ohne_ffmpeg(tmp_path):
+    # MPEG-1 Layer III, 128 kbit/s, 44,1 kHz, ohne Xing-Kopf: Laenge aus der Bitrate
+    frame = b"\xff\xfb\x90\x00" + b"\0" * 413
+    (tmp_path / "a.mp3").write_bytes(b"ID3\x04\0\0\0\0\0\0" + frame * 100)
+    assert media.mp3_dauer_schaetzen(str(tmp_path / "a.mp3")) == pytest.approx(2.61, abs=0.02)
+    # Mit Xing-Kopf: die Frame-Zahl gilt
+    xing = bytearray(frame)
+    xing[36:48] = b"Xing\0\0\0\x01" + (1000).to_bytes(4, "big")
+    (tmp_path / "b.mp3").write_bytes(bytes(xing) + frame * 10)
+    assert media.mp3_dauer_schaetzen(str(tmp_path / "b.mp3")) == pytest.approx(26.12, abs=0.02)
+    (tmp_path / "c.mp3").write_bytes(b"kein mp3")
+    assert media.mp3_dauer_schaetzen(str(tmp_path / "c.mp3")) == 0.0

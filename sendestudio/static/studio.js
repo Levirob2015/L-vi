@@ -217,6 +217,23 @@
           melden("Cover gespeichert");
         }).catch(function (e) { melden(e.message, true); });
       });
+      v["ki-cover"].hidden = !kiFaehig("bild");
+      v["ki-cover-idee"].hidden = !kiFaehig("text");
+      $("[data-aktion=ki-cover-idee]", v.wurzel).addEventListener("click", function () {
+        beschaeftigt(this, kiText("bildidee", {}, s.id)).then(function (t) {
+          if (t !== undefined) v["ki-cover-text"].value = t;
+        });
+      });
+      $("[data-aktion=ki-cover]", v.wurzel).addEventListener("click", function () {
+        if (!v["ki-cover-text"].value.trim()) { melden("Bitte beschreiben, was auf dem Cover sein soll", true); return; }
+        beschaeftigt(this, kiAuftrag({ art: "cover", sendung_id: s.id, beschreibung: v["ki-cover-text"].value }))
+          .then(function (e) {
+            if (!e) return;
+            v["cover-bild"].src = mediumUrl(e.sendung.cover);
+            v["cover-bild"].hidden = false;
+            melden("KI-Cover gespeichert");
+          });
+      });
       $("[data-aktion=sendung-loeschen]", v.wurzel).addEventListener("click", function () {
         if (!confirm("„" + s.titel + "“ mit allen Folgen und Dateien endgültig löschen?")) return;
         api("DELETE", "sendungen/" + s.id).then(function () {
@@ -264,6 +281,9 @@
         v.ansehen.hidden = !s.folgen_online;
         $("[data-aktion=aufnehmen]", v.wurzel).addEventListener("click", function () { zeigeAufnahme(s, null); });
         $("[data-aktion=bearbeiten]", v.wurzel).addEventListener("click", function () { zeigeSendungsForm(s); });
+        v.wurzel.setAttribute("data-ansicht", "sendung");
+        v["ki-studio"].hidden = !(kiFaehig("text") || kiFaehig("stimme"));
+        v["ki-studio"].addEventListener("click", function () { zeigeKiStudio(s); });
         v.datei.addEventListener("change", function () {
           if (this.files[0]) zeigeAufnahme(s, this.files[0]);
         });
@@ -281,6 +301,7 @@
     if (f.dauer) info.push(zeit(f.dauer));
     if (f.kapitel.length) info.push(f.kapitel.length + " Kapitel");
     if (f.mime.indexOf("video/") === 0) info.push("Video");
+    if (f.ki.length) info.push("✨ KI: " + f.ki.join(", "));
     if (!f.online && f.datei) info.push("🔒 verschlüsselt");
     var karte = el("div", { class: "karte folge" },
       el("div", {},
@@ -339,10 +360,186 @@
     malen();
     return {
       neu: function (t, titel) { liste.push({ zeit: t || 0, titel: titel || "Kapitel " + (liste.length + 1) }); malen(); },
+      setzen: function (neu) {
+        liste.length = 0;
+        neu.forEach(function (k) { liste.push({ zeit: k.zeit, titel: k.titel }); });
+        malen();
+      },
       liste: function () {
         return liste.slice().sort(function (a, b) { return a.zeit - b.zeit; });
       },
     };
+  }
+
+  // ------------------------------------------------------------------
+  // KI
+  // ------------------------------------------------------------------
+  var AUFTRAG_NAMEN = { text: "✨ KI-Text", aus_aufnahme: "✨ Aus der Aufnahme", cover: "✨ KI-Cover",
+    stimme: "🔊 KI-Stimme", video_aufnahme: "🎬 Video aus Aufnahme", video_ki: "🎬 KI-Video" };
+
+  function kiFaehig(was) {
+    return !!(zustand.status && zustand.status.ki && zustand.status.ki[was]);
+  }
+
+  // Startet einen KI-Auftrag und zeigt seinen Fortschritt unten rechts.
+  // Laeuft weiter, auch wenn man im Studio woanders hinklickt.
+  function kiAuftrag(daten) {
+    return api("POST", "ki/auftraege", daten).then(function (a) {
+      var stand = el("span", { text: a.schritt });
+      var box = el("div", { class: "auftrag" }, el("b", { text: AUFTRAG_NAMEN[a.art] || "KI" }), stand);
+      $("#auftraege").appendChild(box);
+      return new Promise(function (ok, fehler) {
+        (function abfragen() {
+          api("GET", "ki/auftraege/" + a.id).then(function (st) {
+            stand.textContent = st.status === "fehler" ? st.fehler : st.schritt;
+            if (st.status === "laeuft") { setTimeout(abfragen, 1500); return; }
+            box.classList.add(st.status);
+            setTimeout(function () { box.remove(); }, st.status === "fehler" ? 9000 : 3000);
+            if (st.status === "fertig") ok(st.ergebnis); else fehler(new Error(st.fehler));
+          }).catch(function (e) { box.remove(); fehler(e); });
+        })();
+      });
+    });
+  }
+
+  function kiText(aufgabe, eingaben, sendungId) {
+    return kiAuftrag({ art: "text", aufgabe: aufgabe, eingaben: eingaben, sendung_id: sendungId })
+      .then(function (r) { return r.antwort; });
+  }
+
+  // Knopf sperren, solange der Auftrag laeuft; Fehler melden.
+  function beschaeftigt(knopf, versprechen) {
+    knopf.disabled = true;
+    return versprechen.catch(function (e) { melden(e.message, true); throw e; })
+      .then(function (x) { knopf.disabled = false; return x; },
+            function () { knopf.disabled = false; });
+  }
+
+  function kiAngabenSetzen(form, liste) {
+    form.querySelectorAll("input[name=ki]").forEach(function (c) { c.checked = liste.indexOf(c.value) >= 0; });
+  }
+  function kiAngabe(form, was) {
+    var c = form.querySelector("input[name=ki][value=" + was + "]");
+    if (c) c.checked = true;
+  }
+  function kiAngabenLesen(form) {
+    return Array.prototype.filter.call(form.querySelectorAll("input[name=ki]"), function (c) { return c.checked; })
+      .map(function (c) { return c.value; });
+  }
+
+  // Shownotes / Titel / (bei Folgen mit Aufnahme) alles aus der Aufnahme
+  function kiLeiste(v, s, kapitel, folge) {
+    var form = v.form;
+    if (!kiFaehig("text")) return;
+    v["ki-leiste"].hidden = false;
+    var vorschlaege = v["ki-vorschlaege"];
+    function titelZeigen(liste) {
+      vorschlaege.textContent = "";
+      liste.forEach(function (t) {
+        vorschlaege.appendChild(el("button", { type: "button", text: t, title: "Übernehmen", onclick: function () {
+          form.elements.titel.value = t;
+          kiAngabe(form, "text");
+          vorschlaege.textContent = "";
+        } }));
+      });
+    }
+    $("[data-aktion=ki-shownotes]", v.wurzel).addEventListener("click", function () {
+      var knopf = this;
+      beschaeftigt(knopf, kiText("shownotes", { titel: form.elements.titel.value,
+        notizen: form.elements.beschreibung.value }, s.id)).then(function (text) {
+        if (text === undefined) return;
+        form.elements.beschreibung.value = text;
+        kiAngabe(form, "text");
+      });
+    });
+    $("[data-aktion=ki-titel]", v.wurzel).addEventListener("click", function () {
+      beschaeftigt(this, kiText("titel", { titel: form.elements.titel.value,
+        notizen: form.elements.beschreibung.value }, s.id)).then(function (a) {
+        if (a) titelZeigen(a.vorschlaege);
+      });
+    });
+    var ausAufnahme = v["ki-aufnahme"];
+    if (ausAufnahme) {
+      ausAufnahme.hidden = !(folge && folge.datei && kiFaehig("transkript"));
+      ausAufnahme.addEventListener("click", function () {
+        beschaeftigt(ausAufnahme, kiAuftrag({ art: "aus_aufnahme", folge_id: folge.id })).then(function (e) {
+          if (!e) return;
+          if (!form.elements.beschreibung.value.trim() ||
+              confirm("Die bisherige Beschreibung durch die KI-Shownotes ersetzen?")) {
+            form.elements.beschreibung.value = e.shownotes;
+          }
+          if (e.kapitel.length && (!kapitel.liste().length ||
+              confirm(e.kapitel.length + " Kapitel vorgeschlagen – die bisherigen ersetzen?"))) {
+            kapitel.setzen(e.kapitel);
+          }
+          titelZeigen(e.titel);
+          kiAngabe(form, "text");
+          melden("Fertig – bitte prüfen und speichern");
+        });
+      });
+    }
+  }
+
+  function zeigeKiStudio(s) {
+    var v = vorlage("t-ki-studio");
+    $("[data-aktion=zurueck]", v.wurzel).addEventListener("click", function (e) { e.preventDefault(); zeigeSendung(s.id); });
+    api("GET", "ki").then(function (k) {
+      zustand.status.ki = k;
+      v.hinweis.textContent = "Texte schreibt Claude (Anthropic), Bilder und Stimmen erzeugt OpenAI – " +
+        "was du hier eingibst, wird dafür an diese Anbieter übermittelt. Alles Erzeugte wird ein Entwurf " +
+        "(verschlüsselt, bis du es veröffentlichst) und ist öffentlich als KI-generiert gekennzeichnet. " +
+        "Heute: " + k.heute + " von " + k.tageslimit + " KI-Aufträgen.";
+    }).catch(function () {});
+
+    // Skript + Stimme
+    var sf = v["skript-form"];
+    var skriptVonKi = false;
+    v["karte-skript"].hidden = !(kiFaehig("text") || kiFaehig("stimme"));
+    v["skript-schreiben"].hidden = !kiFaehig("text");
+    v.vertonen.hidden = !kiFaehig("stimme");
+    v["skript-schreiben"].addEventListener("click", function () {
+      if (!sf.elements.thema.value.trim()) { melden("Bitte ein Thema angeben", true); return; }
+      beschaeftigt(this, kiText("skript", { thema: sf.elements.thema.value, stil: sf.elements.stil.value,
+        dauer_minuten: sf.elements.dauer_minuten.value }, s.id)).then(function (text) {
+        if (text === undefined) return;
+        sf.elements.text.value = text;
+        skriptVonKi = true;
+        if (!sf.elements.titel.value) sf.elements.titel.value = sf.elements.thema.value.split("\n")[0].slice(0, 80);
+      });
+    });
+    v.vertonen.addEventListener("click", function () {
+      if (!sf.elements.titel.value.trim() || !sf.elements.text.value.trim()) {
+        melden("Bitte Titel und Text angeben", true); return;
+      }
+      beschaeftigt(this, kiAuftrag({ art: "stimme", sendung_id: s.id, titel: sf.elements.titel.value,
+        text: sf.elements.text.value, anweisung: sf.elements.anweisung.value,
+        beschreibung: sf.elements.thema.value, text_ki: skriptVonKi })).then(function (e) {
+        if (!e) return;
+        melden("Neue Folge „" + e.folge.titel + "“ als Entwurf angelegt");
+        aktualisieren(s.id);
+      });
+    });
+
+    // KI-Video
+    var vf = v["video-form"];
+    v["karte-video"].hidden = !(kiFaehig("video") && kiFaehig("text"));
+    v["video-erzeugen"].addEventListener("click", function () {
+      if (!vf.elements.thema.value.trim()) { melden("Bitte ein Thema angeben", true); return; }
+      melden("Das dauert ein paar Minuten – du kannst derweil weiterarbeiten.");
+      beschaeftigt(this, kiAuftrag({ art: "video_ki", sendung_id: s.id, thema: vf.elements.thema.value,
+        stil: vf.elements.stil.value, dauer_minuten: vf.elements.dauer_minuten.value })).then(function (e) {
+        if (!e) return;
+        melden("KI-Video „" + e.folge.titel + "“ als Entwurf angelegt");
+        aktualisieren(s.id);
+      });
+    });
+    inhalt(v.wurzel);
+  }
+
+  // Folgenliste neu zeichnen - aber nur, wenn man gerade auf ihr steht.
+  function aktualisieren(sendungId) {
+    if ($("#inhalt [data-ansicht=sendung]") && zustand.aktiv === sendungId) zeigeSendung(sendungId);
+    else ladeSendungen();
   }
 
   // ------------------------------------------------------------------
@@ -374,6 +571,7 @@
   function zeigeAufnahme(s, datei) {
     var v = vorlage("t-aufnahme");
     var kapitel = kapitelEditor(v.kapitel, []);
+    kiLeiste(v, s, kapitel, null);
     var ergebnis = null; // { blob, dauer }
 
     $("[data-aktion=zurueck]", v.wurzel).addEventListener("click", function (e) { e.preventDefault(); zeigeSendung(s.id); });
@@ -433,6 +631,7 @@
         titel: v.form.elements.titel.value,
         beschreibung: v.form.elements.beschreibung.value,
         kapitel: kapitel.liste(),
+        ki: kiAngabenLesen(v.form),
       }).then(function (f) {
         folge = f;
         return hochladen("folgen/" + f.id + "/medium?normalisieren=" + normalisieren +
@@ -621,6 +820,17 @@
     if (p) v.abspieler.appendChild(p);
     v.form.elements.titel.value = f.titel;
     v.form.elements.beschreibung.value = f.beschreibung;
+    kiAngabenSetzen(v.form, f.ki);
+    kiLeiste(v, s, kapitel, f);
+    v["ki-video"].hidden = !(f.datei && zustand.status.ki && zustand.status.ki.ffmpeg &&
+      f.mime.indexOf("video/") !== 0);
+    v["ki-video"].addEventListener("click", function () {
+      beschaeftigt(this, kiAuftrag({ art: "video_aufnahme", folge_id: f.id })).then(function (e) {
+        if (!e) return;
+        melden("Video „" + e.folge.titel + "“ als Entwurf angelegt");
+        aktualisieren(s.id);
+      });
+    });
     $("[data-aktion=zurueck]", v.wurzel).addEventListener("click", function (e) { e.preventDefault(); zeigeSendung(s.id); });
     $("[data-aktion=kapitel-neu]", v.wurzel).addEventListener("click", function () { kapitel.neu(0); });
     $("[data-aktion=kapitel-hier]", v.wurzel).addEventListener("click", function () {
@@ -632,6 +842,7 @@
         titel: v.form.elements.titel.value,
         beschreibung: v.form.elements.beschreibung.value,
         kapitel: kapitel.liste(),
+        ki: kiAngabenLesen(v.form),
       }).then(function () { melden("Gespeichert"); zeigeSendung(s.id); })
         .catch(function (e) { melden(e.message, true); });
     });

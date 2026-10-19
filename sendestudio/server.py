@@ -36,6 +36,8 @@ from .config import Config, passwort_pruefen
 from .store import Store
 from .tresor import ENDUNG, Tresor, TresorFehler
 from .version import __version__
+from .ki import KiFehler
+from .werkstatt import Werkstatt
 
 log = logging.getLogger("sendestudio")
 
@@ -83,11 +85,11 @@ class Studio:
         self._sitzungen: Dict[str, Tuple[float, float]] = {}
         self._lock = threading.Lock()
         self._abgleich_lock = threading.Lock()
-        self._letzter_totp = -1
         self.studio_netze = parse_networks(cfg.studio_netze)
         if guard == "auto":
             guard = self._loginshield()
         self.guard = guard
+        self.werkstatt = Werkstatt(self)
 
     def _loginshield(self) -> Any:
         try:
@@ -102,6 +104,7 @@ class Studio:
         return Guard(schutz)
 
     def close(self) -> None:
+        self.werkstatt.schliessen()
         self.tresor.sperren()
         if self.guard is not None:
             self.guard.close()
@@ -147,9 +150,11 @@ class Studio:
         zaehler = zweifaktor.pruefen(self.cfg.totp_geheimnis, eingabe, self.clock())
         with self._lock:
             # Ein Code gilt nur einmal - auch ein mitgelesener nuetzt nichts.
-            if zaehler is None or zaehler <= self._letzter_totp:
+            # Gespeichert, damit das auch nach einem Neustart gilt.
+            letzter = int(self.store.einstellung("totp_zaehler", "-1"))
+            if zaehler is None or zaehler <= letzter:
                 return False
-            self._letzter_totp = zaehler
+            self.store.einstellung_setzen("totp_zaehler", str(zaehler))
         return True
 
     def studio_erlaubt(self, ip: Optional[str]) -> bool:
@@ -437,6 +442,7 @@ def handler_fuer(studio: Studio):
                     "zweifaktor": bool(studio.cfg.totp_geheimnis),
                     "tresor": studio.tresor.offen,
                     "leerlauf_minuten": studio.cfg.leerlauf_minuten,
+                    "ki": studio.werkstatt.status(),
                 })
             if studio.guard is not None:
                 e = studio.guard.check(self._ip(), route="/api", count_request=False)
@@ -482,7 +488,8 @@ def handler_fuer(studio: Studio):
                     if methode == "POST":
                         d = self._json_body()
                         return self._json(self._wert(lambda: st.folge_anlegen(
-                            sid, d.pop("titel", ""), **_nur(d, ("beschreibung", "kapitel")))), 201)
+                            sid, d.pop("titel", ""), **_nur(d, ("beschreibung", "kapitel", "ki")))),
+                            201)
             if teile[0] == "folgen" and len(teile) >= 2:
                 fid = _id(teile[1])
                 if st.folge(fid) is None:
@@ -494,7 +501,7 @@ def handler_fuer(studio: Studio):
                     if methode == "PUT":
                         d = self._json_body()
                         return self._json(self._wert(lambda: st.folge_aendern(
-                            fid, **_nur(d, ("titel", "beschreibung", "kapitel")))))
+                            fid, **_nur(d, ("titel", "beschreibung", "kapitel", "ki")))))
                     if methode == "DELETE":
                         studio.datei_weg(st.folge_loeschen(fid))
                         studio.abgleichen()
@@ -509,12 +516,30 @@ def handler_fuer(studio: Studio):
                     neu = st.zurueckziehen(fid)
                     studio.abgleichen()  # zurueck in den Tresor
                     return self._json(neu)
+            if teile[0] == "ki":
+                return self._ki(methode, teile[1:])
             if teile == ["export"] and methode == "POST":
                 return self._json(publish.exportieren(
                     st, studio.cfg.medienordner, studio.cfg.pfad(studio.cfg.export_ziel),
                     basis_url=studio.cfg.basis_url, seitentitel=studio.cfg.seitentitel))
             if teile == ["ftp"] and methode == "POST":
                 return self._ftp()
+            raise ApiFehler(404, "Unbekannte Schnittstelle")
+
+        def _ki(self, methode: str, teile: list) -> None:
+            werkstatt = studio.werkstatt
+            try:
+                if teile == [] and methode == "GET":
+                    return self._json(werkstatt.status())
+                if teile == ["auftraege"] and methode == "POST":
+                    return self._json(werkstatt.starten(self._json_body()), 202)
+                if len(teile) == 2 and teile[0] == "auftraege" and methode == "GET":
+                    auftrag = werkstatt.auftrag(teile[1])
+                    if auftrag is None:
+                        raise ApiFehler(404, "Auftrag nicht gefunden")
+                    return self._json(auftrag)
+            except KiFehler as f:
+                raise ApiFehler(f.status, str(f))
             raise ApiFehler(404, "Unbekannte Schnittstelle")
 
         def _wert(self, aufruf):
@@ -608,7 +633,7 @@ def handler_fuer(studio: Studio):
             except ValueError as f:
                 raise ApiFehler(415, str(f))
             alt = s["cover"]
-            neu = studio.store.sendung_aendern(sid, cover=name)
+            neu = studio.store.sendung_aendern(sid, cover=name, cover_ki=False)
             studio.datei_weg(alt)
             studio.abgleichen()
             self._json(neu)

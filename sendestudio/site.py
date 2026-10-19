@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 
 from . import radio
 from .feed import dauer_text
-from .store import ARTEN
+from .store import ARTEN, ki_text
 
 _MONATE = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August",
            "September", "Oktober", "November", "Dezember"]
@@ -68,6 +68,8 @@ animation:puls 1.4s infinite}
 @keyframes puls{50%{opacity:.25}}
 .programm li.laeuft{font-weight:700;color:var(--akzent)}
 .text p{margin:.6em 0}
+.ki{display:inline-block;font-size:.8rem;color:var(--leise);border:1px dashed var(--leise);
+border-radius:8px;padding:2px 8px;margin:4px 0}
 h2.eng{margin:.2em 0 .4em}
 footer{margin-top:48px;font-size:.85rem;color:var(--leise)}
 @media (max-width:560px){.sendung{flex-direction:column}.cover.gross{width:100%;height:auto;
@@ -231,6 +233,14 @@ def _player(folge: Dict[str, Any], w: str, element_id: str = "") -> str:
             f"Dein Browser kann das nicht abspielen.</{tag}>")
 
 
+def _ki_marke(f: Dict[str, Any]) -> str:
+    # Pflicht nach EU-KI-Verordnung (Art. 50) - und ehrlich gegenueber dem Publikum.
+    if not f.get("ki"):
+        return ""
+    return (f'<div class="ki" title="Diese Folge enthält mit KI erzeugte Inhalte">'
+            f'KI-generiert: {_e(ki_text(f["ki"]))}</div>')
+
+
 def startseite(eintraege: List[Dict[str, Any]], seitentitel: str) -> str:
     """``eintraege``: Sendungen mit Schluessel ``folgen`` (nur veroeffentlichte)."""
     karten = []
@@ -273,6 +283,7 @@ aria-label="Feed-Adresse"><button class="knopf" data-kopieren="feedurl">Kopieren
         liste.append(f"""<div class="karte folge">
 <div class="leise">{datum(f["veroeffentlicht"])} · {dauer_text(f["dauer"]) if f["dauer"] else ""}{kapitel}</div>
 <h3><a href="{_e(f["slug"])}/">{_e(f["titel"])}</a></h3>
+{_ki_marke(f)}
 {_player(f, w)}
 </div>""")
     if not liste:
@@ -282,6 +293,7 @@ aria-label="Feed-Adresse"><button class="knopf" data-kopieren="feedurl">Kopieren
 <div><span class="marke">{_e(ARTEN[s["art"]])}</span>
 <h1>{_e(s["titel"])}</h1>
 {f'<div class="leise">{_e(s["autor"])}</div>' if s["autor"] else ""}
+{'<div class="ki">Cover KI-generiert</div>' if s.get("cover_ki") and s["cover"] else ""}
 <div class="text">{absaetze(s["beschreibung"])}</div>
 {radio_teil}</div></div>
 <h2>Abonnieren</h2>
@@ -306,6 +318,7 @@ def folge_seite(s: Dict[str, Any], f: Dict[str, Any], seitentitel: str,
 <span class="marke">{_e(ARTEN[s["art"]])}</span>
 <h1>{_e(f["titel"])}</h1>
 <div class="leise">{datum(f["veroeffentlicht"])}{" · " + dauer_text(f["dauer"]) if f["dauer"] else ""}</div>
+{_ki_marke(f)}
 {_player(f, w)}
 <div class="text">{absaetze(f["beschreibung"])}</div>
 {kapitel}

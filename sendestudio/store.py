@@ -47,10 +47,28 @@ CREATE TABLE IF NOT EXISTS folgen (
     UNIQUE (sendung_id, slug)
 );
 CREATE INDEX IF NOT EXISTS folgen_sendung ON folgen (sendung_id, veroeffentlicht);
+CREATE TABLE IF NOT EXISTS einstellungen (
+    schluessel  TEXT PRIMARY KEY,
+    wert        TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ki_nutzung (
+    tag     TEXT PRIMARY KEY,
+    anzahl  INTEGER NOT NULL
+);
 """
 
-_SENDUNG_FELDER = ("titel", "art", "beschreibung", "autor", "sprache", "kategorie", "cover")
-_FOLGE_FELDER = ("titel", "beschreibung", "datei", "mime", "groesse", "dauer", "kapitel")
+#: Spalten, die spaeter dazukamen - aeltere Datenbanken bekommen sie beim Start.
+_NACHTRAEGE = (
+    ("folgen", "ki", "TEXT NOT NULL DEFAULT '[]'"),
+    ("sendungen", "cover_ki", "INTEGER NOT NULL DEFAULT 0"),
+)
+
+#: Was an einer Folge KI-generiert sein kann - fuer die Kennzeichnung.
+KI_ARTEN = {"text": "Text", "stimme": "Stimme", "bild": "Bilder", "video": "Video"}
+
+_SENDUNG_FELDER = ("titel", "art", "beschreibung", "autor", "sprache", "kategorie", "cover",
+                   "cover_ki")
+_FOLGE_FELDER = ("titel", "beschreibung", "datei", "mime", "groesse", "dauer", "kapitel", "ki")
 
 #: Diese Felder einer Folge liegen, solange sie nicht veroeffentlicht ist,
 #: verschluesselt in der Datenbank (sofern ein offener Tresor da ist).
@@ -97,6 +115,23 @@ def kapitel_pruefen(kapitel: Any) -> List[Dict[str, Any]]:
     return sauber
 
 
+def ki_text(ki: List[str]) -> str:
+    """``["stimme", "bild"]`` -> ``"Stimme, Bilder"``."""
+    return ", ".join(KI_ARTEN[k] for k in KI_ARTEN if k in ki)
+
+
+def ki_pruefen(ki: Any) -> List[str]:
+    """Liste der KI-Anteile einer Folge, z.B. ``["text", "stimme"]``."""
+    if isinstance(ki, str):
+        try:
+            ki = json.loads(ki or "[]")
+        except ValueError:
+            raise ValueError("KI-Angabe ist kein gueltiges JSON")
+    if not isinstance(ki, list) or any(k not in KI_ARTEN for k in ki):
+        raise ValueError(f"KI-Angabe: erlaubt sind {', '.join(KI_ARTEN)}")
+    return [k for k in KI_ARTEN if k in ki]
+
+
 class Store:
     """Duenne Schicht ueber SQLite. Threadsicher ueber eine Sperre."""
 
@@ -111,6 +146,10 @@ class Store:
         if pfad != ":memory:":
             self._db.execute("PRAGMA journal_mode = WAL")
         self._db.executescript(_SCHEMA)
+        for tabelle, spalte, art in _NACHTRAEGE:
+            vorhanden = {z[1] for z in self._db.execute(f"PRAGMA table_info({tabelle})")}
+            if spalte not in vorhanden:
+                self._db.execute(f"ALTER TABLE {tabelle} ADD COLUMN {spalte} {art}")
         self._db.commit()
 
     def close(self) -> None:
@@ -193,7 +232,7 @@ class Store:
         werte = {}
         for k in _SENDUNG_FELDER:
             if k in felder and felder[k] is not None:
-                werte[k] = str(felder[k]).strip()
+                werte[k] = (1 if felder[k] else 0) if k == "cover_ki" else str(felder[k]).strip()
         if "art" in werte and werte["art"] not in ARTEN:
             raise ValueError(f"Unbekannte Art: {werte['art']!r} (erlaubt: {', '.join(ARTEN)})")
         if "titel" in werte:
@@ -344,6 +383,8 @@ class Store:
             werte["dauer"] = dauer if 0 <= dauer < 10 * 24 * 3600 else 0.0
         if "groesse" in werte:
             werte["groesse"] = max(0, int(werte["groesse"]))
+        if "ki" in werte:
+            werte["ki"] = json.dumps(ki_pruefen(werte["ki"]))
         return werte
 
     def _folge_dict(self, z: sqlite3.Row) -> Dict[str, Any]:
@@ -357,6 +398,7 @@ class Store:
                     d[k] = {"titel": VERSCHLOSSEN, "beschreibung": "", "kapitel": "[]"}[k]
                     d["verschlossen"] = True
         d["kapitel"] = json.loads(d["kapitel"] or "[]")
+        d["ki"] = json.loads(d.get("ki") or "[]")
         d["online"] = d["veroeffentlicht"] is not None
         return d
 
@@ -401,3 +443,36 @@ class Store:
             slug = f"{basis}-{n}"
             n += 1
         return slug
+
+    # ------------------------------------------------------------------
+    # Kleinkram, der einen Neustart ueberdauern muss
+    # ------------------------------------------------------------------
+    def einstellung(self, schluessel: str, standard: str = "") -> str:
+        with self._lock:
+            z = self._db.execute("SELECT wert FROM einstellungen WHERE schluessel = ?",
+                                 (schluessel,)).fetchone()
+        return z[0] if z else standard
+
+    def einstellung_setzen(self, schluessel: str, wert: str) -> None:
+        with self._lock:
+            self._db.execute("INSERT INTO einstellungen (schluessel, wert) VALUES (?, ?) "
+                             "ON CONFLICT(schluessel) DO UPDATE SET wert = excluded.wert",
+                             (schluessel, wert))
+            self._db.commit()
+
+    def ki_zaehlen(self, tag: str, limit: int) -> bool:
+        """Zaehlt einen KI-Auftrag. ``False``, wenn das Tageslimit erreicht ist."""
+        with self._lock:
+            z = self._db.execute("SELECT anzahl FROM ki_nutzung WHERE tag = ?", (tag,)).fetchone()
+            anzahl = z[0] if z else 0
+            if anzahl >= limit:
+                return False
+            self._db.execute("INSERT INTO ki_nutzung (tag, anzahl) VALUES (?, 1) "
+                             "ON CONFLICT(tag) DO UPDATE SET anzahl = anzahl + 1", (tag,))
+            self._db.commit()
+        return True
+
+    def ki_heute(self, tag: str) -> int:
+        with self._lock:
+            z = self._db.execute("SELECT anzahl FROM ki_nutzung WHERE tag = ?", (tag,)).fetchone()
+        return z[0] if z else 0

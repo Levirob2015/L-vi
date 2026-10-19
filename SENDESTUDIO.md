@@ -21,6 +21,14 @@ ffmpeg ist optional und macht die Aufnahmen podcast-tauglich.
 - Entwürfe, die niemand sieht, bis du sie veröffentlichst – und die bis dahin
   **nur verschlüsselt** auf dem Server liegen (siehe [Sicherheit](#sicherheit))
 
+**Mit KI erstellen** (optional, siehe [KI-Werkzeuge](#ki-werkzeuge))
+- **Texte:** Shownotes, Titelvorschläge, Kapitel, Sendungsbeschreibung, Social-Media-Post, ganze Sprechskripte
+- **Aus der Aufnahme:** abschreiben lassen → Shownotes, Kapitel mit Zeitmarken und Titelvorschläge
+- **Bilder:** Cover per Beschreibung malen lassen
+- **KI-Stimme:** Text oder Skript als fertige Folge vorlesen lassen
+- **Videos:** aus einem Thema ein ganzes Erklär-/Doku-Video (Szenen mit KI-Bildern und KI-Stimme), oder aus einer Aufnahme + Cover ein Video für YouTube & Co.
+- Alles KI-Erzeugte wird ein Entwurf und ist öffentlich **als KI-generiert gekennzeichnet**
+
 **Ins Netz stellen**
 - Öffentliche Seite mit Player, Kapiteln und Download – auch auf dem Handy
 - **Podcast-Feed** (RSS mit iTunes- und Kapitel-Angaben) für Apple Podcasts, Spotify, AntennaPod & Co.
@@ -170,6 +178,88 @@ mindestens 1400 × 1400 Pixeln.
 Die Datei wird nur für ihren Besitzer lesbar angelegt (sie enthält ggf. das
 FTP-Passwort).
 
+## KI-Werkzeuge
+
+Im Studio erscheinen die KI-Knöpfe (✨), sobald die Zugänge eingerichtet
+sind. Sie sind ganz freiwillig: Ohne Schlüssel läuft das Studio wie bisher.
+
+| Was | Anbieter | Was du brauchst |
+|---|---|---|
+| Texte (Shownotes, Titel, Kapitel, Skripte …) | Claude von Anthropic | `ANTHROPIC_API_KEY` und `pip install "sendestudio[ki]"` (Python 3.10+) |
+| Bilder, KI-Stimme, Transkription | OpenAI (oder kompatibel) | `OPENAI_API_KEY` |
+| Videos | wird im Studio aus KI-Bildern und KI-Stimme geschnitten | zusätzlich ffmpeg |
+
+Die Schlüssel am besten als Umgebungsvariablen setzen, z. B. in der
+systemd-Unit:
+
+```ini
+[Service]
+Environment=ANTHROPIC_API_KEY=sk-ant-…
+Environment=OPENAI_API_KEY=sk-…
+```
+
+Alternativ in `sendestudio.json` unter `"ki"` (die Datei ist nur für den
+Besitzer lesbar):
+
+```json
+"ki": {
+  "anthropic_schluessel": "",
+  "text_modell": "claude-opus-5-5",
+  "openai_schluessel": "",
+  "openai_url": "https://api.openai.com/v1",
+  "bild_modell": "gpt-image-2",
+  "stimme_modell": "gpt-4o-mini-tts",
+  "stimme": "coral",
+  "transkript_modell": "whisper-1",
+  "tageslimit": 50
+}
+```
+
+**So geht's im Studio:**
+- **Folge bearbeiten → „✨ Aus der Aufnahme“** schreibt die Aufnahme ab und
+  schlägt Shownotes, Kapitel und Titel vor. Nichts wird ungefragt
+  überschrieben, du prüfst und speicherst.
+- **Sendung → Einstellungen → „✨ Cover erzeugen“** malt ein Cover nach
+  deiner Beschreibung („Idee vorschlagen“ hilft beim Formulieren). Mit ffmpeg
+  wird es auf die von Apple verlangten 1400 Pixel gebracht.
+- **Sendung → „✨ KI-Studio“:** Thema eingeben, Skript schreiben lassen,
+  nach Belieben ändern, dann „Mit KI-Stimme vertonen“ – fertig ist eine
+  neue Folge. Oder „KI-Video“: Claude plant die Szenen, für jede entsteht
+  ein Bild und ein gesprochener Text, das Studio schneidet alles zusammen.
+- **Folge bearbeiten → „🎬 Video daraus machen“:** Aufnahme + Cover + bewegte
+  Wellenform als MP4.
+
+KI-Aufträge laufen im Hintergrund, der Fortschritt steht unten rechts. Du
+kannst derweil weiterarbeiten.
+
+**Kennzeichnung:** Seit August 2026 verlangt die EU-KI-Verordnung (Art. 50),
+dass KI-erzeugte Inhalte als solche erkennbar sind. Das Studio setzt die
+Angaben „KI-Anteile: Text / Stimme / Bilder / Video“ automatisch, wenn du ein
+KI-Werkzeug benutzt. Du kannst sie in jeder Folge anpassen. Öffentlich
+erscheint dann „KI-generiert: …“ an der Folge und ein Hinweis im Feed.
+Verantwortlich für das Veröffentlichte bleibst du – also bitte prüfen, was
+die KI geschrieben hat, besonders Fakten und Namen.
+
+**Was das kostet und was es verrät:**
+- Jeder Aufruf eines Anbieters kostet dort Geld. `ki.tageslimit` begrenzt die
+  Zahl der Aufrufe pro Tag (Standard 50). Ein KI-Video mit 8 Szenen braucht
+  17 Aufrufe (1× Planung, je Szene 1× Bild und 1× Stimme). Mit
+  `"tageslimit": 0` ist die KI ganz aus.
+- **Was du einem KI-Werkzeug gibst, verlässt deinen Server** und geht an
+  Anthropic bzw. OpenAI – bei „Aus der Aufnahme“ die ganze Aufnahme. Das
+  passiert nur auf Knopfdruck, nie automatisch. Für streng vertrauliche
+  Entwürfe die KI-Knöpfe einfach nicht benutzen.
+- Bei Claude ist der eingebaute Ausweichweg der API eingeschaltet: Lehnt
+  ein Sicherheitsfilter eine Anfrage ab, beantwortet sie automatisch ein
+  anderes Claude-Modell.
+- Es werden keine Stimmen geklont und keine echten Personen nachgebildet. Die
+  KI-Stimmen sind die eingebauten Stimmen des Anbieters.
+
+Warum kein „echter“ KI-Videogenerator? OpenAIs Video-Schnittstelle (Sora) ist
+in deren offizieller API-Beschreibung als veraltet markiert – darauf soll
+kein neues Programm bauen. Die Videos aus KI-Bildern und KI-Stimme laufen
+dagegen mit jedem Bild- und Sprachdienst.
+
 ## Sicherheit
 
 ### Deine Daten bleiben deine, bis du veröffentlichst
@@ -210,6 +300,8 @@ Was der Tresor **nicht** abdeckt, ehrlich gesagt:
 - Während eine Aufnahme hochgeladen und umgewandelt wird, liegt sie für
   diesen Moment unverschlüsselt im Datenordner. Gelöschte Daten können auf
   SSDs physisch noch eine Weile vorhanden sein.
+- Läuft beim Abmelden noch ein KI-Auftrag, wird sein Ergebnis erst bei der
+  nächsten Anmeldung verschlüsselt.
 - Wer den laufenden Server übernimmt, **während** du angemeldet bist, kommt
   an den Schlüssel im Arbeitsspeicher. Deshalb alles Folgende.
 
@@ -258,7 +350,9 @@ sendestudio ftp                                 Exportieren und per FTP hochlade
 ## Tests
 
 ```bash
-python -m pytest tests/test_sendestudio.py tests/test_sendestudio_sicherheit.py -q
+python -m pytest tests/test_sendestudio.py tests/test_sendestudio_sicherheit.py tests/test_sendestudio_ki.py -q
 ```
 
-Die Tests laufen mit und ohne ffmpeg.
+Die Tests laufen mit und ohne ffmpeg. Die KI-Tests rufen keinen echten
+Anbieter auf (und kosten nichts): Sie laufen gegen nachgebaute Anthropic- und
+OpenAI-Server, die genau prüfen, was das Studio ihnen schickt.
