@@ -64,7 +64,9 @@ jobs:
           stdlib = set(sys.stdlib_module_names)
           erlaubt = {"yaml"}          # optional, wird abgefangen
           fremd = set()
-          for pfad in pathlib.Path("loginshield").rglob("*.py"):
+          dateien = [p for paket in ("loginshield", "sendestudio")
+                     for p in pathlib.Path(paket).rglob("*.py")]
+          for pfad in dateien:
               for knoten in ast.walk(ast.parse(pfad.read_text())):
                   if isinstance(knoten, ast.Import):
                       namen = [n.name for n in knoten.names]
@@ -90,3 +92,5 @@ jobs:
           python -m pip install .
           loginshield --version
           loginshield doctor --json > /dev/null
+          sendestudio --version
+          cd "$(mktemp -d)" && sendestudio init --titel CI > /dev/null && sendestudio export

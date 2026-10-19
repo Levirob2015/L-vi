@@ -12,6 +12,10 @@ Kommandozeile.
 
 ![Dashboard](docs/dashboard.png)
 
+> **Neu im Repository: [Sendestudio](SENDESTUDIO.md)** – Podcasts, Radio
+> und Dokumentationen im Browser aufnehmen und direkt ins Netz stellen.
+> Der Studio-Login ist mit LoginShield geschützt.
+
 ### Klickbare Vorschau
 
 [`docs/demo.html`](docs/demo.html) ist eine bedienbare Version dieser

@@ -19,3 +19,8 @@ loginshield.json
 .coverage
 htmlcov/
 .DS_Store
+
+# Sendestudio: Konfiguration (Passwort-Hash, FTP-Zugang), Aufnahmen, Export
+sendestudio.json
+sendestudio-daten/
+oeffentlich/

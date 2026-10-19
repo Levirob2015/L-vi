@@ -26,9 +26,13 @@ dev = ["pytest>=7.0", "PyYAML>=6.0"]
 
 [project.scripts]
 loginshield = "loginshield.cli:main"
+sendestudio = "sendestudio.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["loginshield*"]
+include = ["loginshield*", "sendestudio*"]
+
+[tool.setuptools.package-data]
+sendestudio = ["static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
