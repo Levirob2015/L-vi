@@ -6,6 +6,15 @@ ffmpeg ist optional und macht die Aufnahmen podcast-tauglich.
 
 ![Studio bei der Aufnahme](docs/sendestudio.png)
 
+### Klickbare Demo
+
+[`docs/sendestudio-demo.html`](docs/sendestudio-demo.html) – eine einzelne Datei,
+herunterladen und im Browser öffnen, ohne Installation. Sie zeigt Aufnahme mit
+Jingles und Kapitelmarken, KI-Knöpfe, verschlüsselte Entwürfe, die öffentliche
+Seite mit Live-Radio und den Podcast-Feed. Alles bleibt im Browser; die
+KI-Antworten sind dort Beispiele. Über GitHub Pages erscheint sie unter
+`https://levirob2015.github.io/L-vi/sendestudio.html`.
+
 ## Was es kann
 
 **Aufnehmen**
