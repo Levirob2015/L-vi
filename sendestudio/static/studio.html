@@ -16,6 +16,9 @@
     <label>Passwort
       <input type="password" id="login-passwort" autocomplete="current-password" required autofocus>
     </label>
+    <label id="login-code-zeile" hidden>Code aus der Authenticator-App
+      <input id="login-code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" pattern="[0-9 ]{6,7}">
+    </label>
     <button class="knopf primaer" type="submit">Ins Studio</button>
     <p id="login-fehler" class="fehler" role="alert"></p>
   </form>
@@ -24,7 +27,8 @@
 <!-- Studio -->
 <div id="app" hidden>
   <header class="leiste">
-    <div class="marke"><span class="onair" id="onair">ON AIR</span> Sendestudio</div>
+    <div class="marke"><span class="onair" id="onair">ON AIR</span> Sendestudio
+      <span class="schloss" id="tresor-anzeige" title="Unveröffentlichte Aufnahmen liegen nur verschlüsselt auf dem Server" hidden>🔒 Entwürfe verschlüsselt</span></div>
     <nav>
       <button class="knopf" id="knopf-netz">Ins Netz stellen</button>
       <a class="knopf leicht" id="link-oeffentlich" href="/" target="_blank" rel="noopener">Öffentliche Seite ↗</a>

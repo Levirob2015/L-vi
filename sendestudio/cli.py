@@ -8,10 +8,12 @@ import logging
 import os
 import secrets
 import sys
+import time
 from typing import List, Optional
 
-from . import media, publish
+from . import media, publish, zweifaktor
 from .config import STANDARD_PFAD, Config, laden, neues_passwort, passwort_hash, speichern
+from .tresor import Tresor, TresorFehler
 from .version import __version__
 
 
@@ -31,6 +33,9 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     pw = sub.add_parser("passwort", help="Neues Studio-Passwort setzen")
     pw.add_argument("--zufall", action="store_true", help="Zufälliges Passwort erzeugen und anzeigen")
+
+    z = sub.add_parser("zweifaktor", help="Zwei-Faktor-Anmeldung (Authenticator-App) einrichten")
+    z.add_argument("--aus", action="store_true", help="Zwei-Faktor-Anmeldung abschalten")
 
     s = sub.add_parser("serve", help="Studio und öffentliche Seite starten")
     s.add_argument("--host", help="Adresse (Standard aus der Konfiguration)")
@@ -56,6 +61,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 2
 
     if a.befehl == "passwort":
+        tresor = _tresor(cfg)
+        if tresor.existiert:
+            # Ohne das alte Geheimnis laesst sich der Tresor nicht neu
+            # verschliessen - und wer es nicht kennt, soll es nicht koennen.
+            alt = getpass.getpass("Aktuelles Passwort oder Wiederherstellungsschlüssel: ")
+            try:
+                tresor.entsperren(alt)
+            except TresorFehler as f:
+                print(f, file=sys.stderr)
+                return 1
         if a.zufall:
             neu = neues_passwort()
         else:
@@ -68,8 +83,16 @@ def main(argv: Optional[List[str]] = None) -> int:
                 return 1
         cfg.passwort_hash = passwort_hash(neu)
         speichern(cfg, a.config)
+        os.makedirs(cfg.datenordner, exist_ok=True)
+        wieder = tresor.neues_passwort(neu) if tresor.existiert else tresor.anlegen(neu)
+        tresor.sperren()
         print(f"Passwort gesetzt{': ' + neu if a.zufall else '.'}")
+        _wiederherstellung_zeigen(wieder)
+        print("Läuft der Server, bitte neu starten.")
         return 0
+
+    if a.befehl == "zweifaktor":
+        return _zweifaktor(cfg, a)
 
     if a.befehl == "serve":
         return _serve(cfg, a.host, a.port)
@@ -123,10 +146,21 @@ def _init(a: argparse.Namespace) -> int:
         print(f, file=sys.stderr)
         return 1
     speichern(cfg, a.config)
-    os.makedirs(cfg.medienordner, exist_ok=True)
+    os.makedirs(cfg.medienordner, mode=0o700, exist_ok=True)
+    os.chmod(cfg.datenordner, 0o700)
+    tresor = _tresor(cfg)
+    if tresor.existiert:
+        print(f"In {cfg.datenordner} liegt schon ein Tresor - bitte leeren Datenordner "
+              "verwenden oder 'sendestudio passwort' benutzen.", file=sys.stderr)
+        return 1
+    wieder = tresor.anlegen(passwort)
+    tresor.sperren()
     print(f"Konfiguration: {os.path.abspath(a.config)}")
     print(f"Studio-Passwort: {passwort}")
     print("  (gut aufheben - es wird nur gehasht gespeichert; ändern mit 'sendestudio passwort')")
+    _wiederherstellung_zeigen(wieder)
+    print("Noch sicherer: 'sendestudio zweifaktor' - dann braucht die Anmeldung zusätzlich "
+          "einen Code vom Handy.")
     if not media.ffmpeg_verfuegbar():
         print("Tipp: Mit ffmpeg werden Aufnahmen automatisch in MP3/MP4 umgewandelt "
               "und in der Lautstärke angeglichen.")
@@ -152,3 +186,42 @@ def _serve(cfg: Config, host: Optional[str], port: Optional[int]) -> int:
         server.server_close()
         studio.close()
     return 0
+
+
+def _tresor(cfg: Config) -> Tresor:
+    return Tresor(os.path.join(cfg.datenordner, "tresor.json"))
+
+
+def _wiederherstellung_zeigen(schluessel: str) -> None:
+    print(f"Wiederherstellungsschlüssel: {schluessel}")
+    print("  Unveröffentlichte Aufnahmen liegen verschlüsselt. Ohne Passwort UND ohne")
+    print("  diesen Schlüssel sind sie verloren - bitte ausdrucken oder offline aufheben.")
+
+
+def _zweifaktor(cfg: Config, a: argparse.Namespace) -> int:
+    if a.aus:
+        cfg.totp_geheimnis = ""
+        speichern(cfg, a.config)
+        print("Zwei-Faktor-Anmeldung ist aus. Läuft der Server, bitte neu starten.")
+        return 0
+    geheimnis = zweifaktor.neues_geheimnis()
+    gruppen = " ".join(geheimnis[i:i + 4] for i in range(0, len(geheimnis), 4))
+    print("In der Authenticator-App ein neues Konto anlegen ('Schlüssel manuell eingeben'):")
+    print(f"  Schlüssel: {gruppen}")
+    print("  Art: zeitbasiert, 6 Stellen")
+    print(f"  oder als Link: {zweifaktor.uri(geheimnis, cfg.seitentitel)}")
+    # Erst speichern, wenn die App nachweislich richtig rechnet - sonst
+    # sperrt man sich selbst aus.
+    for _ in range(3):
+        try:
+            eingabe = input("Code aus der App zur Bestätigung: ")
+        except EOFError:
+            break
+        if zweifaktor.pruefen(geheimnis, eingabe, time.time()) is not None:
+            cfg.totp_geheimnis = geheimnis
+            speichern(cfg, a.config)
+            print("Zwei-Faktor-Anmeldung ist an. Läuft der Server, bitte neu starten.")
+            return 0
+        print("Der Code passt nicht - stimmt die Uhrzeit auf dem Handy?")
+    print("Nicht eingerichtet.", file=sys.stderr)
+    return 1

@@ -18,7 +18,8 @@ ffmpeg ist optional und macht die Aufnahmen podcast-tauglich.
 **Verwalten**
 - Sendungen in drei Arten: **Podcast**, **Radio**, **Dokumentation**
 - Cover, Beschreibung, Shownotes, Kapitel bearbeiten
-- Entwürfe, die niemand sieht, bis du sie veröffentlichst – auch die Datei nicht
+- Entwürfe, die niemand sieht, bis du sie veröffentlichst – und die bis dahin
+  **nur verschlüsselt** auf dem Server liegen (siehe [Sicherheit](#sicherheit))
 
 **Ins Netz stellen**
 - Öffentliche Seite mit Player, Kapiteln und Download – auch auf dem Handy
@@ -38,7 +39,9 @@ cd L-vi
 pip install -e .                    # oder: export PYTHONPATH=$PWD
 
 sendestudio init --titel "Mein Sender"
-# -> zeigt das Studio-Passwort an, gut aufheben
+# -> zeigt Studio-Passwort und Wiederherstellungsschlüssel an - beides gut aufheben
+
+sendestudio zweifaktor              # empfohlen: Anmeldung zusätzlich mit Code vom Handy
 
 sendestudio serve
 # Studio:            http://127.0.0.1:8790/studio
@@ -158,6 +161,9 @@ mindestens 1400 × 1400 Pixeln.
 | `max_upload_mb` | Größte erlaubte Datei (Standard 4096) |
 | `sicheres_cookie` | Anmeldung nur über HTTPS – einschalten, sobald HTTPS läuft |
 | `vertraute_proxys` | Proxys, deren `X-Forwarded-For` geglaubt wird |
+| `studio_netze` | Studio nur aus diesen Netzen erreichbar, z.B. `["192.168.0.0/16"]` – leer = überall |
+| `leerlauf_minuten` | Automatische Abmeldung nach so viel Untätigkeit (Standard 60) |
+| `totp_geheimnis` | Nicht von Hand ändern – `sendestudio zweifaktor` benutzen |
 | `ftp` | Zugang für Weg 3 |
 | `passwort_hash` | Nicht von Hand ändern – `sendestudio passwort` benutzen |
 
@@ -166,21 +172,84 @@ FTP-Passwort).
 
 ## Sicherheit
 
+### Deine Daten bleiben deine, bis du veröffentlichst
+
+Alles, was noch nicht öffentlich ist, liegt **nur verschlüsselt** auf dem
+Server: die Aufnahmen von Entwürfen und zurückgezogenen Folgen, deren Titel,
+Beschreibungen und Kapitel sowie das Cover einer Sendung, solange sie noch
+keine veröffentlichte Folge hat. Auch die Dateinamen sind zufällig und
+verraten nichts über den Inhalt.
+
+- **Erst beim Veröffentlichen** entsteht die lesbare Datei. Ziehst du eine
+  Folge zurück, wandert sie sofort wieder in den Tresor.
+- **Der Schlüssel liegt nirgends offen.** Er ist mit deinem Passwort
+  verschlossen. Der Server kennt ihn nur, solange du angemeldet bist. Nach
+  dem Abmelden, nach `leerlauf_minuten` ohne Aktivität oder nach einem
+  Neustart vergisst er ihn wieder.
+- Wer die Festplatte, ein Backup oder den Server in die Hände bekommt, sieht
+  von deinen Entwürfen **nur Datenmüll**. (Wer allerdings dauerhaft die
+  Kontrolle über den Server hat, könnte das Programm verändern und dein
+  Passwort bei der nächsten Anmeldung mitschneiden – vor einem bösartigen
+  Server-Betreiber schützt keine Software, die auf diesem Server läuft.)
+- **Manipulation fällt auf:** Jeder Block ist mit einer Prüfsumme
+  gesichert. Wer etwas verändert oder abschneidet, wird bemerkt.
+- **Wiederherstellungsschlüssel:** `sendestudio init` zeigt ihn einmal an.
+  Mit ihm setzt du ein neues Passwort, falls du es vergessen hast
+  (`sendestudio passwort`). **Ohne Passwort und ohne diesen Schlüssel sind
+  unveröffentlichte Aufnahmen verloren** – das ist der Preis echter
+  Verschlüsselung. Also ausdrucken oder offline aufheben.
+
+Verfahren (nur Bausteine aus Pythons Standardbibliothek):
+Schlüsselableitung mit PBKDF2-HMAC-SHA256 (310 000 Runden), Verschlüsselung
+mit SHAKE-256 als Schlüsselstrom, Integrität mit HMAC-SHA256 je 1-MiB-Block
+(Encrypt-then-MAC, mit Blocknummer und Ende-Kennzeichen).
+
+Was der Tresor **nicht** abdeckt, ehrlich gesagt:
+- Name und Beschreibung einer **Sendung** (nicht der Folgen) stehen im
+  Klartext in der Datenbank – die Datenbank ist nur für den Besitzer lesbar.
+- Während eine Aufnahme hochgeladen und umgewandelt wird, liegt sie für
+  diesen Moment unverschlüsselt im Datenordner. Gelöschte Daten können auf
+  SSDs physisch noch eine Weile vorhanden sein.
+- Wer den laufenden Server übernimmt, **während** du angemeldet bist, kommt
+  an den Schlüssel im Arbeitsspeicher. Deshalb alles Folgende.
+
+### Schwer zu knacken
+
+- **Zwei-Faktor-Anmeldung** (`sendestudio zweifaktor`): Zum Passwort gehört
+  ein Code aus einer Authenticator-App. Jeder Code gilt nur einmal – ein
+  mitgelesener nützt nichts.
 - **Login-Schutz durch LoginShield** aus diesem Repository: Nach mehreren
-  falschen Passwörtern wird die Adresse mit ansteigender Dauer gesperrt.
-- Passwort nur als PBKDF2-Hash gespeichert, Sitzung als `HttpOnly`-,
-  `SameSite=Strict`-Cookie, zusätzlich eine Pflicht-Kennung an jeder
-  ändernden Anfrage gegen CSRF.
-- Hochgeladene Dateien werden **am Inhalt** erkannt, nicht am Namen – eine
-  HTML-Datei, die sich `folge.mp3` nennt, wird abgewiesen.
-- Entwürfe und ihre Dateien sind öffentlich nicht erreichbar.
-- Strenge Content-Security-Policy auf allen Seiten, keine Inline-Skripte.
+  Fehlversuchen wird die Adresse gesperrt, mit jedem Mal länger.
+- **Studio nur aus bestimmten Netzen** (`studio_netze`): Für alle anderen
+  gibt es das Studio gar nicht. Sie sehen nur die öffentliche Seite.
+- **Automatische Abmeldung** nach Untätigkeit, im Browser und auf dem
+  Server. Danach wird auch der Bildschirm geleert.
+- Passwort nur als PBKDF2-Hash gespeichert. Sitzung als `HttpOnly`- und
+  `SameSite=Strict`-Cookie, mit HTTPS als `__Host-`-Cookie plus HSTS.
+  Gegen CSRF braucht zusätzlich jede ändernde Anfrage eine Pflicht-Kennung.
+- Hochgeladene Dateien werden **am Inhalt** erkannt, nicht am Namen. ffmpeg
+  darf beim Umwandeln nur die eine lokale Datei lesen – präparierte
+  Mediendateien können keine Netzwerkanfragen auslösen oder andere Dateien
+  nachladen.
+- Strenge Content-Security-Policy ohne Inline-Skripte, Schutz gegen
+  Einbetten in fremde Seiten (Clickjacking), keine Versionsnummern nach
+  außen. Vor der Anmeldung verrät die Schnittstelle nichts über den Server.
+- Gegen Überlastung: Verbindungen ohne Daten fliegen nach 60 Sekunden raus,
+  höchstens 256 Verbindungen gleichzeitig, Anfragen mit `Transfer-Encoding`
+  (Request Smuggling) werden abgelehnt.
+- Konfiguration, Schlüsseldatei und Datenordner sind nur für den Besitzer
+  lesbar.
+
+**Empfehlung für den Betrieb im Netz:** HTTPS (siehe oben),
+`"sicheres_cookie": true`, Zwei-Faktor-Anmeldung einschalten – und wenn du
+nur von zu Hause aufnimmst, `studio_netze` auf dein Heimnetz bzw. VPN setzen.
 
 ## Befehle
 
 ```
 sendestudio init [--titel T] [--basis-url URL]   Konfiguration + Passwort anlegen
-sendestudio passwort [--zufall]                 Neues Passwort setzen
+sendestudio passwort [--zufall]                 Neues Passwort (fragt altes oder Wiederherstellungsschlüssel)
+sendestudio zweifaktor [--aus]                  Zwei-Faktor-Anmeldung ein-/ausschalten
 sendestudio serve [--host H] [--port P]         Studio + öffentliche Seite starten
 sendestudio export [ZIEL]                       Statische Seite schreiben
 sendestudio ftp                                 Exportieren und per FTP hochladen
@@ -189,7 +258,7 @@ sendestudio ftp                                 Exportieren und per FTP hochlade
 ## Tests
 
 ```bash
-python -m pytest tests/test_sendestudio.py -q
+python -m pytest tests/test_sendestudio.py tests/test_sendestudio_sicherheit.py -q
 ```
 
 Die Tests laufen mit und ohne ffmpeg.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import secrets
@@ -44,6 +45,14 @@ class Config:
     export_ziel: str = "oeffentlich"
     #: Proxys, deren X-Forwarded-For geglaubt wird (z.B. ["127.0.0.1"]).
     vertraute_proxys: List[str] = field(default_factory=list)
+    #: Nur aus diesen Netzen ist das Studio erreichbar, z.B.
+    #: ["192.168.0.0/16"] fuers Heimnetz. Leer = von ueberall (mit Login).
+    studio_netze: List[str] = field(default_factory=list)
+    #: Geheimnis fuer die Zwei-Faktor-Anmeldung ('sendestudio zweifaktor').
+    totp_geheimnis: str = ""
+    #: Nach so vielen Minuten ohne Aktivitaet wird abgemeldet - und der
+    #: Tresor schliesst sich, sobald niemand mehr angemeldet ist.
+    leerlauf_minuten: int = 60
     ftp: FtpConfig = field(default_factory=FtpConfig)
     #: Woher die Datei geladen wurde - relative Pfade gelten von dort aus.
     quelle: str = field(default="", repr=False)
@@ -68,6 +77,13 @@ class Config:
             raise ValueError("basis_url muss mit http:// oder https:// beginnen")
         if self.max_upload_mb <= 0:
             raise ValueError("max_upload_mb muss positiv sein")
+        if not 1 <= self.leerlauf_minuten <= 24 * 60:
+            raise ValueError("leerlauf_minuten muss zwischen 1 und 1440 liegen")
+        for netz in self.studio_netze + self.vertraute_proxys:
+            try:
+                ipaddress.ip_network(str(netz).strip(), strict=False)
+            except ValueError:
+                raise ValueError(f"Keine gueltige Adresse bzw. kein gueltiges Netz: {netz!r}")
 
     def als_dict(self) -> Dict[str, Any]:
         d = asdict(self)

@@ -33,6 +33,9 @@ h3 { font-size: 1rem; margin: 1.2em 0 .4em; }
 
 .login { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
 .login form { display: grid; gap: 14px; }
+.login label { display: grid; gap: 4px; font-weight: 600; font-size: .9rem; }
+.schloss { font-size: .78rem; font-weight: 600; color: var(--gruen); border: 1px solid currentColor;
+  border-radius: 999px; padding: 1px 9px; letter-spacing: 0; }
 
 .leiste { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
   padding: 12px 20px; border-bottom: 1px solid var(--linie); background: var(--flaeche);

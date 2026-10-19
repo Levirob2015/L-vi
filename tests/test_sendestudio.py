@@ -235,7 +235,7 @@ def server(tmp_path):
     cfg = Config(daten=str(tmp_path / "daten"), passwort_hash=passwort_hash(PASSWORT, iterationen=1000),
                  basis_url="https://sender.example", geheimnis="test",
                  export_ziel=str(tmp_path / "web"))
-    studio = Studio(cfg)
+    studio = Studio(cfg, tresor_iterationen=1000)
     srv = server_starten(studio, "127.0.0.1", 0)
     faden = threading.Thread(target=srv.serve_forever, daemon=True)
     faden.start()
@@ -311,7 +311,7 @@ def test_ablauf_aufnehmen_veroeffentlichen(server):
 
     # Loeschen raeumt die Datei mit weg.
     assert c.json("DELETE", f"/api/sendungen/{s['id']}")[0] == 200
-    assert not os.path.exists(os.path.join(studio.cfg.medienordner, f["datei"]))
+    assert not [n for n in os.listdir(studio.cfg.medienordner) if n.startswith(f["datei"])]
 
 
 def test_upload_nur_echte_medien(server):

@@ -34,6 +34,12 @@ MIME = {
     ".webp": "image/webp",
 }
 
+#: ffmpeg darf nur die eine lokale Datei lesen - keine Adressen im Netz,
+#: keine Wiedergabelisten, die weitere Dateien nachladen. Sonst koennte
+#: eine praeparierte Mediendatei den Server Dateien lesen oder Anfragen
+#: verschicken lassen.
+NUR_DATEI = ["-protocol_whitelist", "file", "-nostdin"]
+
 #: Lautheit nach der Empfehlung fuer Podcasts (-16 LUFS, Stereo).
 LOUDNORM = "loudnorm=I=-16:TP=-1.5:LRA=11"
 
@@ -78,7 +84,7 @@ def pruefen(pfad: str) -> dict:
         return {}
     try:
         aus = subprocess.run(
-            ["ffprobe", "-v", "error", "-print_format", "json",
+            ["ffprobe", "-v", "error", "-protocol_whitelist", "file", "-print_format", "json",
              "-show_format", "-show_streams", pfad],
             capture_output=True, timeout=60, check=True,
         ).stdout
@@ -129,13 +135,22 @@ def aufbereiten(quelle: str, zielordner: str, basisname: str, *,
             (not video and endung in (".mp3", ".m4a")) or (video and endung == ".mp4"))
         if not bereits_fertig:
             ziel = os.path.join(zielordner, basisname + ziel_endung)
+            # Erst unter verstecktem Namen fertig schreiben, dann umbenennen:
+            # Eine halb geschriebene Datei darf niemand (auch nicht der
+            # Tresor-Abgleich) zu sehen bekommen.
+            arbeit = os.path.join(zielordner, "." + basisname + ".arbeit" + ziel_endung)
             try:
-                subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", quelle] + argumente + [ziel],
+                subprocess.run(["ffmpeg", "-y", "-v", "error"] + NUR_DATEI + ["-i", quelle]
+                               + argumente + [arbeit],
                                capture_output=True, timeout=6 * 3600, check=True)
             except subprocess.CalledProcessError as fehler:
-                _weg(ziel)
+                _weg(arbeit)
                 meldung = (fehler.stderr or b"").decode(errors="replace").strip()[-300:]
                 raise ValueError(f"Umwandlung fehlgeschlagen: {meldung or 'ffmpeg-Fehler'}")
+            except BaseException:
+                _weg(arbeit)
+                raise
+            os.replace(arbeit, ziel)
             _weg(quelle)
             neu = pruefen(ziel)
             return _ergebnis(ziel, neu.get("dauer") or info.get("dauer", 0.0), video)

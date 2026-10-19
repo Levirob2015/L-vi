@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
 import sqlite3
 import threading
 import time
@@ -51,6 +52,14 @@ CREATE INDEX IF NOT EXISTS folgen_sendung ON folgen (sendung_id, veroeffentlicht
 _SENDUNG_FELDER = ("titel", "art", "beschreibung", "autor", "sprache", "kategorie", "cover")
 _FOLGE_FELDER = ("titel", "beschreibung", "datei", "mime", "groesse", "dauer", "kapitel")
 
+#: Diese Felder einer Folge liegen, solange sie nicht veroeffentlicht ist,
+#: verschluesselt in der Datenbank (sofern ein offener Tresor da ist).
+GEHEIM = ("titel", "beschreibung", "kapitel")
+#: Was ein verschlossener Entwurf statt seines Titels zeigt.
+VERSCHLOSSEN = "(verschlossen)"
+#: Pfadnamen von Entwuerfen verraten nichts ueber den Titel.
+ENTWURF_PRAEFIX = "entwurf-"
+
 _UMLAUTE = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss",
                           "Ä": "ae", "Ö": "oe", "Ü": "ue"})
 
@@ -91,9 +100,10 @@ def kapitel_pruefen(kapitel: Any) -> List[Dict[str, Any]]:
 class Store:
     """Duenne Schicht ueber SQLite. Threadsicher ueber eine Sperre."""
 
-    def __init__(self, pfad: str, *, clock=time.time) -> None:
+    def __init__(self, pfad: str, *, clock=time.time, tresor: Any = None) -> None:
         self.pfad = pfad
         self.clock = clock
+        self.tresor = tresor
         self._lock = threading.Lock()
         self._db = sqlite3.connect(pfad, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
@@ -229,10 +239,13 @@ class Store:
         if not titel:
             raise ValueError("Die Folge braucht einen Titel")
         werte = self._folge_werte(dict(felder, titel=titel))
+        geheim = self._geheim()
+        if geheim:
+            self._einschliessen(werte)
         with self._lock:
             slug = self._freier_slug(
                 "SELECT 1 FROM folgen WHERE slug = ? AND sendung_id = ?", (sendung_id,),
-                slugify(titel, "folge"))
+                ENTWURF_PRAEFIX + secrets.token_hex(4) if geheim else slugify(titel, "folge"))
             spalten = ["sendung_id", "slug", "erstellt"] + list(werte)
             cur = self._db.execute(
                 f"INSERT INTO folgen ({', '.join(spalten)}) "
@@ -247,6 +260,12 @@ class Store:
         werte = self._folge_werte(felder)
         if "titel" in werte and not werte["titel"]:
             raise ValueError("Die Folge braucht einen Titel")
+        if any(k in werte for k in GEHEIM) and self._geheim():
+            with self._lock:
+                z = self._db.execute("SELECT veroeffentlicht FROM folgen WHERE id = ?",
+                                     (folge_id,)).fetchone()
+            if z is not None and z[0] is None:
+                self._einschliessen(werte)
         if werte:
             with self._lock:
                 self._db.execute(
@@ -265,9 +284,19 @@ class Store:
             raise KeyError(folge_id)
         if not f["datei"]:
             raise ValueError("Ohne Aufnahme gibt es nichts zu veroeffentlichen")
+        if f.get("verschlossen"):
+            raise ValueError("Tresor verschlossen - bitte neu anmelden")
         with self._lock:
-            self._db.execute("UPDATE folgen SET veroeffentlicht = ? WHERE id = ?",
-                             (zeitpunkt if zeitpunkt is not None else self.clock(), folge_id))
+            # Ab jetzt oeffentlich: Texte im Klartext, ein lesbarer Pfadname.
+            slug = f["slug"]
+            if slug.startswith(ENTWURF_PRAEFIX):
+                slug = self._freier_slug("SELECT 1 FROM folgen WHERE slug = ? AND sendung_id = ?",
+                                         (f["sendung_id"],), slugify(f["titel"], "folge"))
+            self._db.execute(
+                "UPDATE folgen SET veroeffentlicht = ?, slug = ?, titel = ?, beschreibung = ?, "
+                "kapitel = ? WHERE id = ?",
+                (zeitpunkt if zeitpunkt is not None else self.clock(), slug, f["titel"],
+                 f["beschreibung"], json.dumps(f["kapitel"], ensure_ascii=False), folge_id))
             self._db.commit()
         return self.folge(folge_id)  # type: ignore[return-value]
 
@@ -275,6 +304,7 @@ class Store:
         with self._lock:
             self._db.execute("UPDATE folgen SET veroeffentlicht = NULL WHERE id = ?", (folge_id,))
             self._db.commit()
+        self.entwuerfe_einschliessen()
         f = self.folge(folge_id)
         if f is None:
             raise KeyError(folge_id)
@@ -316,12 +346,54 @@ class Store:
             werte["groesse"] = max(0, int(werte["groesse"]))
         return werte
 
-    @staticmethod
-    def _folge_dict(z: sqlite3.Row) -> Dict[str, Any]:
+    def _folge_dict(self, z: sqlite3.Row) -> Dict[str, Any]:
         d = dict(z)
+        d["verschlossen"] = False
+        for k in GEHEIM:
+            if self.tresor is not None and self.tresor.ist_verschluesselt(d[k]):
+                if self.tresor.offen:
+                    d[k] = self.tresor.text_entschluesseln(d[k])
+                else:
+                    d[k] = {"titel": VERSCHLOSSEN, "beschreibung": "", "kapitel": "[]"}[k]
+                    d["verschlossen"] = True
         d["kapitel"] = json.loads(d["kapitel"] or "[]")
         d["online"] = d["veroeffentlicht"] is not None
         return d
+
+    def _geheim(self) -> bool:
+        return self.tresor is not None and self.tresor.offen
+
+    def _einschliessen(self, werte: Dict[str, Any]) -> None:
+        for k in GEHEIM:
+            if k in werte and not self.tresor.ist_verschluesselt(werte[k]):
+                werte[k] = self.tresor.text_verschluesseln(str(werte[k]))
+
+    def entwuerfe_einschliessen(self) -> int:
+        """Verschluesselt Texte aller Entwuerfe, die noch im Klartext liegen.
+
+        Fuer zurueckgezogene Folgen und fuer Daten aus der Zeit vor dem
+        Tresor. Ohne offenen Tresor passiert nichts.
+        """
+        if not self._geheim():
+            return 0
+        with self._lock:
+            zeilen = self._db.execute(
+                "SELECT id, titel, beschreibung, kapitel FROM folgen "
+                "WHERE veroeffentlicht IS NULL").fetchall()
+        n = 0
+        for z in zeilen:
+            werte = {k: z[k] for k in GEHEIM if not self.tresor.ist_verschluesselt(z[k])}
+            if not werte:
+                continue
+            self._einschliessen(werte)
+            with self._lock:
+                self._db.execute(
+                    f"UPDATE folgen SET {', '.join(k + ' = ?' for k in werte)} "
+                    "WHERE id = ? AND veroeffentlicht IS NULL",
+                    list(werte.values()) + [z["id"]])
+                self._db.commit()
+            n += 1
+        return n
 
     def _freier_slug(self, sql: str, extra: tuple, basis: str) -> str:
         slug, n = basis, 2

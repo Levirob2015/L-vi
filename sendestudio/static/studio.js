@@ -67,7 +67,7 @@
     }
     return fetch("/api/" + pfad, opt).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) {
-        if (r.status === 401 && pfad !== "login") { zeigeLogin(); }
+        if ((r.status === 401 || r.status === 423) && pfad !== "login") { zeigeLogin(); }
         if (!r.ok) throw new Error(j.fehler || ("Fehler " + r.status));
         return j;
       });
@@ -114,18 +114,37 @@
   // ------------------------------------------------------------------
   function zeigeLogin() {
     stoppeAufnahme();
+    // Nichts Unveroeffentlichtes auf dem Bildschirm stehen lassen.
+    $("#inhalt").textContent = "";
+    $("#sendungsliste").textContent = "";
     $("#app").hidden = true;
     $("#login").hidden = false;
+    var zf = zustand.status && zustand.status.zweifaktor;
+    $("#login-code-zeile").hidden = !zf;
+    $("#login-code").required = !!zf;
     $("#login-passwort").focus();
   }
 
   $("#login-form").addEventListener("submit", function (e) {
     e.preventDefault();
     $("#login-fehler").textContent = "";
-    api("POST", "login", { passwort: $("#login-passwort").value })
-      .then(function () { $("#login-passwort").value = ""; start(); })
-      .catch(function (f) { $("#login-fehler").textContent = f.message; });
+    api("POST", "login", { passwort: $("#login-passwort").value, code: $("#login-code").value })
+      .then(function () { $("#login-passwort").value = ""; $("#login-code").value = ""; start(); })
+      .catch(function (f) { $("#login-code").value = ""; $("#login-fehler").textContent = f.message; });
   });
+
+  // Wer weggeht, wird auch im Browser abgemeldet - wie auf dem Server.
+  var letzteAktivitaet = Date.now();
+  ["pointerdown", "keydown"].forEach(function (art) {
+    document.addEventListener(art, function () { letzteAktivitaet = Date.now(); }, true);
+  });
+  setInterval(function () {
+    var st = zustand.status;
+    if (!st || $("#app").hidden || (rec && rec.recorder && rec.recorder.state === "recording")) return;
+    if (Date.now() - letzteAktivitaet > st.leerlauf_minuten * 60000) {
+      api("POST", "logout", {}).catch(function () {}).then(zeigeLogin);
+    }
+  }, 30000);
 
   $("#knopf-abmelden").addEventListener("click", function () {
     api("POST", "logout", {}).then(zeigeLogin);
@@ -137,6 +156,8 @@
       if (!s.angemeldet) return zeigeLogin();
       $("#login").hidden = true;
       $("#app").hidden = false;
+      $("#tresor-anzeige").hidden = !s.tresor;
+      letzteAktivitaet = Date.now();
       return ladeSendungen().then(function () {
         if (zustand.sendungen.length) zeigeSendung(zustand.aktiv || zustand.sendungen[0].id);
         else zeigeWillkommen();
@@ -260,6 +281,7 @@
     if (f.dauer) info.push(zeit(f.dauer));
     if (f.kapitel.length) info.push(f.kapitel.length + " Kapitel");
     if (f.mime.indexOf("video/") === 0) info.push("Video");
+    if (!f.online && f.datei) info.push("🔒 verschlüsselt");
     var karte = el("div", { class: "karte folge" },
       el("div", {},
         el("span", { class: "etikett " + (f.online ? "online" : "entwurf"), text: f.online ? "Online" : "Entwurf" }),
