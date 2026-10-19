@@ -34,7 +34,11 @@ jobs:
 
       - name: Abhaengigkeiten installieren
         # Das Paket selbst hat keine - nur pytest und PyYAML fuer die Tests.
-        run: python -m pip install --upgrade pip pytest PyYAML
+        # Das Anthropic-SDK ist optional (KI-Texte im Sendestudio) und braucht
+        # Python 3.10+; auf 3.9 werden diese Tests uebersprungen.
+        run: |
+          python -m pip install --upgrade pip pytest PyYAML
+          python -c "import sys; sys.exit(sys.version_info < (3, 10))" && python -m pip install "anthropic>=1.15" || true
 
       - name: Tests
         run: python -m pytest tests/ -q
@@ -62,9 +66,12 @@ jobs:
           python - <<'PY'
           import ast, pathlib, sys
           stdlib = set(sys.stdlib_module_names)
-          erlaubt = {"yaml"}          # optional, wird abgefangen
+          erlaubt = {"yaml", "anthropic"}  # optional, wird abgefangen
+          eigene = {"loginshield", "sendestudio"}  # die Pakete dieses Repositorys
           fremd = set()
-          for pfad in pathlib.Path("loginshield").rglob("*.py"):
+          dateien = [p for paket in ("loginshield", "sendestudio")
+                     for p in pathlib.Path(paket).rglob("*.py")]
+          for pfad in dateien:
               for knoten in ast.walk(ast.parse(pfad.read_text())):
                   if isinstance(knoten, ast.Import):
                       namen = [n.name for n in knoten.names]
@@ -74,7 +81,7 @@ jobs:
                       continue
                   for name in namen:
                       wurzel = name.split(".")[0]
-                      if wurzel and wurzel not in stdlib and wurzel not in erlaubt:
+                      if wurzel and wurzel not in stdlib | erlaubt | eigene:
                           fremd.add(f"{wurzel} (in {pfad})")
           if fremd:
               print("Fremde Pakete gefunden:")
@@ -90,3 +97,5 @@ jobs:
           python -m pip install .
           loginshield --version
           loginshield doctor --json > /dev/null
+          sendestudio --version
+          cd "$(mktemp -d)" && sendestudio init --titel CI > /dev/null && sendestudio export

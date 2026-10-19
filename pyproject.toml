@@ -22,13 +22,19 @@ dependencies = []
 
 [project.optional-dependencies]
 yaml = ["PyYAML>=6.0"]
+# KI-Texte im Sendestudio (Claude). Bilder, Stimme und Video brauchen nichts extra.
+ki = ["anthropic>=1.15; python_version >= '3.10'"]
 dev = ["pytest>=7.0", "PyYAML>=6.0"]
 
 [project.scripts]
 loginshield = "loginshield.cli:main"
+sendestudio = "sendestudio.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["loginshield*"]
+include = ["loginshield*", "sendestudio*"]
+
+[tool.setuptools.package-data]
+sendestudio = ["static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

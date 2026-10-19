@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sendestudio</title>
+<link rel="stylesheet" href="/studio.css">
+</head>
+<body>
+
+<!-- Anmeldung -->
+<main id="login" class="login" hidden>
+  <form id="login-form" class="karte schmal">
+    <div class="marke"><span class="onair">ON AIR</span> Sendestudio</div>
+    <h1>Anmelden</h1>
+    <label>Passwort
+      <input type="password" id="login-passwort" autocomplete="current-password" required autofocus>
+    </label>
+    <label id="login-code-zeile" hidden>Code aus der Authenticator-App
+      <input id="login-code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" pattern="[0-9 ]{6,7}">
+    </label>
+    <button class="knopf primaer" type="submit">Ins Studio</button>
+    <p id="login-fehler" class="fehler" role="alert"></p>
+  </form>
+</main>
+
+<!-- Studio -->
+<div id="app" hidden>
+  <header class="leiste">
+    <div class="marke"><span class="onair" id="onair">ON AIR</span> Sendestudio
+      <span class="schloss" id="tresor-anzeige" title="Unveröffentlichte Aufnahmen liegen nur verschlüsselt auf dem Server" hidden>🔒 Entwürfe verschlüsselt</span></div>
+    <nav>
+      <button class="knopf" id="knopf-netz">Ins Netz stellen</button>
+      <a class="knopf leicht" id="link-oeffentlich" href="/" target="_blank" rel="noopener">Öffentliche Seite ↗</a>
+      <button class="knopf leicht" id="knopf-abmelden">Abmelden</button>
+    </nav>
+  </header>
+
+  <div class="raster">
+    <aside class="seitenleiste">
+      <h2>Sendungen</h2>
+      <ul id="sendungsliste" class="liste"></ul>
+      <button class="knopf primaer breit" id="knopf-neue-sendung">+ Neue Sendung</button>
+    </aside>
+
+    <main id="inhalt" class="inhalt"></main>
+  </div>
+</div>
+
+<!-- Vorlagen -->
+<template id="t-willkommen">
+  <section class="karte">
+    <h1>Willkommen im Studio</h1>
+    <p>So kommt deine Sendung ins Netz:</p>
+    <ol class="schritte">
+      <li><b>Sendung anlegen</b> – Podcast, Radio oder Dokumentation.</li>
+      <li><b>Aufnehmen</b> – mit Mikrofon, Kamera oder Bildschirm. Jingles kannst du live einspielen, Kapitelmarken setzt du per Knopfdruck. Oder eine fertige Datei hochladen.</li>
+      <li><b>Veröffentlichen</b> – die Folge erscheint sofort auf der öffentlichen Seite und im Podcast-Feed. Bei Radio läuft sie im Endlosprogramm mit.</li>
+    </ol>
+    <button class="knopf primaer" data-aktion="neue-sendung">Erste Sendung anlegen</button>
+  </section>
+</template>
+
+<template id="t-sendung-form">
+  <section class="karte">
+    <h1 data-feld="ueberschrift">Neue Sendung</h1>
+    <form class="formular" data-feld="form">
+      <label>Titel <input name="titel" required maxlength="200"></label>
+      <fieldset class="arten">
+        <legend>Art</legend>
+        <label class="art"><input type="radio" name="art" value="podcast" checked>
+          <span><b>Podcast</b><small>Folgen zum Abonnieren in jeder Podcast-App</small></span></label>
+        <label class="art"><input type="radio" name="art" value="radio">
+          <span><b>Radio</b><small>Läuft rund um die Uhr – alle hören dasselbe, live</small></span></label>
+        <label class="art"><input type="radio" name="art" value="doku">
+          <span><b>Dokumentation</b><small>Ton oder Video, mit Kapiteln</small></span></label>
+      </fieldset>
+      <label>Beschreibung <textarea name="beschreibung" rows="4" maxlength="10000"></textarea></label>
+      <div class="zwei">
+        <label>Autor / Sender <input name="autor" maxlength="200"></label>
+        <label>Sprache
+          <select name="sprache">
+            <option value="de">Deutsch</option><option value="en">Englisch</option>
+            <option value="fr">Französisch</option><option value="es">Spanisch</option>
+            <option value="it">Italienisch</option><option value="tr">Türkisch</option>
+          </select>
+        </label>
+      </div>
+      <label>Kategorie (für Podcast-Verzeichnisse)
+        <select name="kategorie">
+          <option value="">automatisch</option>
+          <option>Arts</option><option>Business</option><option>Comedy</option>
+          <option>Documentary</option><option>Education</option><option>Fiction</option>
+          <option>History</option><option>Health &amp; Fitness</option><option>Kids &amp; Family</option>
+          <option>Leisure</option><option>Music</option><option>News</option>
+          <option>Religion &amp; Spirituality</option><option>Science</option>
+          <option>Society &amp; Culture</option><option>Sports</option><option>Technology</option>
+          <option>True Crime</option><option>TV &amp; Film</option>
+        </select>
+      </label>
+      <div class="knoepfe">
+        <button class="knopf primaer" type="submit">Speichern</button>
+        <button class="knopf leicht" type="button" data-aktion="abbrechen">Abbrechen</button>
+      </div>
+    </form>
+    <div data-feld="cover-bereich" class="cover-bereich" hidden>
+      <h2>Cover</h2>
+      <p class="leise">Quadratisch, am besten 3000 × 3000 Pixel (JPG oder PNG).</p>
+      <div class="cover-zeile">
+        <img data-feld="cover-bild" class="cover" alt="">
+        <label class="knopf">Bild wählen<input type="file" accept="image/jpeg,image/png,image/webp" data-feld="cover-datei" hidden></label>
+      </div>
+      <div class="ki-block" data-feld="ki-cover" hidden>
+        <label>✨ Oder mit KI malen lassen – was soll auf dem Cover sein?
+          <textarea data-feld="ki-cover-text" rows="3" maxlength="4000" placeholder="z. B. Ein altes Röhrenradio auf einem Holztisch, warmes Abendlicht, Aquarell"></textarea>
+        </label>
+        <div class="knoepfe">
+          <button type="button" class="knopf ki" data-aktion="ki-cover">✨ Cover erzeugen</button>
+          <button type="button" class="knopf leicht" data-aktion="ki-cover-idee" data-feld="ki-cover-idee">Idee vorschlagen</button>
+        </div>
+      </div>
+      <h2>Gefahrenzone</h2>
+      <button class="knopf gefahr" data-aktion="sendung-loeschen">Sendung mit allen Folgen löschen</button>
+    </div>
+  </section>
+</template>
+
+<template id="t-sendung">
+  <section>
+    <div class="karte kopfkarte">
+      <img data-feld="cover" class="cover" alt="">
+      <div class="wachsen">
+        <span class="etikett" data-feld="art"></span>
+        <h1 data-feld="titel"></h1>
+        <p class="leise" data-feld="beschreibung"></p>
+        <div class="knoepfe">
+          <button class="knopf primaer" data-aktion="aufnehmen">● Neue Folge aufnehmen</button>
+          <label class="knopf">Datei hochladen<input type="file" accept="audio/*,video/*" data-feld="datei" hidden></label>
+          <button class="knopf ki" data-aktion="ki-studio" data-feld="ki-studio" hidden>✨ KI-Studio</button>
+          <button class="knopf leicht" data-aktion="bearbeiten">Einstellungen</button>
+          <a class="knopf leicht" data-feld="ansehen" target="_blank" rel="noopener">Ansehen ↗</a>
+        </div>
+      </div>
+    </div>
+    <h2>Folgen</h2>
+    <div data-feld="folgen"></div>
+  </section>
+</template>
+
+<template id="t-aufnahme">
+  <section class="karte">
+    <p><a href="#" data-aktion="zurueck">← zurück</a></p>
+    <h1>Neue Folge</h1>
+
+    <div data-feld="vorbereitung">
+      <div class="zwei">
+        <label>Quelle
+          <select data-feld="quelle">
+            <option value="audio">Nur Mikrofon</option>
+            <option value="kamera">Kamera + Mikrofon</option>
+            <option value="bildschirm">Bildschirm + Mikrofon</option>
+          </select>
+        </label>
+        <label>Mikrofon <select data-feld="mikro"><option value="">Standard</option></select></label>
+      </div>
+      <button class="knopf primaer" data-aktion="vorbereiten">Studio einschalten</button>
+      <p class="leise">Der Browser fragt nach der Erlaubnis für Mikrofon bzw. Kamera. Kopfhörer verhindern Rückkopplung beim Abhören der Jingles.</p>
+    </div>
+
+    <div data-feld="pult" hidden>
+      <video data-feld="vorschau" class="vorschau" muted playsinline hidden></video>
+      <div class="pult">
+        <div class="anzeige">
+          <div class="uhr" data-feld="uhr">0:00:00</div>
+          <div class="pegel"><div data-feld="pegel"></div></div>
+          <div class="leise klein" data-feld="zustand">Bereit</div>
+        </div>
+        <div class="regler">
+          <label>Mikrofon <input type="range" min="0" max="2" step="0.05" value="1" data-feld="mikro-lautstaerke"></label>
+          <label>Jingles <input type="range" min="0" max="1.5" step="0.05" value="0.8" data-feld="jingle-lautstaerke"></label>
+        </div>
+        <div class="knoepfe">
+          <button class="knopf aufnahme" data-aktion="start">● Aufnahme</button>
+          <button class="knopf" data-aktion="pause" disabled>Pause</button>
+          <button class="knopf" data-aktion="stopp" disabled>■ Stopp</button>
+          <button class="knopf leicht" data-aktion="marke" disabled>⚑ Kapitelmarke</button>
+        </div>
+      </div>
+
+      <h2>Jingles &amp; Einspieler</h2>
+      <p class="leise klein">Datei laden, dann antippen – sie wird live in die Aufnahme gemischt.</p>
+      <div class="pads" data-feld="pads"></div>
+    </div>
+
+    <div data-feld="fertig" hidden>
+      <h2>Anhören</h2>
+      <div data-feld="abspieler"></div>
+    </div>
+
+    <div data-feld="details" hidden>
+      <h2>Details</h2>
+      <form class="formular" data-feld="form">
+        <label>Titel der Folge <input name="titel" required maxlength="200"></label>
+        <label>Beschreibung / Shownotes <textarea name="beschreibung" rows="5"></textarea></label>
+        <div class="ki-leiste" data-feld="ki-leiste" hidden>
+          <button type="button" class="knopf ki klein" data-aktion="ki-shownotes">✨ Shownotes schreiben</button>
+          <button type="button" class="knopf ki klein" data-aktion="ki-titel">✨ Titel vorschlagen</button>
+          <div class="vorschlaege" data-feld="ki-vorschlaege"></div>
+        </div>
+        <h3>Kapitel</h3>
+        <div data-feld="kapitel"></div>
+        <button type="button" class="knopf leicht klein" data-aktion="kapitel-neu">+ Kapitel</button>
+        <fieldset class="ki-angaben">
+          <legend>KI-Anteile <span class="leise klein">– werden öffentlich gekennzeichnet</span></legend>
+          <label><input type="checkbox" name="ki" value="text"> Text</label>
+          <label><input type="checkbox" name="ki" value="stimme"> Stimme</label>
+          <label><input type="checkbox" name="ki" value="bild"> Bilder</label>
+          <label><input type="checkbox" name="ki" value="video"> Video</label>
+        </fieldset>
+        <label class="haken" data-feld="normalisieren-zeile"><input type="checkbox" name="normalisieren" checked> Lautstärke angleichen (−16 LUFS, Podcast-Standard)</label>
+        <div class="fortschritt" data-feld="fortschritt" hidden><div></div><span></span></div>
+        <div class="knoepfe">
+          <button class="knopf primaer" type="submit" data-modus="online">Speichern &amp; veröffentlichen</button>
+          <button class="knopf" type="submit" data-modus="entwurf">Als Entwurf speichern</button>
+          <button class="knopf leicht" type="button" data-aktion="verwerfen">Verwerfen</button>
+        </div>
+      </form>
+    </div>
+  </section>
+</template>
+
+<template id="t-folge">
+  <section class="karte">
+    <p><a href="#" data-aktion="zurueck">← zurück</a></p>
+    <h1>Folge bearbeiten</h1>
+    <div data-feld="abspieler"></div>
+    <form class="formular" data-feld="form">
+      <label>Titel <input name="titel" required maxlength="200"></label>
+      <label>Beschreibung / Shownotes <textarea name="beschreibung" rows="6"></textarea></label>
+        <div class="ki-leiste" data-feld="ki-leiste" hidden>
+          <button type="button" class="knopf ki klein" data-aktion="ki-shownotes">✨ Shownotes schreiben</button>
+          <button type="button" class="knopf ki klein" data-aktion="ki-titel">✨ Titel vorschlagen</button>
+          <button type="button" class="knopf ki klein" data-aktion="ki-aufnahme" data-feld="ki-aufnahme">✨ Aus der Aufnahme: Shownotes, Kapitel, Titel</button>
+          <div class="vorschlaege" data-feld="ki-vorschlaege"></div>
+        </div>
+      <h3>Kapitel</h3>
+      <div data-feld="kapitel"></div>
+      <div class="knoepfe">
+        <button type="button" class="knopf leicht klein" data-aktion="kapitel-neu">+ Kapitel</button>
+        <button type="button" class="knopf leicht klein" data-aktion="kapitel-hier">⚑ Kapitel an aktueller Stelle</button>
+      </div>
+      <fieldset class="ki-angaben">
+          <legend>KI-Anteile <span class="leise klein">– werden öffentlich gekennzeichnet</span></legend>
+          <label><input type="checkbox" name="ki" value="text"> Text</label>
+          <label><input type="checkbox" name="ki" value="stimme"> Stimme</label>
+          <label><input type="checkbox" name="ki" value="bild"> Bilder</label>
+          <label><input type="checkbox" name="ki" value="video"> Video</label>
+        </fieldset>
+      <div class="knoepfe">
+        <button class="knopf primaer" type="submit">Speichern</button>
+        <label class="knopf">Aufnahme ersetzen<input type="file" accept="audio/*,video/*" data-feld="datei" hidden></label>
+        <button type="button" class="knopf ki" data-aktion="ki-video" data-feld="ki-video" hidden>🎬 Video daraus machen</button>
+      </div>
+      <div class="fortschritt" data-feld="fortschritt" hidden><div></div><span></span></div>
+    </form>
+  </section>
+</template>
+
+<template id="t-ki-studio">
+  <section>
+    <p><a href="#" data-aktion="zurueck">← zurück</a></p>
+    <h1>✨ KI-Studio</h1>
+    <p class="leise" data-feld="hinweis"></p>
+
+    <div class="karte" data-feld="karte-skript">
+      <h2>Folge aus Text: Skript schreiben und vorlesen lassen</h2>
+      <form class="formular" data-feld="skript-form">
+        <label>Thema <textarea name="thema" rows="2" maxlength="4000" placeholder="Worum soll es gehen? Stichpunkte, Quellen, eigene Notizen …"></textarea></label>
+        <div class="zwei">
+          <label>Länge (Minuten) <input name="dauer_minuten" type="number" min="0.5" max="60" step="0.5" value="5"></label>
+          <label>Stil <input name="stil" maxlength="300" placeholder="z. B. locker, für Jugendliche"></label>
+        </div>
+        <div class="knoepfe"><button type="button" class="knopf ki" data-aktion="skript-schreiben" data-feld="skript-schreiben">✨ Skript schreiben</button></div>
+        <label>Titel der Folge <input name="titel" maxlength="200"></label>
+        <label>Skript – hier kannst du alles ändern <textarea name="text" rows="12" maxlength="140000" placeholder="Eigenen Text einfügen oder oben schreiben lassen"></textarea></label>
+        <label>Sprechweise (optional) <input name="anweisung" maxlength="1000" placeholder="z. B. ruhig und warm, wie im Nachtprogramm"></label>
+        <div class="knoepfe"><button type="button" class="knopf primaer" data-aktion="vertonen" data-feld="vertonen">🔊 Mit KI-Stimme vertonen</button></div>
+      </form>
+    </div>
+
+    <div class="karte" data-feld="karte-video">
+      <h2>KI-Video: aus einem Thema ein ganzes Video</h2>
+      <p class="leise">Claude plant die Szenen, für jede entsteht ein Bild und ein gesprochener Text, das Studio schneidet alles zusammen.</p>
+      <form class="formular" data-feld="video-form">
+        <label>Thema <textarea name="thema" rows="2" maxlength="4000" placeholder="z. B. Wie funktioniert ein Radiosender?"></textarea></label>
+        <div class="zwei">
+          <label>Länge (Minuten) <input name="dauer_minuten" type="number" min="0.5" max="10" step="0.5" value="2"></label>
+          <label>Stil <input name="stil" maxlength="300" placeholder="z. B. sachlich, Bilder im Stil von Kinderbuch-Illustrationen"></label>
+        </div>
+        <div class="knoepfe"><button type="button" class="knopf primaer" data-aktion="video-erzeugen" data-feld="video-erzeugen">🎬 Video erzeugen</button></div>
+      </form>
+    </div>
+  </section>
+</template>
+
+<dialog id="netz">
+  <form method="dialog" class="dialog">
+    <h2>Ins Netz stellen</h2>
+    <p>Veröffentlichte Folgen sind <b>sofort</b> auf der öffentlichen Seite dieses Servers – läuft er unter einer eigenen Adresse, bist du schon online.</p>
+    <dl class="adressen" id="netz-adressen"></dl>
+    <h3>Auf eigenen Webspace</h3>
+    <p class="leise">Erzeugt eine fertige, statische Webseite mit Feeds und Medien – passt auf jeden Webspace, GitHub Pages oder Netlify.</p>
+    <div class="knoepfe">
+      <button class="knopf" type="button" id="knopf-export">Statische Seite erzeugen</button>
+      <button class="knopf" type="button" id="knopf-ftp">Per FTP hochladen</button>
+    </div>
+    <p id="netz-ergebnis" class="leise" role="status"></p>
+    <div class="knoepfe"><button class="knopf leicht">Schließen</button></div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" role="status" hidden></div>
+<div id="auftraege" class="auftraege" aria-live="polite"></div>
+<script src="/studio.js"></script>
+</body>
+</html>
