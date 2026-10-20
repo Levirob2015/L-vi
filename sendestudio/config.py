@@ -29,7 +29,8 @@ class FtpConfig:
 @dataclass
 class KiConfig:
     """KI-Anbieter. Schluessel besser als Umgebungsvariable setzen
-    (ANTHROPIC_API_KEY, OPENAI_API_KEY) - dann stehen sie in keiner Datei."""
+    (ANTHROPIC_API_KEY, OPENAI_API_KEY, ELEVENLABS_API_KEY) - dann stehen
+    sie in keiner Datei."""
 
     #: Texte (Shownotes, Titel, Kapitel, Skripte) - Claude von Anthropic.
     anthropic_schluessel: str = ""
@@ -42,6 +43,10 @@ class KiConfig:
     stimme: str = "coral"
     #: whisper-1 liefert Zeitmarken - die braucht der Kapitel-Vorschlag.
     transkript_modell: str = "whisper-1"
+    #: Musik - ElevenLabs („Eleven Music“). Leeres Modell = Voreinstellung des Anbieters.
+    elevenlabs_schluessel: str = ""
+    musik_url: str = "https://api.elevenlabs.io/v1"
+    musik_modell: str = ""
     #: Hoechstens so viele KI-Auftraege pro Tag - schuetzt vor Kostenfallen,
     #: auch wenn jemand die Sitzung uebernimmt. 0 = KI aus.
     tageslimit: int = 50
@@ -101,10 +106,12 @@ class Config:
             raise ValueError("max_upload_mb muss positiv sein")
         if self.ki.tageslimit < 0:
             raise ValueError("ki.tageslimit darf nicht negativ sein")
-        if not self.ki.openai_url.startswith("https://") and not self.ki.openai_url.startswith(
-                ("http://127.0.0.1", "http://localhost")):
-            # Sonst ginge der API-Schluessel unverschluesselt uebers Netz.
-            raise ValueError("ki.openai_url muss mit https:// beginnen")
+        for name in ("openai_url", "musik_url"):
+            url = getattr(self.ki, name)
+            if not url.startswith("https://") and not url.startswith(
+                    ("http://127.0.0.1", "http://localhost")):
+                # Sonst ginge der API-Schluessel unverschluesselt uebers Netz.
+                raise ValueError(f"ki.{name} muss mit https:// beginnen")
         if not 1 <= self.leerlauf_minuten <= 24 * 60:
             raise ValueError("leerlauf_minuten muss zwischen 1 und 1440 liegen")
         for netz in self.studio_netze + self.vertraute_proxys:

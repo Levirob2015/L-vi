@@ -6,7 +6,7 @@ from email.utils import formatdate
 from typing import Any, Dict, List
 from xml.sax.saxutils import escape, quoteattr
 
-from .store import ARTEN, ki_text
+from .store import ARTEN, ki_text, musik_text
 
 #: Kategorie fuer Apple Podcasts, falls keine angegeben ist.
 STANDARD_KATEGORIE = {"podcast": "Society & Culture", "radio": "Music", "doku": "Documentary"}
@@ -71,6 +71,8 @@ def feed(sendung: Dict[str, Any], folgen: List[Dict[str, Any]], basis_url: str) 
             # Kennzeichnung KI-generierter Inhalte (EU-KI-Verordnung, Art. 50) -
             # auch in Podcast-Apps, die nur den Feed sehen.
             beschreibung += f"\n\nHinweis: Diese Folge enthält KI-generierte Inhalte ({ki_text(f['ki'])})."
+        if f.get("musik"):
+            beschreibung += "\n\nMusik: " + "; ".join(musik_text(f["musik"]))
         t.append(f"<description>{escape(beschreibung)}</description>")
         t.append(f"<enclosure url={quoteattr(url)} length=\"{int(f['groesse'])}\" "
                  f"type={quoteattr(f['mime'])}/>")

@@ -68,6 +68,7 @@ animation:puls 1.4s infinite}
 @keyframes puls{50%{opacity:.25}}
 .programm li.laeuft{font-weight:700;color:var(--akzent)}
 .text p{margin:.6em 0}
+ul.musik{padding-left:1.2em}ul.musik li{margin:.2em 0}
 .ki{display:inline-block;font-size:.8rem;color:var(--leise);border:1px dashed var(--leise);
 border-radius:8px;padding:2px 8px;margin:4px 0}
 h2.eng{margin:.2em 0 .4em}
@@ -314,6 +315,21 @@ def folge_seite(s: Dict[str, Any], f: Dict[str, Any], seitentitel: str,
             f'<li><button data-zeit="{k["zeit"]}"><span class="zeit">{dauer_text(int(k["zeit"]))}'
             f'</span><span>{_e(k["titel"])}</span></button></li>' for k in f["kapitel"])
         kapitel = f'<h2>Kapitel</h2><ul class="kapitel">{punkte}</ul>'
+    musik = ""
+    if f.get("musik"):
+        # Nennung der Musik - verlangen viele freie Lizenzen (z.B. CC BY)
+        zeilen = []
+        for m in f["musik"]:
+            z = _e(m["titel"])
+            if m.get("kuenstler"):
+                z += " – " + _e(m["kuenstler"])
+            if m.get("lizenz"):
+                z += ' <span class="leise">(' + _e(m["lizenz"]) + ")</span>"
+            if m.get("quelle"):
+                z += ' · <a href="' + _e(m["quelle"]) + '" rel="nofollow noopener">Quelle</a>'
+            zeilen.append("<li>" + z + "</li>")
+        zeilen = "".join(zeilen)
+        musik = f'<h2>Musik</h2><ul class="musik">{zeilen}</ul>'
     inhalt = f"""<p><a href="../">← {_e(s["titel"])}</a></p>
 <span class="marke">{_e(ARTEN[s["art"]])}</span>
 <h1>{_e(f["titel"])}</h1>
@@ -322,6 +338,7 @@ def folge_seite(s: Dict[str, Any], f: Dict[str, Any], seitentitel: str,
 {_player(f, w)}
 <div class="text">{absaetze(f["beschreibung"])}</div>
 {kapitel}
+{musik}
 <p><a href="{w}medien/{_e(f["datei"])}" download>Datei herunterladen</a></p>"""
     bild = f"{basis_url.rstrip('/')}/medien/{s['cover']}" if basis_url and s["cover"] else ""
     return _rahmen(f"{f['titel']} – {s['titel']}", inhalt, 3, seitentitel=seitentitel,

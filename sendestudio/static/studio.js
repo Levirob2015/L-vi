@@ -375,7 +375,8 @@
   // KI
   // ------------------------------------------------------------------
   var AUFTRAG_NAMEN = { text: "✨ KI-Text", aus_aufnahme: "✨ Aus der Aufnahme", cover: "✨ KI-Cover",
-    stimme: "🔊 KI-Stimme", video_aufnahme: "🎬 Video aus Aufnahme", video_ki: "🎬 KI-Video" };
+    stimme: "🔊 KI-Stimme", video_aufnahme: "🎬 Video aus Aufnahme", video_ki: "🎬 KI-Video",
+    musik_ki: "🎵 KI-Musik", musikbett: "🎵 Musik unterlegen" };
 
   function kiFaehig(was) {
     return !!(zustand.status && zustand.status.ki && zustand.status.ki[was]);
@@ -543,6 +544,198 @@
   }
 
   // ------------------------------------------------------------------
+  // Musik
+  // ------------------------------------------------------------------
+  var bibliothek = null; // {musik: [...], lizenzen: [...]}
+  function ladeBibliothek() {
+    return api("GET", "musik").then(function (d) { bibliothek = d; return d; });
+  }
+  function stueckText(m) {
+    return m.titel + (m.kuenstler ? " – " + m.kuenstler : "") + (m.lizenz ? " (" + m.lizenz + ")" : "");
+  }
+  function auswahlFuellen(select) {
+    return ladeBibliothek().then(function (d) {
+      d.musik.forEach(function (m) {
+        if (m.datei) select.appendChild(el("option", { value: m.id, text: stueckText(m) + " · " + zeit(m.dauer) }));
+      });
+      return d;
+    });
+  }
+  function stueck(id) {
+    return (bibliothek ? bibliothek.musik : []).filter(function (m) { return String(m.id) === String(id); })[0];
+  }
+  // Ein Stueck der Bibliothek fuer Web Audio laden (liegt im Tresor - der Server entschluesselt).
+  function stueckPuffer(ctx, m) {
+    return fetch(mediumUrl(m.datei), { credentials: "same-origin" }).then(function (r) {
+      if (!r.ok) throw new Error("Musik konnte nicht geladen werden");
+      return r.arrayBuffer();
+    }).then(function (b) { return ctx.decodeAudioData(b); });
+  }
+
+  // Musik-Angaben einer Folge (oeffentlich sichtbar): Titel, Kuenstler, Lizenz, Quelle
+  function musikEditor(behaelter, liste, beiKiMusik) {
+    function malen() {
+      behaelter.textContent = "";
+      if (!liste.length) behaelter.appendChild(el("p", { class: "leise klein", text: "Keine Musik angegeben." }));
+      liste.forEach(function (m, i) {
+        function feld(k, ph) {
+          return el("input", { value: m[k] || "", placeholder: ph, "aria-label": ph, maxlength: "200",
+            oninput: function () { m[k] = this.value; } });
+        }
+        behaelter.appendChild(el("div", { class: "musik-zeile" },
+          feld("titel", "Titel"), feld("kuenstler", "Künstler"), feld("lizenz", "Lizenz"), feld("quelle", "Quelle (https://…)"),
+          el("button", { type: "button", class: "knopf klein leicht", "aria-label": "Angabe entfernen", text: "✕",
+            onclick: function () { liste.splice(i, 1); malen(); } })));
+      });
+      var wahl = el("select", { "aria-label": "Stück aus der Bibliothek übernehmen" },
+        el("option", { value: "", text: "+ aus der Musikbibliothek …" }));
+      (bibliothek ? bibliothek.musik : []).forEach(function (m) { wahl.appendChild(el("option", { value: m.id, text: stueckText(m) })); });
+      wahl.addEventListener("change", function () { var m = stueck(this.value); if (m) api_.hinzu(m); });
+      behaelter.appendChild(el("div", { class: "knoepfe" }, wahl,
+        el("button", { type: "button", class: "knopf klein leicht", text: "+ Angabe", onclick: function () {
+          liste.push({ titel: "", kuenstler: "", lizenz: "", quelle: "" }); malen(); } })));
+    }
+    var api_ = {
+      hinzu: function (m) {
+        var neu = { titel: m.titel, kuenstler: m.kuenstler || "", lizenz: m.lizenz || "", quelle: m.quelle || "" };
+        var da = liste.some(function (x) { return x.titel === neu.titel && x.kuenstler === neu.kuenstler; });
+        if (!da) { liste.push(neu); malen(); }
+        if (m.ki && beiKiMusik) beiKiMusik();
+      },
+      liste: function () { return liste.filter(function (m) { return (m.titel || "").trim(); }); },
+      neuMalen: malen,
+    };
+    malen();
+    if (!bibliothek) ladeBibliothek().then(malen).catch(function () {});
+    return api_;
+  }
+
+  $("#knopf-musik").addEventListener("click", function () { zeigeMusik(); });
+
+  function zeigeMusik() {
+    zustand.aktiv = null;
+    ladeSendungen();
+    var v = vorlage("t-musik");
+    var uf = v["upload-form"];
+    v["karte-ki"].hidden = !kiFaehig("musik");
+    uf.elements.datei.addEventListener("change", function () {
+      var d = this.files[0];
+      if (d && !uf.elements.titel.value) uf.elements.titel.value = d.name.replace(/\.[^.]+$/, "");
+    });
+    uf.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var d = uf.elements.datei.files[0];
+      if (!d) return;
+      var knopf = uf.querySelector("button[type=submit]");
+      knopf.disabled = true;
+      var neu;
+      api("POST", "musik", { titel: uf.elements.titel.value, kuenstler: uf.elements.kuenstler.value,
+        lizenz: uf.elements.lizenz.value, quelle: uf.elements.quelle.value }).then(function (m) {
+        neu = m;
+        return hochladen("musik/" + m.id + "/datei", d, v.fortschritt);
+      }).then(function () { melden("Zur Musikbibliothek hinzugefügt"); zeigeMusik(); })
+        .catch(function (f) {
+          melden(f.message, true); knopf.disabled = false;
+          if (neu) api("DELETE", "musik/" + neu.id).catch(function () {});
+        });
+    });
+    var kf = v["ki-form"];
+    kf.addEventListener("submit", function (e) {
+      e.preventDefault();
+      if (!kf.elements.beschreibung.value.trim()) { melden("Bitte beschreiben, wie es klingen soll", true); return; }
+      beschaeftigt(v["ki-los"], kiAuftrag({ art: "musik_ki", beschreibung: kf.elements.beschreibung.value,
+        titel: kf.elements.titel.value, sekunden: kf.elements.sekunden.value,
+        instrumental: kf.elements.instrumental.checked })).then(function (e) {
+        if (!e) return;
+        melden("KI-Musik „" + e.musik.titel + "“ ist in der Bibliothek");
+        if ($("#inhalt [data-ansicht=musik]")) zeigeMusik();
+      });
+    });
+    v.wurzel.setAttribute("data-ansicht", "musik");
+    ladeBibliothek().then(function (d) {
+      d.lizenzen.forEach(function (l) { v.lizenzen.appendChild(el("option", { value: l })); });
+      if (!d.musik.length) v.liste.appendChild(el("p", { class: "leise", text: "Noch keine Musik. Füge oben ein Stück hinzu." }));
+      d.musik.forEach(function (m) {
+        var karte = el("div", { class: "karte stueck" },
+          el("div", {},
+            el("b", { text: m.titel }), m.ki ? el("span", { class: "etikett ki-marke", text: " ✨ KI" }) : null,
+            el("div", { class: "leise klein", text: [m.kuenstler, m.lizenz, zeit(m.dauer)].filter(Boolean).join(" · ") })),
+          el("div", { class: "knoepfe" },
+            el("button", { class: "knopf klein leicht", text: "Bearbeiten", onclick: function () { bearbeiten(); } }),
+            el("button", { class: "knopf klein gefahr", text: "Löschen", onclick: function () {
+              if (!confirm("„" + m.titel + "“ aus der Bibliothek löschen? Bereits fertige Folgen behalten die Musik.")) return;
+              api("DELETE", "musik/" + m.id).then(function () { melden("Gelöscht"); zeigeMusik(); })
+                .catch(function (f) { melden(f.message, true); });
+            } })),
+          m.datei ? el("audio", { controls: "", preload: "none", src: mediumUrl(m.datei) }) : null);
+        function bearbeiten() {
+          var felder = {};
+          var form = el("form", { class: "formular", style: "grid-column:1/-1" });
+          [["titel", "Titel"], ["kuenstler", "Künstler"], ["lizenz", "Lizenz"], ["quelle", "Quelle (Link)"]].forEach(function (f) {
+            felder[f[0]] = el("input", { value: m[f[0]] || "", maxlength: "200", list: f[0] === "lizenz" ? "lizenzen" : null });
+            form.appendChild(el("label", {}, f[1], felder[f[0]]));
+          });
+          form.appendChild(el("div", { class: "knoepfe" }, el("button", { class: "knopf primaer", type: "submit", text: "Speichern" })));
+          form.addEventListener("submit", function (e) {
+            e.preventDefault();
+            api("PUT", "musik/" + m.id, { titel: felder.titel.value, kuenstler: felder.kuenstler.value,
+              lizenz: felder.lizenz.value, quelle: felder.quelle.value })
+              .then(function () { melden("Gespeichert"); zeigeMusik(); }).catch(function (f) { melden(f.message, true); });
+          });
+          karte.appendChild(form);
+        }
+        v.liste.appendChild(karte);
+      });
+    }).catch(function (f) { melden(f.message, true); });
+    inhalt(v.wurzel);
+  }
+
+  // Hintergrundmusik bei der Aufnahme: wird leiser, sobald jemand spricht.
+  function musikbett(v, r, ctx, ziel, mikroAnalyse) {
+    var laut = v["mb-laut"], ducking = v["mb-ducking"], knopf = $("[data-aktion=mb-start]", v.wurzel);
+    var gain = ctx.createGain(), duck = ctx.createGain();
+    gain.gain.value = parseFloat(laut.value);
+    gain.connect(duck); duck.connect(ziel); duck.connect(ctx.destination);
+    laut.addEventListener("input", function () { gain.gain.value = parseFloat(this.value); });
+    var quelle = null, puffer = null, m = null;
+    function laden() {
+      m = stueck(v["mb-auswahl"].value);
+      puffer = null; knopf.disabled = true;
+      if (!m) return;
+      knopf.textContent = "Lädt …";
+      stueckPuffer(ctx, m).then(function (p) { puffer = p; knopf.disabled = false; knopf.textContent = "▶ Musik starten"; })
+        .catch(function (f) { knopf.textContent = "▶ Musik starten"; melden(f.message, true); });
+    }
+    v["mb-auswahl"].addEventListener("change", function () { if (quelle) { quelle.stop(); } laden(); });
+    knopf.addEventListener("click", function () {
+      if (quelle) { quelle.stop(); return; }
+      if (!puffer) return;
+      quelle = ctx.createBufferSource();
+      quelle.buffer = puffer; quelle.loop = true;
+      quelle.connect(gain);
+      quelle.onended = function () { quelle = null; knopf.textContent = "▶ Musik starten"; };
+      quelle.start();
+      knopf.textContent = "■ Musik stoppen";
+      if (v.musikAngaben) v.musikAngaben.hinzu(m);
+    });
+    laden();
+    var probe = new Float32Array(mikroAnalyse.fftSize), sprichtSeit = 0;
+    r.quellenStoppen = function () { if (quelle) quelle.stop(); };
+    // Wird in jedem Bild der Pegelanzeige aufgerufen
+    return function () {
+      if (!quelle || !ducking.checked) { duck.gain.setTargetAtTime(1, ctx.currentTime, 0.3); return; }
+      mikroAnalyse.getFloatTimeDomainData(probe);
+      var spitze = 0;
+      for (var i = 0; i < probe.length; i++) spitze = Math.max(spitze, Math.abs(probe[i]));
+      var jetzt = ctx.currentTime;
+      if (spitze > 0.06) sprichtSeit = jetzt;
+      // Schnell herunter, langsam wieder herauf - wie ein Radio-Mischpult.
+      if (jetzt - sprichtSeit < 0.6) duck.gain.setTargetAtTime(0.22, jetzt, 0.05);
+      else duck.gain.setTargetAtTime(1, jetzt, 0.5);
+    };
+  }
+
+  // ------------------------------------------------------------------
   // Aufnahme
   // ------------------------------------------------------------------
   var rec = null; // laufende Studio-Sitzung
@@ -572,6 +765,8 @@
     var v = vorlage("t-aufnahme");
     var kapitel = kapitelEditor(v.kapitel, []);
     kiLeiste(v, s, kapitel, null);
+    v.musikAngaben = musikEditor(v["musik-angaben"], [], function () { kiAngabe(v.form, "musik"); });
+    auswahlFuellen(v["mb-auswahl"]).catch(function () {});
     var ergebnis = null; // { blob, dauer }
 
     $("[data-aktion=zurueck]", v.wurzel).addEventListener("click", function (e) { e.preventDefault(); zeigeSendung(s.id); });
@@ -632,6 +827,7 @@
         beschreibung: v.form.elements.beschreibung.value,
         kapitel: kapitel.liste(),
         ki: kiAngabenLesen(v.form),
+        musik: v.musikAngaben.liste(),
       }).then(function (f) {
         folge = f;
         return hochladen("folgen/" + f.id + "/medium?normalisieren=" + normalisieren +
@@ -695,6 +891,9 @@
       var analyse = ctx.createAnalyser();
       analyse.fftSize = 1024;
       ctx.createMediaStreamSource(q.mikro).connect(mikroGain);
+      var mikroAnalyse = ctx.createAnalyser();
+      mikroAnalyse.fftSize = 1024;
+      mikroGain.connect(mikroAnalyse);
       mikroGain.connect(ziel);
       mikroGain.connect(analyse);
       jingleGain.connect(ziel);
@@ -729,9 +928,12 @@
       r.vergangen = function () { return summe + (seit ? (performance.now() - seit) / 1000 : 0); };
       r.uhrUhr = setInterval(function () { v.uhr.textContent = zeit(r.vergangen()); }, 250);
 
+      var musikDucken = musikbett(v, r, ctx, ziel, mikroAnalyse);
+
       // Pegelanzeige
       var puffer = new Float32Array(analyse.fftSize);
       (function pegel() {
+        musikDucken();
         analyse.getFloatTimeDomainData(puffer);
         var spitze = 0;
         for (var i = 0; i < puffer.length; i++) spitze = Math.max(spitze, Math.abs(puffer[i]));
@@ -772,24 +974,39 @@
         melden("Kapitelmarke bei " + zeit(r.vergangen()));
       });
 
-      jinglePads(v.pads, r, ctx);
+      jinglePads(v, r, ctx);
       v.vorbereitung.hidden = true;
       v.pult.hidden = false;
       v.details.hidden = false;
     });
   }
 
-  function jinglePads(behaelter, r, ctx) {
+  function jinglePads(v, r, ctx) {
+    var behaelter = v.pads;
     for (var i = 0; i < 6; i++) (function (nr) {
-      var pad = { puffer: null, quelle: null };
+      var pad = { puffer: null, quelle: null, stueck: null };
       var knopf = el("button", { class: "spielen", disabled: "", text: "Pad " + nr });
       var eingabe = el("input", { type: "file", accept: "audio/*", hidden: "" });
       var label = el("label", {}, "Datei laden", eingabe);
+      var wahl = el("select", { "aria-label": "Pad " + nr + " aus der Musikbibliothek" },
+        el("option", { value: "", text: "… oder aus der Bibliothek" }));
+      (bibliothek ? bibliothek.musik : []).forEach(function (m) {
+        if (m.datei) wahl.appendChild(el("option", { value: m.id, text: m.titel }));
+      });
+      wahl.addEventListener("change", function () {
+        var m = stueck(this.value);
+        if (!m) return;
+        knopf.disabled = true; knopf.textContent = "Lädt …";
+        stueckPuffer(ctx, m).then(function (p) {
+          pad.puffer = p; pad.stueck = m;
+          knopf.textContent = m.titel; knopf.title = stueckText(m); knopf.disabled = false;
+        }).catch(function (f) { knopf.textContent = "Pad " + nr; melden(f.message, true); });
+      });
       eingabe.addEventListener("change", function () {
         var d = this.files[0];
         if (!d) return;
         d.arrayBuffer().then(function (b) { return ctx.decodeAudioData(b); }).then(function (puffer) {
-          pad.puffer = puffer;
+          pad.puffer = puffer; pad.stueck = null;
           knopf.textContent = d.name.replace(/\.[^.]+$/, "");
           knopf.title = d.name;
           knopf.disabled = false;
@@ -805,8 +1022,9 @@
         q.start();
         pad.quelle = q;
         knopf.classList.add("laeuft");
+        if (pad.stueck && v.musikAngaben) v.musikAngaben.hinzu(pad.stueck);
       });
-      behaelter.appendChild(el("div", { class: "pad" }, knopf, label));
+      behaelter.appendChild(el("div", { class: "pad" }, knopf, label, wahl));
     })(i + 1);
   }
 
@@ -822,6 +1040,19 @@
     v.form.elements.beschreibung.value = f.beschreibung;
     kiAngabenSetzen(v.form, f.ki);
     kiLeiste(v, s, kapitel, f);
+    var musikAngaben = musikEditor(v["musik-angaben"], f.musik.map(function (m) { return Object.assign({}, m); }),
+      function () { kiAngabe(v.form, "musik"); });
+    v.unterlegen.hidden = !(f.datei && zustand.status.ki && zustand.status.ki.ffmpeg);
+    if (!v.unterlegen.hidden) auswahlFuellen(v["ub-auswahl"]).catch(function () {});
+    $("[data-aktion=unterlegen]", v.wurzel).addEventListener("click", function () {
+      if (!v["ub-auswahl"].value) { melden("Bitte ein Stück aus der Musikbibliothek wählen", true); return; }
+      beschaeftigt(this, kiAuftrag({ art: "musikbett", folge_id: f.id, musik_id: v["ub-auswahl"].value,
+        lautstaerke: v["ub-laut"].value, ducking: v["ub-ducking"].checked })).then(function (e) {
+        if (!e) return;
+        melden("„" + e.folge.titel + "“ als Entwurf angelegt");
+        aktualisieren(s.id);
+      });
+    });
     v["ki-video"].hidden = !(f.datei && zustand.status.ki && zustand.status.ki.ffmpeg &&
       f.mime.indexOf("video/") !== 0);
     v["ki-video"].addEventListener("click", function () {
@@ -843,6 +1074,7 @@
         beschreibung: v.form.elements.beschreibung.value,
         kapitel: kapitel.liste(),
         ki: kiAngabenLesen(v.form),
+        musik: musikAngaben.liste(),
       }).then(function () { melden("Gespeichert"); zeigeSendung(s.id); })
         .catch(function (e) { melden(e.message, true); });
     });

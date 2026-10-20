@@ -33,7 +33,7 @@ from loginshield.netutils import ip_in_networks, parse_networks
 
 from . import feed, media, publish, radio, site, zweifaktor
 from .config import Config, passwort_pruefen
-from .store import Store
+from .store import LIZENZEN, Store
 from .tresor import ENDUNG, Tresor, TresorFehler
 from .version import __version__
 from .ki import KiFehler
@@ -419,7 +419,7 @@ def handler_fuer(studio: Studio):
                 # SameSite=Strict am Cookie.
                 if self.headers.get("X-Studio") != "1":
                     raise ApiFehler(403, "Anfrage ohne Studio-Kennung")
-                if teile[-1:] not in (["medium"], ["cover"]):
+                if teile[-1:] not in (["medium"], ["cover"], ["datei"]):
                     # Den Koerper immer ganz lesen, auch wo er nicht gebraucht
                     # wird. Bliebe ein Rest im Strom, laese der Server ihn bei
                     # wiederverwendeter Verbindung als naechste Anfrage.
@@ -488,8 +488,8 @@ def handler_fuer(studio: Studio):
                     if methode == "POST":
                         d = self._json_body()
                         return self._json(self._wert(lambda: st.folge_anlegen(
-                            sid, d.pop("titel", ""), **_nur(d, ("beschreibung", "kapitel", "ki")))),
-                            201)
+                            sid, d.pop("titel", ""),
+                            **_nur(d, ("beschreibung", "kapitel", "ki", "musik")))), 201)
             if teile[0] == "folgen" and len(teile) >= 2:
                 fid = _id(teile[1])
                 if st.folge(fid) is None:
@@ -501,7 +501,7 @@ def handler_fuer(studio: Studio):
                     if methode == "PUT":
                         d = self._json_body()
                         return self._json(self._wert(lambda: st.folge_aendern(
-                            fid, **_nur(d, ("titel", "beschreibung", "kapitel", "ki")))))
+                            fid, **_nur(d, ("titel", "beschreibung", "kapitel", "ki", "musik")))))
                     if methode == "DELETE":
                         studio.datei_weg(st.folge_loeschen(fid))
                         studio.abgleichen()
@@ -518,6 +518,8 @@ def handler_fuer(studio: Studio):
                     return self._json(neu)
             if teile[0] == "ki":
                 return self._ki(methode, teile[1:])
+            if teile[0] == "musik":
+                return self._musik_api(methode, teile[1:])
             if teile == ["export"] and methode == "POST":
                 return self._json(publish.exportieren(
                     st, studio.cfg.medienordner, studio.cfg.pfad(studio.cfg.export_ziel),
@@ -540,6 +542,44 @@ def handler_fuer(studio: Studio):
                     return self._json(auftrag)
             except KiFehler as f:
                 raise ApiFehler(f.status, str(f))
+            raise ApiFehler(404, "Unbekannte Schnittstelle")
+
+        def _musik_api(self, methode: str, teile: list) -> None:
+            """Die Musikbibliothek: Stuecke mit Titel, Kuenstler, Lizenz und Quelle."""
+            st = studio.store
+            if not teile:
+                if methode == "GET":
+                    return self._json({"musik": st.musik_liste(), "lizenzen": list(LIZENZEN)})
+                if methode == "POST":
+                    d = self._json_body()
+                    return self._json(self._wert(lambda: st.musik_anlegen(
+                        d.pop("titel", ""), **_nur(d, ("kuenstler", "lizenz", "quelle")))), 201)
+            mid = _id(teile[0])
+            m = st.musik(mid)
+            if m is None:
+                raise ApiFehler(404, "Musikstück nicht gefunden")
+            if len(teile) == 1:
+                if methode == "PUT":
+                    d = self._json_body()
+                    return self._json(self._wert(lambda: st.musik_aendern(
+                        mid, **_nur(d, ("titel", "kuenstler", "lizenz", "quelle")))))
+                if methode == "DELETE":
+                    studio.datei_weg(st.musik_loeschen(mid))
+                    studio.abgleichen()
+                    return self._json({"ok": True})
+            if teile[1:] == ["datei"] and methode == "PUT":
+                tmp, kopf = self._hochladen()
+                try:
+                    info = media.aufbereiten(tmp, studio.cfg.medienordner,
+                                             f"musik-{secrets.token_hex(10)}", kopf=kopf)
+                except ValueError as f:
+                    _weg(tmp)
+                    raise ApiFehler(415, str(f))
+                alt = m["datei"]
+                neu = st.musik_aendern(mid, datei=info["datei"], mime=info["mime"], dauer=info["dauer"])
+                studio.datei_weg(alt)
+                studio.abgleichen()  # Musik der Bibliothek liegt immer im Tresor
+                return self._json(neu)
             raise ApiFehler(404, "Unbekannte Schnittstelle")
 
         def _wert(self, aufruf):

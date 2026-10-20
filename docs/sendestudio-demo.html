@@ -210,7 +210,7 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
     clearTimeout(toastUhr); toastUhr = setTimeout(function () { x.hidden = true; }, 3200);
   }
   var ARTEN = { podcast: "Podcast", radio: "Radio", doku: "Dokumentation" };
-  var KI_NAMEN = { text: "Text", stimme: "Stimme", bild: "Bilder", video: "Video" };
+  var KI_NAMEN = { text: "Text", stimme: "Stimme", bild: "Bilder", musik: "Musik", video: "Video" };
 
   // ------------------------------------------------------------ Ton erzeugen (ohne Mikrofon)
   var ctx = null;
@@ -230,7 +230,9 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
     });
     pegel.connect(ziel);
     var t = start, vokale = [[730, 1090], [270, 2290], [300, 870], [530, 1840], [660, 1720]];
+    var satzEnde = start + 2.5 + Math.random() * 1.5;
     while (t < start + dauer) {
+      if (t > satzEnde) { t += 1.5; satzEnde = t + 2.5 + Math.random() * 1.5; continue; } // Atempause nach jedem Satz
       var silbe = 0.12 + Math.random() * 0.16;
       var v = vokale[Math.floor(Math.random() * vokale.length)];
       quelle.frequency.setValueAtTime(grund * (0.9 + Math.random() * 0.25), t);
@@ -256,6 +258,23 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
     });
     return { gong: 2.3, fanfare: 1.2, trenner: 0.4 }[art];
   }
+  // „Abendstimmung“: eine ruhige Akkordfläche - eigene Komposition, frei für die Demo.
+  function demoMusik(ac, ziel, start, dauer) {
+    var akkorde = [[220, 277.2, 329.6], [196, 246.9, 293.7], [174.6, 220, 261.6], [196, 246.9, 329.6]];
+    var laenge = 2.4, quellen = [];
+    for (var t = 0, i = 0; t < dauer; t += laenge, i++) {
+      akkorde[i % 4].forEach(function (f) {
+        var o = ac.createOscillator(), g = ac.createGain();
+        o.type = "triangle"; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, start + t);
+        g.gain.exponentialRampToValueAtTime(0.12, start + t + 0.6);
+        g.gain.exponentialRampToValueAtTime(0.0001, start + t + laenge + 0.4);
+        o.connect(g); g.connect(ziel); o.start(start + t); o.stop(start + t + laenge + 0.5);
+        quellen.push(o);
+      });
+    }
+    return quellen;
+  }
   function wav(puffer) {
     var d = puffer.getChannelData(0), rate = puffer.sampleRate, n = d.length;
     var b = new DataView(new ArrayBuffer(44 + n * 2));
@@ -267,9 +286,10 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
     return new Blob([b], { type: "audio/wav" });
   }
   // Fertige Beispielfolge: Jingle, Sprechen, Trenner, Sprechen
-  function beispielFolge(sekunden, grund) {
+  function beispielFolge(sekunden, grund, mitMusik) {
     var Off = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     var ac = new Off(1, Math.ceil(sekunden * 22050), 22050);
+    if (mitMusik) { var teppich = ac.createGain(); teppich.gain.value = 0.18; teppich.connect(ac.destination); demoMusik(ac, teppich, 0, sekunden); }
     var t = jingle(ac, ac.destination, "fanfare", 0);
     var halb = (sekunden - t - 1) / 2;
     demoStimme(ac, ac.destination, t + 0.2, halb, grund);
@@ -309,6 +329,7 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
     sendungen: [
       { id: 1, titel: "Nachtfunk", art: "radio", beschreibung: "Musik und Gespräche für die späten Stunden. Läuft rund um die Uhr.", autor: "Studio Süd", cover: null, coverKi: false },
       { id: 2, titel: "Bienen-Podcast", art: "podcast", beschreibung: "Alles über Bienen, Imkerei und Blühwiesen – alle zwei Wochen.", autor: "Imkerverein", cover: null, coverKi: false },
+      { id: 3, titel: "Spuren im Watt", art: "doku", beschreibung: "Eine Hör-Dokumentation über das Wattenmeer: Gezeiten, Vögel und die Menschen an der Küste.", autor: "Studio Süd", cover: null, coverKi: false },
     ],
     folgen: [],
     naechste: 100,
@@ -322,16 +343,17 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
   }
 
   var beispiele = [
-    { sendung: 1, titel: "Mitternachtsmusik", beschreibung: "Ruhige Stücke und ein Gespräch über das Hören in der Nacht.", sek: 22, grund: 115, online: jetzt - 86400000 * 3, kapitel: [{ zeit: 0, titel: "Erkennungsmelodie" }, { zeit: 12, titel: "Gespräch" }] },
+    { sendung: 1, titel: "Mitternachtsmusik", beschreibung: "Ruhige Stücke und ein Gespräch über das Hören in der Nacht.", sek: 22, grund: 115, online: jetzt - 86400000 * 3, kapitel: [{ zeit: 0, titel: "Erkennungsmelodie" }, { zeit: 12, titel: "Gespräch" }], musik: [{ titel: "Abendstimmung", kuenstler: "Studio Süd", lizenz: "Eigene Musik", quelle: "" }], mitMusik: true },
     { sendung: 1, titel: "Stimmen aus der Stadt", beschreibung: "Was Menschen um zwei Uhr nachts unterwegs erleben.", sek: 18, grund: 150, online: jetzt - 86400000, kapitel: [{ zeit: 0, titel: "Anfang" }, { zeit: 10, titel: "Taxifahrerin" }], ki: ["text"] },
     { sendung: 2, titel: "Der Bienenstock im Winter", beschreibung: "Wie überwintert ein Volk? Ein Besuch beim Imker.", sek: 20, grund: 130, online: jetzt - 86400000 * 5, kapitel: [{ zeit: 0, titel: "Begrüßung" }, { zeit: 11, titel: "Die Wintertraube" }] },
     { sendung: 2, titel: "Blühwiesen anlegen", beschreibung: "Entwurf – noch nicht veröffentlicht.", sek: 16, grund: 140, online: 0, kapitel: [] },
+    { sendung: 3, titel: "Teil 1: Wenn das Wasser geht", beschreibung: "Zweimal am Tag verschwindet das Meer. Wir gehen mit einer Wattführerin hinaus und hören, was dann passiert.", sek: 24, grund: 125, online: jetzt - 86400000 * 2, kapitel: [{ zeit: 0, titel: "Am Deich" }, { zeit: 9, titel: "Draußen im Watt" }, { zeit: 17, titel: "Die Flut kommt" }], musik: [{ titel: "Abendstimmung", kuenstler: "Studio Süd", lizenz: "Eigene Musik", quelle: "" }], mitMusik: true },
   ];
   var bereit = Promise.all(beispiele.map(function (b, i) {
-    return beispielFolge(b.sek, b.grund).then(function (blob) {
+    return beispielFolge(b.sek, b.grund, b.mitMusik).then(function (blob) {
       stand.folgen.push({ id: i + 1, sendung: b.sendung, titel: b.titel, slug: slug(b.titel), beschreibung: b.beschreibung,
         blob: blob, url: URL.createObjectURL(blob), mime: "audio/wav", dauer: b.sek, kapitel: b.kapitel,
-        online: b.online, erstellt: b.online || jetzt, ki: b.ki || [] });
+        online: b.online, erstellt: b.online || jetzt, ki: b.ki || [], musik: b.musik || [] });
     });
   })).catch(function () { /* Ohne Web Audio gibt es keine Beispieltöne - die Demo läuft trotzdem. */ });
 
@@ -578,7 +600,7 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
     if (!rec) return;
     try { if (rec.recorder && rec.recorder.state !== "inactive") rec.recorder.stop(); } catch (e) {}
     (rec.streams || []).forEach(function (st) { st.getTracks().forEach(function (t) { t.stop(); }); });
-    (rec.quellen || []).forEach(function (q) { try { q.stop(); } catch (e) {} });
+    (rec.quellen || []).concat(rec.musikQuellen || []).forEach(function (q) { try { q.stop(); } catch (e) {} });
     cancelAnimationFrame(rec.pegelUhr); clearInterval(rec.uhrUhr);
     $("#onair").classList.remove("an");
     rec = null;
@@ -606,6 +628,24 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
       });
       pads.appendChild(knopf);
     });
+    var mbLaut = el("input", { type: "range", min: "0", max: "1", step: "0.05", value: "0.5", id: "a-mb-laut" });
+    var mbDuck = el("input", { type: "checkbox", id: "a-mb-duck", checked: true, style: "width:auto" });
+    var mbKnopf = el("button", { class: "knopf", type: "button", text: "▶ Musik starten" });
+    var musikAngaben = [];
+    mbKnopf.addEventListener("click", function () {
+      if (!rec || !rec.musikGain) { melden("Erst „Aufnahme“ drücken – dann läuft die Musik mit"); return; }
+      if (rec.musikQuellen) { rec.musikQuellen.forEach(function (q) { try { q.stop(); } catch (e) {} }); rec.musikQuellen = null; mbKnopf.textContent = "▶ Musik starten"; return; }
+      rec.musikQuellen = demoMusik(rec.ac, rec.musikGain, rec.ac.currentTime + 0.05, 600);
+      mbKnopf.textContent = "■ Musik stoppen";
+      if (!musikAngaben.length) { musikAngaben.push({ titel: "Abendstimmung", kuenstler: "Studio Süd", lizenz: "Eigene Musik", quelle: "" }); angabenZeigen(); }
+    });
+    var angabenListe = el("ul", { class: "klein" });
+    function angabenZeigen() {
+      angabenListe.textContent = "";
+      if (!musikAngaben.length) angabenListe.appendChild(el("li", { class: "leise", text: "Keine – sobald Musik läuft, wird sie hier eingetragen." }));
+      musikAngaben.forEach(function (m) { angabenListe.appendChild(el("li", { text: m.titel + " – " + m.kuenstler + " (" + m.lizenz + ")" })); });
+    }
+    angabenZeigen();
     var datei = el("input", { type: "file", accept: "audio/*", id: "a-datei" });
     var titel = el("input", { id: "a-titel", maxlength: "200" });
     var text = el("textarea", { id: "a-text", rows: "5" });
@@ -616,6 +656,7 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
       el("label", {}, "Titel der Folge", titel), el("label", {}, "Beschreibung / Shownotes", text),
       kiLeiste(s, titel, text, kiListe),
       el("div", { class: "feld" }, "Kapitel", kapitel.knoten),
+      el("div", { class: "feld" }, "Verwendete Musik – steht öffentlich an der Folge", angabenListe),
       el("div", { class: "knoepfe" },
         el("button", { class: "knopf primaer", type: "submit", "data-modus": "online", text: "Speichern & veröffentlichen" }),
         el("button", { class: "knopf", type: "submit", "data-modus": "entwurf", text: "Als Entwurf speichern" }),
@@ -639,7 +680,8 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
       var online = e.submitter && e.submitter.getAttribute("data-modus") === "online";
       stand.folgen.push({ id: stand.naechste++, sendung: s.id, titel: titel.value.trim(), slug: slug(titel.value), beschreibung: text.value,
         blob: ergebnis.blob, url: URL.createObjectURL(ergebnis.blob), mime: ergebnis.blob.type || "audio/webm",
-        dauer: ergebnis.dauer || 0, kapitel: kapitel.liste(), online: online ? Date.now() : 0, erstellt: Date.now(), ki: kiListe.slice() });
+        dauer: ergebnis.dauer || 0, kapitel: kapitel.liste(), online: online ? Date.now() : 0, erstellt: Date.now(), ki: kiListe.slice(),
+        musik: musikAngaben.slice() });
       melden(online ? "Ist online! Schau auf „Öffentliche Seite“." : "Als Entwurf gespeichert – verschlüsselt");
       studio();
     });
@@ -682,6 +724,24 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
           demoStimme(ac, mikroGain, ac.currentTime + 0.1, 600, 120 + Math.random() * 40);
         }
         r.jingleGain = jingleGain;
+        // Hintergrundmusik: eigener Weg, der beim Sprechen heruntergeregelt wird
+        var musikGain = ac.createGain(), duck = ac.createGain();
+        musikGain.gain.value = parseFloat(mbLaut.value);
+        musikGain.connect(duck); duck.connect(ziel); duck.connect(ac.destination); duck.connect(analyse);
+        mbLaut.oninput = function () { musikGain.gain.value = parseFloat(this.value); };
+        r.musikGain = musikGain;
+        var stimmAnalyse = ac.createAnalyser(); stimmAnalyse.fftSize = 1024; mikroGain.connect(stimmAnalyse);
+        var stimmProbe = new Float32Array(stimmAnalyse.fftSize), sprichtSeit = -10;
+        r.ducken = function () {
+          if (!r.musikQuellen || !mbDuck.checked) { duck.gain.setTargetAtTime(1, ac.currentTime, 0.3); return; }
+          stimmAnalyse.getFloatTimeDomainData(stimmProbe);
+          var sp = 0; for (var k = 0; k < stimmProbe.length; k++) sp = Math.max(sp, Math.abs(stimmProbe[k]));
+          if (sp > 0.06) sprichtSeit = ac.currentTime;
+          // Schnell herunter, langsam wieder herauf – wie ein Radio-Mischpult
+          var spricht = ac.currentTime - sprichtSeit < 0.6;
+          duck.gain.setTargetAtTime(spricht ? 0.2 : 1, ac.currentTime, spricht ? 0.05 : 0.5);
+          r.duckStand = spricht;
+        };
         mikroLaut.oninput = function () { mikroGain.gain.value = parseFloat(this.value); };
         jingleLaut.oninput = function () { jingleGain.gain.value = parseFloat(this.value); };
         var typ = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4", "audio/webm"].filter(function (t) { return MediaRecorder.isTypeSupported(t); })[0];
@@ -700,6 +760,7 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
         r.uhrUhr = setInterval(function () { uhr.textContent = zeit(r.vergangen()); }, 250);
         var puffer = new Float32Array(analyse.fftSize);
         (function malen() {
+          if (r.ducken) r.ducken();
           analyse.getFloatTimeDomainData(puffer);
           var spitze = 0; for (var i = 0; i < puffer.length; i++) spitze = Math.max(spitze, Math.abs(puffer[i]));
           pegel.style.width = Math.max(0, Math.min(100, (20 * Math.log10(spitze || 1e-6) + 60) / 60 * 100)) + "%";
@@ -717,7 +778,14 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
         el("div", {}, uhr, el("div", { class: "pegel" }, pegel), zustand),
         el("div", { class: "regler" }, el("label", {}, "Stimme", mikroLaut), el("label", {}, "Jingles", jingleLaut)),
         el("div", { class: "knoepfe" }, start, pause, stopp, marke)),
-      el("div", {}, el("h2", { text: "Jingles & Einspieler", style: "margin-top:.2em" }),
+      el("div", {}, el("h2", { text: "Hintergrundmusik", style: "margin-top:.2em" }),
+        el("p", { class: "klein leise", text: "Läuft leise unter der Stimme und wird automatisch leiser, sobald gesprochen wird – wie im Radio. Im echten Studio kommen die Stücke aus deiner Musikbibliothek: eigene Musik, frei lizenzierte Stücke oder KI-Musik. Songs aus Spotify gehen nicht – sie sind kopiergeschützt und nur zum privaten Hören lizenziert." }),
+        el("div", { class: "knoepfe", style: "align-items:center" },
+          el("span", { class: "chip", text: "🎵 Abendstimmung – Studio Süd (Eigene Musik)" }),
+          el("label", { for: "a-mb-laut", style: "display:grid;grid-template-columns:auto 140px;align-items:center;gap:8px;font-size:.9rem" }, "Lautstärke", mbLaut),
+          el("label", { for: "a-mb-duck", style: "display:flex;gap:6px;align-items:center;font-size:.9rem" }, mbDuck, "Automatisch leiser beim Sprechen"),
+          mbKnopf)),
+      el("div", {}, el("h2", { text: "Jingles & Einspieler", style: "margin-top:.6em" }),
         el("p", { class: "klein leise", text: "Während der Aufnahme antippen – sie werden live in die Aufnahme gemischt. Im echten Studio lädst du eigene Dateien." }), pads),
       details));
   }
@@ -791,7 +859,7 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
               var sek = Math.min(40, Math.max(8, skript.value.split(/\s+/).length / 2.3));
               beispielFolge(sek, 135).then(function (blob) {
                 stand.folgen.push({ id: stand.naechste++, sendung: s.id, titel: titel.value.trim(), slug: slug(titel.value), beschreibung: skript.value,
-                  blob: blob, url: URL.createObjectURL(blob), mime: "audio/wav", dauer: sek, kapitel: [], online: 0, erstellt: Date.now(), ki: ["text", "stimme"] });
+                  blob: blob, url: URL.createObjectURL(blob), mime: "audio/wav", dauer: sek, kapitel: [], online: 0, erstellt: Date.now(), ki: ["text", "stimme"], musik: [] });
                 melden("KI-Folge als Entwurf angelegt"); studio();
               });
             } })),
@@ -841,7 +909,9 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
         f.ki.length ? el("span", { class: "chip", style: "justify-self:start", text: "KI-generiert: " + f.ki.map(function (k) { return KI_NAMEN[k]; }).join(", ") }) : null,
         a,
         f.beschreibung ? el("p", { style: "white-space:pre-line", text: f.beschreibung }) : null,
-        kap));
+        kap,
+        f.musik.length ? el("div", { class: "klein" }, el("b", { text: "Musik: " }),
+          f.musik.map(function (m) { return m.titel + " – " + m.kuenstler + " (" + m.lizenz + ")"; }).join("; ")) : null));
     });
     ziel.appendChild(wrap);
   }
@@ -898,6 +968,7 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
     folgenVon(s.id, true).forEach(function (f) {
       var b = f.beschreibung || f.titel;
       if (f.ki.length) b += "\n\nHinweis: Diese Folge enthält KI-generierte Inhalte (" + f.ki.map(function (k) { return KI_NAMEN[k]; }).join(", ") + ").";
+      if (f.musik.length) b += "\n\nMusik: " + f.musik.map(function (m) { return m.titel + " – " + m.kuenstler + " (" + m.lizenz + ")"; }).join("; ");
       z.push("  <item>", "    <title>" + xml(f.titel) + "</title>", "    <link>" + seiteUrl + f.slug + "/</link>",
         "    <pubDate>" + new Date(f.online).toUTCString() + "</pubDate>", "    <description>" + xml(b) + "</description>",
         '    <enclosure url="' + basis + "/medien/" + f.slug + '.mp3" length="' + (f.blob ? f.blob.size : 0) + '" type="audio/mpeg"/>',

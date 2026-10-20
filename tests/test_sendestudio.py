@@ -372,3 +372,15 @@ def test_mp3_dauer_ohne_ffmpeg(tmp_path):
     assert media.mp3_dauer_schaetzen(str(tmp_path / "b.mp3")) == pytest.approx(26.12, abs=0.02)
     (tmp_path / "c.mp3").write_bytes(b"kein mp3")
     assert media.mp3_dauer_schaetzen(str(tmp_path / "c.mp3")) == 0.0
+
+
+def test_musik_angaben_pruefen():
+    from sendestudio.store import musik_angaben_pruefen, musik_text
+    sauber = musik_angaben_pruefen([{"titel": " Lied ", "kuenstler": "A", "lizenz": "CC0", "x": 1},
+                                    {"titel": ""}])
+    assert sauber == [{"titel": "Lied", "kuenstler": "A", "lizenz": "CC0", "quelle": ""}]
+    assert musik_text(sauber) == ["Lied – A (CC0)"]
+    with pytest.raises(ValueError):
+        musik_angaben_pruefen([{"titel": "x", "quelle": "javascript:alert(1)"}])
+    with pytest.raises(ValueError):
+        musik_angaben_pruefen([{"titel": "x"}] * 51)

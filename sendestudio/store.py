@@ -51,6 +51,18 @@ CREATE TABLE IF NOT EXISTS einstellungen (
     schluessel  TEXT PRIMARY KEY,
     wert        TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS musik (
+    id         INTEGER PRIMARY KEY,
+    titel      TEXT NOT NULL,
+    kuenstler  TEXT NOT NULL DEFAULT '',
+    lizenz     TEXT NOT NULL DEFAULT '',
+    quelle     TEXT NOT NULL DEFAULT '',
+    datei      TEXT NOT NULL DEFAULT '',
+    mime       TEXT NOT NULL DEFAULT '',
+    dauer      REAL NOT NULL DEFAULT 0,
+    ki         INTEGER NOT NULL DEFAULT 0,
+    erstellt   REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS ki_nutzung (
     tag     TEXT PRIMARY KEY,
     anzahl  INTEGER NOT NULL
@@ -61,18 +73,21 @@ CREATE TABLE IF NOT EXISTS ki_nutzung (
 _NACHTRAEGE = (
     ("folgen", "ki", "TEXT NOT NULL DEFAULT '[]'"),
     ("sendungen", "cover_ki", "INTEGER NOT NULL DEFAULT 0"),
+    ("folgen", "musik", "TEXT NOT NULL DEFAULT '[]'"),
 )
 
 #: Was an einer Folge KI-generiert sein kann - fuer die Kennzeichnung.
-KI_ARTEN = {"text": "Text", "stimme": "Stimme", "bild": "Bilder", "video": "Video"}
+KI_ARTEN = {"text": "Text", "stimme": "Stimme", "bild": "Bilder", "musik": "Musik", "video": "Video"}
 
 _SENDUNG_FELDER = ("titel", "art", "beschreibung", "autor", "sprache", "kategorie", "cover",
                    "cover_ki")
-_FOLGE_FELDER = ("titel", "beschreibung", "datei", "mime", "groesse", "dauer", "kapitel", "ki")
+_FOLGE_FELDER = ("titel", "beschreibung", "datei", "mime", "groesse", "dauer", "kapitel", "ki",
+                 "musik")
+_MUSIK_FELDER = ("titel", "kuenstler", "lizenz", "quelle", "datei", "mime", "dauer", "ki")
 
 #: Diese Felder einer Folge liegen, solange sie nicht veroeffentlicht ist,
 #: verschluesselt in der Datenbank (sofern ein offener Tresor da ist).
-GEHEIM = ("titel", "beschreibung", "kapitel")
+GEHEIM = ("titel", "beschreibung", "kapitel", "musik")
 #: Was ein verschlossener Entwurf statt seines Titels zeigt.
 VERSCHLOSSEN = "(verschlossen)"
 #: Pfadnamen von Entwuerfen verraten nichts ueber den Titel.
@@ -118,6 +133,48 @@ def kapitel_pruefen(kapitel: Any) -> List[Dict[str, Any]]:
 def ki_text(ki: List[str]) -> str:
     """``["stimme", "bild"]`` -> ``"Stimme, Bilder"``."""
     return ", ".join(KI_ARTEN[k] for k in KI_ARTEN if k in ki)
+
+
+#: Angebotene Lizenzen - frei eintragbar, das hier sind nur Vorschlaege.
+LIZENZEN = ("Eigene Musik", "CC0 / gemeinfrei", "CC BY", "CC BY-SA", "Pixabay-Lizenz",
+            "GEMA-frei, lizenziert", "KI-generiert")
+
+
+def musik_angaben_pruefen(angaben: Any) -> List[Dict[str, str]]:
+    """Musik-Angaben einer Folge: ``[{"titel", "kuenstler", "lizenz", "quelle"}]``.
+
+    Sie erscheinen oeffentlich an der Folge und im Feed - viele freie
+    Lizenzen (CC BY) verlangen genau diese Nennung.
+    """
+    if isinstance(angaben, str):
+        try:
+            angaben = json.loads(angaben or "[]")
+        except ValueError:
+            raise ValueError("Musik-Angaben sind kein gueltiges JSON")
+    if not isinstance(angaben, list) or len(angaben) > 50:
+        raise ValueError("Musik-Angaben muessen eine Liste sein (hoechstens 50)")
+    sauber = []
+    for a in angaben:
+        if not isinstance(a, dict):
+            raise ValueError("Jede Musik-Angabe braucht Titel, Kuenstler und Lizenz")
+        eintrag = {k: str(a.get(k) or "").strip()[:200] for k in ("titel", "kuenstler", "lizenz", "quelle")}
+        if not eintrag["titel"]:
+            continue
+        if eintrag["quelle"] and not re.match(r"https?://", eintrag["quelle"]):
+            raise ValueError("Die Quelle der Musik bitte als Link (https://...)")
+        sauber.append(eintrag)
+    return sauber
+
+
+def musik_text(angaben: List[Dict[str, str]]) -> List[str]:
+    """``"Titel – Kuenstler (Lizenz)"`` je Angabe."""
+    zeilen = []
+    for a in angaben:
+        z = a["titel"] + (f" – {a['kuenstler']}" if a.get("kuenstler") else "")
+        if a.get("lizenz"):
+            z += f" ({a['lizenz']})"
+        zeilen.append(z)
+    return zeilen
 
 
 def ki_pruefen(ki: Any) -> List[str]:
@@ -333,9 +390,10 @@ class Store:
                                          (f["sendung_id"],), slugify(f["titel"], "folge"))
             self._db.execute(
                 "UPDATE folgen SET veroeffentlicht = ?, slug = ?, titel = ?, beschreibung = ?, "
-                "kapitel = ? WHERE id = ?",
+                "kapitel = ?, musik = ? WHERE id = ?",
                 (zeitpunkt if zeitpunkt is not None else self.clock(), slug, f["titel"],
-                 f["beschreibung"], json.dumps(f["kapitel"], ensure_ascii=False), folge_id))
+                 f["beschreibung"], json.dumps(f["kapitel"], ensure_ascii=False),
+                 json.dumps(f["musik"], ensure_ascii=False), folge_id))
             self._db.commit()
         return self.folge(folge_id)  # type: ignore[return-value]
 
@@ -362,8 +420,8 @@ class Store:
     def datei_in_benutzung(self, name: str) -> bool:
         with self._lock:
             z = self._db.execute(
-                "SELECT 1 FROM folgen WHERE datei = ? UNION SELECT 1 FROM sendungen WHERE cover = ?",
-                (name, name)).fetchone()
+                "SELECT 1 FROM folgen WHERE datei = ? UNION SELECT 1 FROM sendungen WHERE cover = ? "
+                "UNION SELECT 1 FROM musik WHERE datei = ?", (name, name, name)).fetchone()
         return z is not None
 
     @staticmethod
@@ -385,6 +443,8 @@ class Store:
             werte["groesse"] = max(0, int(werte["groesse"]))
         if "ki" in werte:
             werte["ki"] = json.dumps(ki_pruefen(werte["ki"]))
+        if "musik" in werte:
+            werte["musik"] = json.dumps(musik_angaben_pruefen(werte["musik"]), ensure_ascii=False)
         return werte
 
     def _folge_dict(self, z: sqlite3.Row) -> Dict[str, Any]:
@@ -395,10 +455,12 @@ class Store:
                 if self.tresor.offen:
                     d[k] = self.tresor.text_entschluesseln(d[k])
                 else:
-                    d[k] = {"titel": VERSCHLOSSEN, "beschreibung": "", "kapitel": "[]"}[k]
+                    d[k] = {"titel": VERSCHLOSSEN, "beschreibung": "", "kapitel": "[]",
+                            "musik": "[]"}[k]
                     d["verschlossen"] = True
         d["kapitel"] = json.loads(d["kapitel"] or "[]")
         d["ki"] = json.loads(d.get("ki") or "[]")
+        d["musik"] = json.loads(d.get("musik") or "[]")
         d["online"] = d["veroeffentlicht"] is not None
         return d
 
@@ -420,7 +482,7 @@ class Store:
             return 0
         with self._lock:
             zeilen = self._db.execute(
-                "SELECT id, titel, beschreibung, kapitel FROM folgen "
+                "SELECT id, titel, beschreibung, kapitel, musik FROM folgen "
                 "WHERE veroeffentlicht IS NULL").fetchall()
         n = 0
         for z in zeilen:
@@ -476,3 +538,69 @@ class Store:
         with self._lock:
             z = self._db.execute("SELECT anzahl FROM ki_nutzung WHERE tag = ?", (tag,)).fetchone()
         return z[0] if z else 0
+
+    # ------------------------------------------------------------------
+    # Musikbibliothek
+    # ------------------------------------------------------------------
+    def musik_liste(self) -> List[Dict[str, Any]]:
+        with self._lock:
+            zeilen = self._db.execute("SELECT * FROM musik ORDER BY erstellt DESC, id DESC").fetchall()
+        return [dict(z) for z in zeilen]
+
+    def musik(self, musik_id: int) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            z = self._db.execute("SELECT * FROM musik WHERE id = ?", (musik_id,)).fetchone()
+        return dict(z) if z else None
+
+    def musik_anlegen(self, titel: str, **felder: Any) -> Dict[str, Any]:
+        werte = self._musik_werte(dict(felder, titel=titel))
+        if not werte.get("titel"):
+            raise ValueError("Das Musikstueck braucht einen Titel")
+        spalten = ["erstellt"] + list(werte)
+        with self._lock:
+            cur = self._db.execute(
+                f"INSERT INTO musik ({', '.join(spalten)}) VALUES ({', '.join('?' for _ in spalten)})",
+                [self.clock()] + list(werte.values()))
+            self._db.commit()
+            neu = cur.lastrowid
+        return self.musik(neu)  # type: ignore[return-value]
+
+    def musik_aendern(self, musik_id: int, **felder: Any) -> Dict[str, Any]:
+        werte = self._musik_werte(felder)
+        if "titel" in werte and not werte["titel"]:
+            raise ValueError("Das Musikstueck braucht einen Titel")
+        if werte:
+            with self._lock:
+                self._db.execute(f"UPDATE musik SET {', '.join(k + ' = ?' for k in werte)} WHERE id = ?",
+                                 list(werte.values()) + [musik_id])
+                self._db.commit()
+        m = self.musik(musik_id)
+        if m is None:
+            raise KeyError(musik_id)
+        return m
+
+    def musik_loeschen(self, musik_id: int) -> Optional[str]:
+        m = self.musik(musik_id)
+        if m is None:
+            return None
+        with self._lock:
+            self._db.execute("DELETE FROM musik WHERE id = ?", (musik_id,))
+            self._db.commit()
+        return m["datei"] or None
+
+    @staticmethod
+    def _musik_werte(felder: Dict[str, Any]) -> Dict[str, Any]:
+        werte: Dict[str, Any] = {}
+        for k in _MUSIK_FELDER:
+            if k in felder and felder[k] is not None:
+                werte[k] = felder[k]
+        for k in ("titel", "kuenstler", "lizenz", "quelle"):
+            if k in werte:
+                werte[k] = str(werte[k]).strip()[:200]
+        if werte.get("quelle") and not re.match(r"https?://", werte["quelle"]):
+            raise ValueError("Die Quelle bitte als Link (https://...)")
+        if "ki" in werte:
+            werte["ki"] = 1 if werte["ki"] else 0
+        if "dauer" in werte:
+            werte["dauer"] = max(0.0, float(werte["dauer"]))
+        return werte
