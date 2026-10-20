@@ -17,7 +17,7 @@ import os
 import shutil
 from typing import Callable, Dict, List, Optional
 
-from . import feed, radio, site
+from . import feed, radio, site, zeitung
 from .store import Store
 
 MANIFEST = ".sendestudio-export.json"
@@ -35,12 +35,17 @@ def oeffentlich(store: Store) -> List[dict]:
 def seiten(store: Store, basis_url: str, seitentitel: str) -> Dict[str, bytes]:
     """Jede oeffentliche Datei ausser den Medien: Pfad -> Inhalt."""
     eintraege = oeffentlich(store)
+    ausgaben = store.zeitungen(nur_online=True)
     aus: Dict[str, bytes] = {
         "stil.css": site.STIL.encode(),
         "seite.js": site.SEITE_JS.encode(),
-        "index.html": site.startseite(eintraege, seitentitel).encode(),
+        "index.html": site.startseite(eintraege, seitentitel, zeitung_da=bool(ausgaben)).encode(),
         ".nojekyll": b"",
     }
+    if ausgaben:
+        aus["zeitung/index.html"] = zeitung.uebersicht(ausgaben, seitentitel).encode()
+        for z in store.zeitungen(nur_online=True, mit_inhalt=True):
+            aus[f"zeitung/{z['slug']}/index.html"] = zeitung.ausgabe_seite(z, seitentitel).encode()
     for s in eintraege:
         if not s["folgen"]:
             continue
@@ -52,14 +57,22 @@ def seiten(store: Store, basis_url: str, seitentitel: str) -> Dict[str, bytes]:
         for f in s["folgen"]:
             aus[f"{basis}{f['slug']}/index.html"] = site.folge_seite(
                 s, f, seitentitel, basis_url).encode()
+            if f["sprechtext"].strip():
+                aus[f"{basis}{f['slug']}/text.txt"] = sprechtext_datei(s, f)
         if s["art"] == "radio" and radio.programm(s["folgen"]):
             aus[basis + "radio/index.html"] = site.radio_seite(s, s["folgen"], seitentitel).encode()
     return aus
 
 
+def sprechtext_datei(s: dict, f: dict) -> bytes:
+    """Der gesprochene Text einer Folge als Textdatei (Transkript)."""
+    return f"{f['titel']} – {s['titel']}\n\n{f['sprechtext'].strip()}\n".encode()
+
+
 def medien(store: Store) -> List[str]:
     """Dateinamen aller Medien, die oeffentlich gebraucht werden."""
-    namen = []
+    namen = [a["bild"] for z in store.zeitungen(nur_online=True, mit_inhalt=True)
+             for a in z["inhalt"]["artikel"] if a["bild"]]
     for s in oeffentlich(store):
         if not s["folgen"]:
             continue

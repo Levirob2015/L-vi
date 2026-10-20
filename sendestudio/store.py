@@ -63,6 +63,13 @@ CREATE TABLE IF NOT EXISTS musik (
     ki         INTEGER NOT NULL DEFAULT 0,
     erstellt   REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS zeitungen (
+    id               INTEGER PRIMARY KEY,
+    slug             TEXT NOT NULL DEFAULT '',
+    inhalt           TEXT NOT NULL,
+    veroeffentlicht  REAL,
+    erstellt         REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS ki_nutzung (
     tag     TEXT PRIMARY KEY,
     anzahl  INTEGER NOT NULL
@@ -74,6 +81,7 @@ _NACHTRAEGE = (
     ("folgen", "ki", "TEXT NOT NULL DEFAULT '[]'"),
     ("sendungen", "cover_ki", "INTEGER NOT NULL DEFAULT 0"),
     ("folgen", "musik", "TEXT NOT NULL DEFAULT '[]'"),
+    ("folgen", "sprechtext", "TEXT NOT NULL DEFAULT ''"),
 )
 
 #: Was an einer Folge KI-generiert sein kann - fuer die Kennzeichnung.
@@ -82,12 +90,12 @@ KI_ARTEN = {"text": "Text", "stimme": "Stimme", "bild": "Bilder", "musik": "Musi
 _SENDUNG_FELDER = ("titel", "art", "beschreibung", "autor", "sprache", "kategorie", "cover",
                    "cover_ki")
 _FOLGE_FELDER = ("titel", "beschreibung", "datei", "mime", "groesse", "dauer", "kapitel", "ki",
-                 "musik")
+                 "musik", "sprechtext")
 _MUSIK_FELDER = ("titel", "kuenstler", "lizenz", "quelle", "datei", "mime", "dauer", "ki")
 
 #: Diese Felder einer Folge liegen, solange sie nicht veroeffentlicht ist,
 #: verschluesselt in der Datenbank (sofern ein offener Tresor da ist).
-GEHEIM = ("titel", "beschreibung", "kapitel", "musik")
+GEHEIM = ("titel", "beschreibung", "kapitel", "musik", "sprechtext")
 #: Was ein verschlossener Entwurf statt seines Titels zeigt.
 VERSCHLOSSEN = "(verschlossen)"
 #: Pfadnamen von Entwuerfen verraten nichts ueber den Titel.
@@ -128,6 +136,51 @@ def kapitel_pruefen(kapitel: Any) -> List[Dict[str, Any]]:
         sauber.append({"zeit": round(zeit, 2), "titel": titel})
     sauber.sort(key=lambda k: k["zeit"])
     return sauber
+
+
+#: Muster fuer Bilder einer Zeitung (vom Studio vergeben).
+ZEITUNG_BILD = re.compile(r"zeitung-[0-9a-f]{20}\.(?:jpg|png|webp)")
+
+
+def zeitung_pruefen(inhalt: Any) -> Dict[str, Any]:
+    """Eine Zeitungsausgabe: Kopf und Artikel.
+
+    ``{"name", "untertitel", "nummer", "datum", "artikel": [{"rubrik",
+    "ueberschrift", "unterzeile", "autor", "text", "bild", "bildtext"}]}``
+    """
+    if isinstance(inhalt, str):
+        try:
+            inhalt = json.loads(inhalt or "{}")
+        except ValueError:
+            raise ValueError("Zeitung ist kein gueltiges JSON")
+    if not isinstance(inhalt, dict):
+        raise ValueError("Zeitung muss ein Objekt sein")
+
+    def text(wert: Any, laenge: int) -> str:
+        return str(wert or "").strip()[:laenge]
+
+    artikel = inhalt.get("artikel") or []
+    if not isinstance(artikel, list) or len(artikel) > 60:
+        raise ValueError("Artikel muessen eine Liste sein (hoechstens 60)")
+    sauber = []
+    for a in artikel:
+        if not isinstance(a, dict):
+            raise ValueError("Jeder Artikel braucht mindestens eine Ueberschrift")
+        bild = text(a.get("bild"), 60)
+        if bild and not ZEITUNG_BILD.fullmatch(bild):
+            raise ValueError("Unbekanntes Bild im Artikel")
+        sauber.append({
+            "rubrik": text(a.get("rubrik"), 60), "ueberschrift": text(a.get("ueberschrift"), 200),
+            "unterzeile": text(a.get("unterzeile"), 300), "autor": text(a.get("autor"), 100),
+            "text": text(a.get("text"), 50000), "bild": bild, "bildtext": text(a.get("bildtext"), 300),
+        })
+    return {
+        "name": text(inhalt.get("name"), 80) or "Die Zeitung",
+        "untertitel": text(inhalt.get("untertitel"), 160),
+        "nummer": text(inhalt.get("nummer"), 30),
+        "datum": text(inhalt.get("datum"), 60),
+        "artikel": sauber,
+    }
 
 
 def ki_text(ki: List[str]) -> str:
@@ -390,10 +443,10 @@ class Store:
                                          (f["sendung_id"],), slugify(f["titel"], "folge"))
             self._db.execute(
                 "UPDATE folgen SET veroeffentlicht = ?, slug = ?, titel = ?, beschreibung = ?, "
-                "kapitel = ?, musik = ? WHERE id = ?",
+                "kapitel = ?, musik = ?, sprechtext = ? WHERE id = ?",
                 (zeitpunkt if zeitpunkt is not None else self.clock(), slug, f["titel"],
                  f["beschreibung"], json.dumps(f["kapitel"], ensure_ascii=False),
-                 json.dumps(f["musik"], ensure_ascii=False), folge_id))
+                 json.dumps(f["musik"], ensure_ascii=False), f["sprechtext"], folge_id))
             self._db.commit()
         return self.folge(folge_id)  # type: ignore[return-value]
 
@@ -418,6 +471,9 @@ class Store:
         return f["datei"] or None
 
     def datei_in_benutzung(self, name: str) -> bool:
+        if ZEITUNG_BILD.fullmatch(name):
+            return any(a["bild"] == name for z in self.zeitungen(mit_inhalt=True)
+                       for a in z["inhalt"]["artikel"])
         with self._lock:
             z = self._db.execute(
                 "SELECT 1 FROM folgen WHERE datei = ? UNION SELECT 1 FROM sendungen WHERE cover = ? "
@@ -434,6 +490,9 @@ class Store:
             werte["titel"] = str(werte["titel"]).strip()[:200]
         if "beschreibung" in werte:
             werte["beschreibung"] = str(werte["beschreibung"]).strip()[:20000]
+        if "sprechtext" in werte:
+            # Der gesprochene Text: Skript zum Ablesen, nach der Aufnahme das Transkript.
+            werte["sprechtext"] = str(werte["sprechtext"]).strip()[:300000]
         if "kapitel" in werte:
             werte["kapitel"] = json.dumps(kapitel_pruefen(werte["kapitel"]), ensure_ascii=False)
         if "dauer" in werte:
@@ -456,7 +515,7 @@ class Store:
                     d[k] = self.tresor.text_entschluesseln(d[k])
                 else:
                     d[k] = {"titel": VERSCHLOSSEN, "beschreibung": "", "kapitel": "[]",
-                            "musik": "[]"}[k]
+                            "musik": "[]", "sprechtext": ""}[k]
                     d["verschlossen"] = True
         d["kapitel"] = json.loads(d["kapitel"] or "[]")
         d["ki"] = json.loads(d.get("ki") or "[]")
@@ -480,9 +539,10 @@ class Store:
         """
         if not self._geheim():
             return 0
+        self._zeitungen_einschliessen()
         with self._lock:
             zeilen = self._db.execute(
-                "SELECT id, titel, beschreibung, kapitel, musik FROM folgen "
+                "SELECT id, titel, beschreibung, kapitel, musik, sprechtext FROM folgen "
                 "WHERE veroeffentlicht IS NULL").fetchall()
         n = 0
         for z in zeilen:
@@ -604,3 +664,123 @@ class Store:
         if "dauer" in werte:
             werte["dauer"] = max(0.0, float(werte["dauer"]))
         return werte
+
+    # ------------------------------------------------------------------
+    # Zeitung - eine Ausgabe ist ein Dokument; im Entwurf verschluesselt
+    # ------------------------------------------------------------------
+    def zeitungen(self, *, nur_online: bool = False, mit_inhalt: bool = False) -> List[Dict[str, Any]]:
+        sql = "SELECT * FROM zeitungen"
+        if nur_online:
+            sql += " WHERE veroeffentlicht IS NOT NULL"
+        sql += " ORDER BY COALESCE(veroeffentlicht, erstellt) DESC, id DESC"
+        with self._lock:
+            zeilen = self._db.execute(sql).fetchall()
+        liste = [self._zeitung_dict(z) for z in zeilen]
+        if not mit_inhalt:
+            for z in liste:
+                z["artikel_anzahl"] = len(z["inhalt"]["artikel"])
+                z["kopf"] = {k: z["inhalt"][k] for k in ("name", "nummer", "datum")}
+                del z["inhalt"]
+        return liste
+
+    def zeitung(self, zeitung_id: int) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            z = self._db.execute("SELECT * FROM zeitungen WHERE id = ?", (zeitung_id,)).fetchone()
+        return self._zeitung_dict(z) if z else None
+
+    def zeitung_nach_slug(self, slug: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            z = self._db.execute("SELECT * FROM zeitungen WHERE slug = ? AND veroeffentlicht IS NOT NULL",
+                                 (slug,)).fetchone()
+        return self._zeitung_dict(z) if z else None
+
+    def zeitung_anlegen(self, inhalt: Any) -> Dict[str, Any]:
+        roh = self._zeitung_roh(zeitung_pruefen(inhalt), entwurf=True)
+        with self._lock:
+            cur = self._db.execute("INSERT INTO zeitungen (inhalt, erstellt) VALUES (?, ?)",
+                                   (roh, self.clock()))
+            self._db.commit()
+            neu = cur.lastrowid
+        return self.zeitung(neu)  # type: ignore[return-value]
+
+    def zeitung_aendern(self, zeitung_id: int, inhalt: Any) -> Dict[str, Any]:
+        z = self.zeitung(zeitung_id)
+        if z is None:
+            raise KeyError(zeitung_id)
+        if z["verschlossen"]:
+            raise ValueError("Tresor verschlossen - bitte neu anmelden")
+        roh = self._zeitung_roh(zeitung_pruefen(inhalt), entwurf=not z["online"])
+        with self._lock:
+            self._db.execute("UPDATE zeitungen SET inhalt = ? WHERE id = ?", (roh, zeitung_id))
+            self._db.commit()
+        return self.zeitung(zeitung_id)  # type: ignore[return-value]
+
+    def zeitung_veroeffentlichen(self, zeitung_id: int) -> Dict[str, Any]:
+        z = self.zeitung(zeitung_id)
+        if z is None:
+            raise KeyError(zeitung_id)
+        if z["verschlossen"]:
+            raise ValueError("Tresor verschlossen - bitte neu anmelden")
+        if not z["inhalt"]["artikel"]:
+            raise ValueError("Eine Ausgabe ohne Artikel gibt es nicht zu veroeffentlichen")
+        with self._lock:
+            slug = z["slug"] or self._freier_slug(
+                "SELECT 1 FROM zeitungen WHERE slug = ?", (),
+                slugify(f"{z['inhalt']['name']} {z['inhalt']['nummer']}", "ausgabe"))
+            self._db.execute("UPDATE zeitungen SET veroeffentlicht = ?, slug = ?, inhalt = ? WHERE id = ?",
+                             (self.clock(), slug, json.dumps(z["inhalt"], ensure_ascii=False), zeitung_id))
+            self._db.commit()
+        return self.zeitung(zeitung_id)  # type: ignore[return-value]
+
+    def zeitung_zurueckziehen(self, zeitung_id: int) -> Dict[str, Any]:
+        with self._lock:
+            self._db.execute("UPDATE zeitungen SET veroeffentlicht = NULL WHERE id = ?", (zeitung_id,))
+            self._db.commit()
+        self._zeitungen_einschliessen()
+        z = self.zeitung(zeitung_id)
+        if z is None:
+            raise KeyError(zeitung_id)
+        return z
+
+    def zeitung_loeschen(self, zeitung_id: int) -> List[str]:
+        """Loescht die Ausgabe. Gibt ihre nun verwaisten Bilder zurueck."""
+        z = self.zeitung(zeitung_id)
+        if z is None:
+            return []
+        with self._lock:
+            self._db.execute("DELETE FROM zeitungen WHERE id = ?", (zeitung_id,))
+            self._db.commit()
+        return [a["bild"] for a in z["inhalt"]["artikel"] if a["bild"]]
+
+    def _zeitung_roh(self, inhalt: Dict[str, Any], *, entwurf: bool) -> str:
+        roh = json.dumps(inhalt, ensure_ascii=False)
+        if entwurf and self._geheim():
+            return self.tresor.text_verschluesseln(roh)
+        return roh
+
+    def _zeitung_dict(self, z: sqlite3.Row) -> Dict[str, Any]:
+        d = dict(z)
+        d["online"] = d["veroeffentlicht"] is not None
+        d["verschlossen"] = False
+        roh = d["inhalt"]
+        if self.tresor is not None and self.tresor.ist_verschluesselt(roh):
+            if self.tresor.offen:
+                roh = self.tresor.text_entschluesseln(roh)
+            else:
+                roh = json.dumps({"name": VERSCHLOSSEN, "artikel": []})
+                d["verschlossen"] = True
+        d["inhalt"] = zeitung_pruefen(roh)
+        return d
+
+    def _zeitungen_einschliessen(self) -> None:
+        if not self._geheim():
+            return
+        with self._lock:
+            zeilen = self._db.execute(
+                "SELECT id, inhalt FROM zeitungen WHERE veroeffentlicht IS NULL").fetchall()
+        for z in zeilen:
+            if not self.tresor.ist_verschluesselt(z["inhalt"]):
+                with self._lock:
+                    self._db.execute("UPDATE zeitungen SET inhalt = ? WHERE id = ? AND veroeffentlicht IS NULL",
+                                     (self.tresor.text_verschluesseln(z["inhalt"]), z["id"]))
+                    self._db.commit()

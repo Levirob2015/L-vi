@@ -2,6 +2,7 @@
 
     /                  Startseite: Sendungen, Roboter-Designer, Studio, Leitstand
     /sendungen/        alle Sendungen (oeffentlich)
+    /zeitung/          die Zeitung: alle Ausgaben, zum Drucken (oeffentlich)
     /s/<sendung>/...   Sendungen, Folgen, Radio, Feeds (oeffentlich)
     /roboter/          ProBot Roboter-Designer (oeffentlich, abgeschottet)
     /studio            Sendestudio (Anmeldung)
@@ -45,7 +46,8 @@ ROBOTER_DATEI = os.path.join(STATIC, "roboter.html")
 
 #: Navigation der oeffentlichen Seiten - Pfade relativ zur Wurzel.
 NAVIGATION: List[Tuple[str, str]] = [
-    ("Start", ""), ("Sendungen", "sendungen/"), ("Roboter-Designer", "roboter/"), ("Studio", "studio"),
+    ("Start", ""), ("Sendungen", "sendungen/"), ("Zeitung", "zeitung/"), ("Roboter-Designer", "roboter/"),
+    ("Studio", "studio"),
 ]
 
 #: Was der Roboter-Designer laden darf. ``sandbox`` ohne ``allow-same-origin``
@@ -160,6 +162,9 @@ def portal(seitentitel: str, beschreibung: str, eintraege: List[Dict[str, Any]],
 <a class="knopf" href="sendungen/">Alle Sendungen</a>
 {f'<a class="knopf zweit" href="s/{_e(radio_sendung["slug"])}/radio/">Radio live hören</a>' if radio_sendung else ""}
 </div>"""]
+    bereiche.append("""<div class="karte bereich"><span class="symbol" aria-hidden="true">📰</span>
+<h2>Zeitung</h2><p>Artikel mit Bildern, gesetzt wie eine richtige Zeitung – zum Lesen und mit einem Knopf zum Ausdrucken.</p>
+<a class="knopf" href="zeitung/">Zeitung lesen</a></div>""")
     if roboter:
         bereiche.append("""<div class="karte bereich"><span class="symbol" aria-hidden="true">🤖</span>
 <h2>Roboter-Designer</h2><p>Roboter beschreiben – und Zeichnung, Teileliste, Bauanleitung, Code und 3D-Druckteile bekommen.</p>

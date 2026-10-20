@@ -471,6 +471,10 @@
               confirm("Die bisherige Beschreibung durch die KI-Shownotes ersetzen?")) {
             form.elements.beschreibung.value = e.shownotes;
           }
+          if (v.sprechtext && e.transkript && (!v.sprechtext.value.trim() ||
+              confirm("Den gesprochenen Text durch die Abschrift der Aufnahme ersetzen?"))) {
+            v.sprechtext.value = e.transkript;
+          }
           if (e.kapitel.length && (!kapitel.liste().length ||
               confirm(e.kapitel.length + " Kapitel vorgeschlagen – die bisherigen ersetzen?"))) {
             kapitel.setzen(e.kapitel);
@@ -770,6 +774,18 @@
     v.musikAngaben = musikEditor(v["musik-angaben"], [], function () { kiAngabe(v.form, "musik"); });
     auswahlFuellen(v["mb-auswahl"]).catch(function () {});
     var ergebnis = null; // { blob, dauer }
+    v.prompterApi = teleprompter(v);
+    v["ki-sprechtext-zeile"].hidden = !kiFaehig("text");
+    $("[data-aktion=ki-sprechtext]", v.wurzel).addEventListener("click", function () {
+      if (!v.sprechtext.value.trim()) { melden("Bitte zuerst ein paar Stichpunkte ins Feld schreiben", true); return; }
+      beschaeftigt(this, kiText("skript", { thema: v.sprechtext.value, dauer_minuten: 5,
+        titel: v.form.elements.titel.value }, s.id)).then(function (text) {
+        if (text === undefined) return;
+        v.sprechtext.value = text;
+        v.sprechtext.dispatchEvent(new Event("input"));
+        kiAngabe(v.form, "text");
+      });
+    });
 
     $("[data-aktion=zurueck]", v.wurzel).addEventListener("click", function (e) { e.preventDefault(); zeigeSendung(s.id); });
     $("[data-aktion=kapitel-neu]", v.wurzel).addEventListener("click", function () { kapitel.neu(0); });
@@ -830,6 +846,7 @@
         kapitel: kapitel.liste(),
         ki: kiAngabenLesen(v.form),
         musik: v.musikAngaben.liste(),
+        sprechtext: v.sprechtext.value,
       }).then(function (f) {
         folge = f;
         return hochladen("folgen/" + f.id + "/medium?normalisieren=" + normalisieren +
@@ -953,21 +970,25 @@
         v.zustand.textContent = "Aufnahme läuft";
         $("#onair").classList.add("an");
         kapitel.neu(0, "Anfang");
+        v.prompterApi.start();
       });
       pause.addEventListener("click", function () {
         if (r.recorder.state === "recording") {
           r.recorder.pause(); summe = r.vergangen(); seit = null;
           pause.textContent = "Weiter"; v.zustand.textContent = "Pausiert";
           $("#onair").classList.remove("an");
+          v.prompterApi.halt();
         } else {
           r.recorder.resume(); seit = performance.now();
           pause.textContent = "Pause"; v.zustand.textContent = "Aufnahme läuft";
           $("#onair").classList.add("an");
+          v.prompterApi.start();
         }
       });
       stopp.addEventListener("click", function () {
         summe = r.vergangen(); seit = null;
         v.zustand.textContent = "Wird abgeschlossen …";
+        v.prompterApi.halt();
         r.recorder.stop();
       });
       marke.addEventListener("click", function () {
@@ -977,6 +998,8 @@
       });
 
       jinglePads(v, r, ctx);
+      // Der Text steht jetzt im Teleprompter - das Eingabefeld darf zuklappen.
+      if (v.sprechtext.value.trim()) v["sprechtext-block"].open = false;
       v.vorbereitung.hidden = true;
       v.pult.hidden = false;
       v.details.hidden = false;
@@ -1040,6 +1063,7 @@
     if (p) v.abspieler.appendChild(p);
     v.form.elements.titel.value = f.titel;
     v.form.elements.beschreibung.value = f.beschreibung;
+    v.form.elements.sprechtext.value = f.sprechtext || "";
     kiAngabenSetzen(v.form, f.ki);
     kiLeiste(v, s, kapitel, f);
     var musikAngaben = musikEditor(v["musik-angaben"], f.musik.map(function (m) { return Object.assign({}, m); }),
@@ -1077,6 +1101,7 @@
         kapitel: kapitel.liste(),
         ki: kiAngabenLesen(v.form),
         musik: musikAngaben.liste(),
+        sprechtext: v.form.elements.sprechtext.value,
       }).then(function () { melden("Gespeichert"); zeigeSendung(s.id); })
         .catch(function (e) { melden(e.message, true); });
     });
@@ -1091,6 +1116,293 @@
     });
     inhalt(v.wurzel);
   }
+
+  // ------------------------------------------------------------------
+  // Teleprompter: der gesprochene Text laeuft beim Aufnehmen mit
+  // ------------------------------------------------------------------
+  function teleprompter(v) {
+    var fenster = v["prompter-fenster"], text = v["prompter-text"];
+    var lauf = $("[data-aktion=prompter-lauf]", v.wurzel);
+    var pos = 0, laeuft = false, zuletzt = null;
+
+    function groesse() { return parseFloat(v["prompter-groesse"].value); }
+    function zeigen() {
+      text.textContent = v.sprechtext.value;
+      text.style.fontSize = groesse() + "px";
+      v.prompter.hidden = !v.sprechtext.value.trim();
+    }
+    function schritt(t) {
+      if (!laeuft || !fenster.isConnected) return;
+      if (zuletzt !== null) {
+        // Etwa ein ruhiges Sprechtempo; der Regler macht es schneller oder langsamer.
+        var proSekunde = parseFloat(v["prompter-tempo"].value) * 0.4 * groesse();
+        pos = Math.min(pos + (t - zuletzt) / 1000 * proSekunde, fenster.scrollHeight);
+        fenster.scrollTop = pos;
+      }
+      zuletzt = t;
+      requestAnimationFrame(schritt);
+    }
+    function start() {
+      if (laeuft || v.prompter.hidden) return;
+      laeuft = true; zuletzt = null;
+      lauf.textContent = "⏸ Anhalten";
+      requestAnimationFrame(schritt);
+    }
+    function halt() {
+      laeuft = false;
+      lauf.textContent = "▶ Laufen lassen";
+    }
+    function umschalten() { if (laeuft) halt(); else start(); }
+
+    v.sprechtext.addEventListener("input", zeigen);
+    v["prompter-groesse"].addEventListener("input", zeigen);
+    v["prompter-spiegeln"].addEventListener("change", function () {
+      fenster.classList.toggle("gespiegelt", this.checked);
+    });
+    lauf.addEventListener("click", umschalten);
+    fenster.addEventListener("click", umschalten);
+    // Mit dem Mausrad oder Finger nachjustieren
+    fenster.addEventListener("wheel", function (e) {
+      e.preventDefault();
+      pos = Math.max(0, Math.min(pos + e.deltaY, fenster.scrollHeight));
+      fenster.scrollTop = pos;
+    }, { passive: false });
+    $("[data-aktion=prompter-anfang]", v.wurzel).addEventListener("click", function () {
+      pos = 0; fenster.scrollTop = 0;
+    });
+    $("[data-aktion=prompter-vollbild]", v.wurzel).addEventListener("click", function () {
+      if (fenster.requestFullscreen) fenster.requestFullscreen().catch(function () {});
+    });
+    document.addEventListener("keydown", function taste(e) {
+      if (!fenster.isConnected) { document.removeEventListener("keydown", taste); return; }
+      if (document.fullscreenElement === fenster && (e.key === " " || e.key === "Enter")) {
+        e.preventDefault();
+        umschalten();
+      }
+    });
+    zeigen();
+    return { start: start, halt: halt };
+  }
+
+  // ------------------------------------------------------------------
+  // Zeitung: Ausgaben schreiben, setzen, drucken, veroeffentlichen
+  // ------------------------------------------------------------------
+  $("#knopf-zeitung").addEventListener("click", function () { zeigeZeitungen(); });
+
+  function heute() {
+    return new Date().toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  }
+
+  function zeigeZeitungen() {
+    zustand.aktiv = null;
+    ladeSendungen();
+    var v = vorlage("t-zeitungen");
+    var liste = [];
+    v.wurzel.setAttribute("data-ansicht", "zeitungen");
+    $("[data-aktion=neue-ausgabe]", v.wurzel).addEventListener("click", function () {
+      var vorher = liste[0] && liste[0].kopf;
+      beschaeftigt(this, api("POST", "zeitungen", {
+        name: vorher ? vorher.name : "Meine Zeitung", untertitel: "",
+        nummer: "Nr. " + (liste.length + 1), datum: heute(), artikel: [{ ueberschrift: "" }],
+      })).then(function (z) { if (z) zeigeZeitung(z); });
+    });
+    api("GET", "zeitungen").then(function (l) {
+      liste = l;
+      if (!l.length) v.liste.appendChild(el("p", { class: "leise", text: "Noch keine Ausgabe. Leg oben die erste an." }));
+      l.forEach(function (z) {
+        var info = [z.kopf.nummer, z.kopf.datum, z.artikel_anzahl + " Artikel"].filter(Boolean).join(" · ");
+        var knoepfe = el("div", { class: "knoepfe" },
+          el("button", { class: "knopf klein primaer", text: "Bearbeiten", onclick: function () {
+            api("GET", "zeitungen/" + z.id).then(zeigeZeitung).catch(function (f) { melden(f.message, true); });
+          } }));
+        if (z.online) {
+          knoepfe.appendChild(el("a", { class: "knopf klein leicht", href: "/zeitung/" + z.slug + "/",
+            target: "_blank", rel: "noopener", text: "Ansehen ↗" }));
+        }
+        v.liste.appendChild(el("div", { class: "karte ausgabe" },
+          el("div", {},
+            el("span", { class: "etikett " + (z.online ? "online" : "entwurf"), text: z.online ? "Online" : "Entwurf" }),
+            el("h3", { text: z.kopf.name }),
+            el("div", { class: "leise klein", text: info })),
+          knoepfe));
+      });
+    }).catch(function (f) { melden(f.message, true); });
+    inhalt(v.wurzel);
+  }
+
+  function zeigeZeitung(z) {
+    var v = vorlage("t-zeitung");
+    var form = v.form;
+    var KOPF = ["name", "untertitel", "nummer", "datum"];
+    var artikel = z.inhalt.artikel.map(function (a) { return Object.assign({}, a); });
+    var uhr = null, aenderung = 0, gespeichert = 0, vorschauNr = 0;
+    KOPF.forEach(function (k) { form.elements[k].value = z.inhalt[k] || ""; });
+
+    function lesen() {
+      var inhalt_ = { artikel: artikel };
+      KOPF.forEach(function (k) { inhalt_[k] = form.elements[k].value; });
+      return inhalt_;
+    }
+    function stand() {
+      v.stand.textContent = z.online ? "Online" : "Entwurf";
+      v.stand.className = "etikett " + (z.online ? "online" : "entwurf");
+      v.veroeffentlichen.hidden = z.online;
+      v.zurueckziehen.hidden = !z.online;
+      v.ansehen.hidden = !z.online;
+      if (z.online) v.ansehen.href = "/zeitung/" + z.slug + "/";
+    }
+    function vorschau() {
+      var nr = ++vorschauNr;
+      return api("POST", "zeitungen/vorschau", lesen()).then(function (r) {
+        // Nur die neueste Antwort zeigen - Antworten koennen sich ueberholen.
+        if (nr === vorschauNr) v.vorschau.innerHTML = r.html;  // vom Server gesetzt und maskiert
+      });
+    }
+    function speichern() {
+      clearTimeout(uhr); uhr = null;
+      var nr = aenderung;
+      v.speicherstand.textContent = "Speichert …";
+      return api("PUT", "zeitungen/" + z.id, lesen()).then(function (neu) {
+        z = neu; gespeichert = Math.max(gespeichert, nr);
+        v.speicherstand.textContent = z.online ? "✓ Gespeichert – Änderungen sind sofort online."
+          : "✓ Gespeichert – verschlüsselt, bis du veröffentlichst.";
+        stand();
+      }, function (f) { v.speicherstand.textContent = f.message; melden(f.message, true); throw f; });
+    }
+    function geaendert() {
+      aenderung++;
+      v.speicherstand.textContent = "Änderungen …";
+      clearTimeout(uhr);
+      uhr = setTimeout(function () {
+        speichern().catch(function () {});
+        vorschau().catch(function () {});
+      }, 700);
+    }
+    // Vor jedem Knopf erst Ungespeichertes sichern.
+    function gesichert() { return uhr || aenderung > gespeichert ? speichern() : Promise.resolve(); }
+
+    function tauschen(i, j) {
+      var a = artikel[i]; artikel[i] = artikel[j]; artikel[j] = a;
+      malen(); geaendert();
+    }
+
+    function artikelKarte(a, i) {
+      function feld(k, titel, attrs, mehrzeilig) {
+        var e = el(mehrzeilig ? "textarea" : "input", attrs);
+        e.value = a[k] || "";
+        e.addEventListener("input", function () { a[k] = e.value; geaendert(); });
+        return el("label", {}, titel, e);
+      }
+      var bildBereich = el("div", { class: "artikel-bild" });
+      function bildMalen() {
+        bildBereich.textContent = "";
+        if (a.bild) bildBereich.appendChild(el("img", { src: mediumUrl(a.bild), alt: "" }));
+        var eingabe = el("input", { type: "file", accept: "image/jpeg,image/png,image/webp", hidden: "" });
+        eingabe.addEventListener("change", function () {
+          var d = this.files[0];
+          if (!d) return;
+          melden("Bild wird hochgeladen …");
+          hochladen("zeitungen/bild", d).then(function (r) {
+            a.bild = r.bild;
+            bildMalen();
+            aenderung++;
+            return speichern();
+          }).then(vorschau).catch(function (f) { melden(f.message, true); });
+        });
+        bildBereich.appendChild(el("label", { class: "knopf klein" }, a.bild ? "Anderes Bild" : "🖼 Bild einfügen", eingabe));
+        if (a.bild) {
+          bildBereich.appendChild(el("button", { type: "button", class: "knopf klein leicht", text: "Bild entfernen",
+            onclick: function () { a.bild = ""; bildMalen(); geaendert(); } }));
+        }
+      }
+      bildMalen();
+      var letzter = i === artikel.length - 1;
+      return el("div", { class: "artikel" },
+        el("div", { class: "artikel-kopf" },
+          el("b", { text: i === 0 ? "Aufmacher" : "Artikel " + (i + 1) }),
+          el("div", { class: "knoepfe" },
+            el("button", { type: "button", class: "knopf klein leicht", text: "↑", title: "Nach oben",
+              "aria-label": "Nach oben", disabled: i === 0 ? "" : null, onclick: function () { tauschen(i, i - 1); } }),
+            el("button", { type: "button", class: "knopf klein leicht", text: "↓", title: "Nach unten",
+              "aria-label": "Nach unten", disabled: letzter ? "" : null, onclick: function () { tauschen(i, i + 1); } }),
+            el("button", { type: "button", class: "knopf klein gefahr", text: "✕", title: "Artikel löschen",
+              "aria-label": "Artikel löschen", onclick: function () {
+                if (!confirm("Diesen Artikel löschen?")) return;
+                artikel.splice(i, 1); malen(); geaendert();
+              } }))),
+        el("div", { class: "zwei" },
+          feld("rubrik", "Rubrik", { maxlength: "60", placeholder: "z. B. Lokales" }),
+          feld("autor", "Geschrieben von", { maxlength: "100" })),
+        feld("ueberschrift", "Überschrift", { maxlength: "200" }),
+        feld("unterzeile", "Unterzeile", { maxlength: "300", placeholder: "Ein Satz, worum es geht" }),
+        feld("text", "Text", { maxlength: "50000", rows: "8", placeholder: "Absätze mit einer Leerzeile trennen" }, true),
+        bildBereich,
+        feld("bildtext", "Bildunterschrift", { maxlength: "300" }));
+    }
+
+    function malen() {
+      v.artikel.textContent = "";
+      artikel.forEach(function (a, i) { v.artikel.appendChild(artikelKarte(a, i)); });
+    }
+
+    KOPF.forEach(function (k) { form.elements[k].addEventListener("input", geaendert); });
+    form.addEventListener("submit", function (e) { e.preventDefault(); });
+    $("[data-aktion=artikel-neu]", v.wurzel).addEventListener("click", function () {
+      if (artikel.length >= 60) { melden("Mehr als 60 Artikel passen nicht in eine Ausgabe", true); return; }
+      artikel.push({ rubrik: "", ueberschrift: "", unterzeile: "", autor: "", text: "", bild: "", bildtext: "" });
+      malen(); geaendert();
+      var karten = v.artikel.querySelectorAll(".artikel");
+      karten[karten.length - 1].querySelector("input").focus();
+    });
+    $("[data-aktion=zurueck]", v.wurzel).addEventListener("click", function (e) {
+      e.preventDefault();
+      gesichert().then(zeigeZeitungen, function () {});
+    });
+    $("[data-aktion=drucken]", v.wurzel).addEventListener("click", function () {
+      beschaeftigt(this, gesichert().then(vorschau).then(function () { drucken(v.vorschau.innerHTML); }));
+    });
+    v.veroeffentlichen.addEventListener("click", function () {
+      beschaeftigt(this, gesichert().then(function () {
+        return api("POST", "zeitungen/" + z.id + "/veroeffentlichen");
+      }).then(function (neu) {
+        z = neu; stand();
+        v.speicherstand.textContent = "Ist online!";
+        melden("Die Zeitung ist online!");
+      }));
+    });
+    v.zurueckziehen.addEventListener("click", function () {
+      beschaeftigt(this, gesichert().then(function () {
+        return api("POST", "zeitungen/" + z.id + "/zurueckziehen");
+      }).then(function (neu) { z = neu; stand(); melden("Offline genommen"); }));
+    });
+    $("[data-aktion=loeschen]", v.wurzel).addEventListener("click", function () {
+      if (!confirm("Diese Ausgabe mit allen Artikeln und Bildern endgültig löschen?")) return;
+      clearTimeout(uhr); uhr = null;
+      api("DELETE", "zeitungen/" + z.id).then(function () { melden("Gelöscht"); zeigeZeitungen(); })
+        .catch(function (f) { melden(f.message, true); });
+    });
+
+    stand();
+    malen();
+    vorschau().catch(function (f) { melden(f.message, true); });
+    inhalt(v.wurzel);
+  }
+
+  // Drucken: nur die Zeitung, ohne Studio drumherum (siehe studio.css).
+  function drucken(html) {
+    var bereich = $("#druckbereich");
+    bereich.innerHTML = html;  // vom Server gesetzt und maskiert
+    document.body.classList.add("druckt");
+    var bilder = Array.prototype.map.call(bereich.querySelectorAll("img"), function (b) {
+      return b.complete ? null : new Promise(function (ok) { b.onload = b.onerror = ok; });
+    });
+    // Erst drucken, wenn die Bilder geladen sind - sonst fehlen sie auf dem Papier.
+    return Promise.all(bilder).then(function () { window.print(); });
+  }
+  window.addEventListener("afterprint", function () {
+    document.body.classList.remove("druckt");
+    $("#druckbereich").textContent = "";
+  });
 
   // ------------------------------------------------------------------
   // Ins Netz stellen

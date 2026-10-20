@@ -134,6 +134,81 @@ audio { width: 100%; }
 pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; background: var(--flaeche); border: 1px solid var(--linie); border-radius: 12px; padding: 14px; overflow-x: auto; margin: 0; }
 
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--text); color: var(--bg); padding: 9px 16px; border-radius: 10px; font-weight: 600; z-index: 20; max-width: calc(100% - 32px); }
+/* Zeitung: wie Papier, auch im dunklen Modus */
+.zeitung{--papier:#fbf8f1;--tinte:#151310;--grau:#5d574d;--strich:#1e1b17;
+background:var(--papier);color:var(--tinte);padding:28px 30px 34px;border-radius:4px;
+box-shadow:0 1px 3px rgba(0,0,0,.18),0 10px 30px rgba(0,0,0,.08);
+font:16px/1.5 Georgia,"Times New Roman",Times,serif;text-align:left}
+.zeitung *{color:inherit}
+.zeitung .z-kopf{text-align:center;border-bottom:4px double var(--strich);padding-bottom:8px;margin-bottom:18px}
+.zeitung .z-zeile{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;
+font:600 .78rem/1.3 system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;
+color:var(--grau);border-bottom:1px solid var(--strich);padding-bottom:6px}
+.zeitung .z-name{font:900 clamp(2.1rem,7vw,4rem)/1 "Old English Text MT","UnifrakturMaguntia",
+Georgia,"Times New Roman",serif;margin:12px 0 6px;letter-spacing:.01em;overflow-wrap:anywhere}
+.zeitung .z-untertitel{font-style:italic;color:var(--grau);margin:0}
+.zeitung article{margin:0 0 18px}
+.zeitung .z-rubrik{font:700 .72rem/1.2 system-ui,sans-serif;letter-spacing:.12em;
+text-transform:uppercase;color:#9a3412;margin:0 0 4px}
+.zeitung h2{font:800 1.35rem/1.15 Georgia,"Times New Roman",serif;margin:0 0 6px;break-after:avoid}
+.zeitung .z-unterzeile{font-style:italic;margin:0 0 6px;color:var(--grau);break-after:avoid}
+.zeitung .z-autor{font:600 .78rem/1.3 system-ui,sans-serif;color:var(--grau);margin:0 0 8px}
+.zeitung .z-text p{margin:0 0 .55em;text-align:justify;hyphens:auto;-webkit-hyphens:auto}
+.zeitung .z-text p+p{text-indent:1.2em}
+.zeitung figure{margin:0 0 10px;break-inside:avoid}
+.zeitung figure img{display:block;width:100%;height:auto;border:1px solid #d6d0c4}
+.zeitung figcaption{font:.78rem/1.35 system-ui,sans-serif;color:var(--grau);margin-top:4px}
+.zeitung .z-aufmacher{border-bottom:1px solid var(--strich);padding-bottom:16px;margin-bottom:18px}
+.zeitung .z-aufmacher h2{font-size:clamp(1.7rem,4.5vw,2.6rem);line-height:1.08}
+.zeitung .z-aufmacher .z-unterzeile{font-size:1.12rem}
+.zeitung .z-aufmacher .z-text{columns:3 15em;column-gap:22px;column-rule:1px solid #cfc8bb}
+.zeitung .z-aufmacher .z-text p:first-child::first-letter{float:left;font-size:3.3em;
+line-height:.8;padding:.06em .08em 0 0;font-weight:800}
+.zeitung .z-spalten{columns:3 14em;column-gap:22px;column-rule:1px solid #cfc8bb}
+.zeitung .z-spalten article{break-inside:avoid-column;border-bottom:1px solid #cfc8bb;padding-bottom:12px}
+.zeitung .z-spalten article:last-child{border-bottom:0}
+.zeitung .z-ende{border-top:4px double var(--strich);margin-top:6px;padding-top:6px;
+font:.72rem/1.3 system-ui,sans-serif;color:var(--grau);text-align:center}
+.zeitung .z-leer{color:var(--grau);font-style:italic;text-align:center}
+.drucken-leiste{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 16px}
+.ausgaben{list-style:none;padding:0;margin:0}
+.ausgaben li{border-top:1px solid var(--linie);padding:12px 0}
+.ausgaben a{font-weight:700;font-size:1.1rem;color:var(--text);text-decoration:none}
+.ausgaben a:hover{color:var(--akzent)}
+@media (max-width:560px){.zeitung{padding:18px 14px 22px}}
+
+/* Teleprompter */
+.prompter-fenster { position: relative; height: 34vh; min-height: 200px; overflow: hidden; cursor: pointer; background: #0b0b0b; color: #f5f5f5; border-radius: 12px; }
+.prompter-fenster::after { content: ""; position: absolute; left: 0; right: 0; top: 33%; border-top: 2px dashed rgba(251,146,60,.7); pointer-events: none; }
+.prompter-text { padding: 11vh 6% 50vh; font-weight: 600; font-size: 30px; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; }
+.prompter-fenster.gespiegelt .prompter-text { transform: scaleX(-1); }
+.prompter-fenster:fullscreen { height: 100vh; border-radius: 0; }
+.prompter-fenster:fullscreen .prompter-text { padding-top: 33vh; font-size: 52px; }
+.prompter-regler { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: .9rem; }
+.prompter-regler label { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.prompter-regler input[type=range] { width: 110px; padding: 0; }
+details.sprech summary { cursor: pointer; font-weight: 700; }
+details.sprech .text { white-space: pre-line; max-height: 50vh; overflow: auto; border-left: 3px solid var(--linie); padding-left: 12px; }
+/* Zeitung */
+.zeitung-raster { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 18px; align-items: start; }
+.zeitung-raster > div:last-child { position: sticky; top: 70px; max-height: calc(100vh - 80px); overflow: auto; }
+@media (max-width: 1000px) { .zeitung-raster { grid-template-columns: minmax(0, 1fr); } .zeitung-raster > div:last-child { position: static; max-height: none; } }
+.artikel { border: 1px solid var(--linie); border-radius: 12px; padding: 12px; display: grid; gap: 8px; background: var(--bg); }
+.artikel-kopf { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.artikel label { display: grid; gap: 3px; font-weight: 600; font-size: .85rem; }
+.artikel-bild { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.artikel-bild img { width: 110px; height: 70px; object-fit: cover; border-radius: 8px; border: 1px solid var(--linie); }
+#druckbereich { display: none; }
+@page { size: A4; margin: 12mm; }
+@media print {
+  body.druckt > *:not(#druckbereich) { display: none !important; }
+  body.druckt #druckbereich { display: block; }
+  body.druckt { background: #fff; }
+  #druckbereich .zeitung { box-shadow: none; padding: 0; background: #fff; font-size: 10.5pt; }
+  #druckbereich .z-name { font-size: 40pt; }
+  #druckbereich .z-aufmacher .z-text, #druckbereich .z-spalten { columns: 3; column-gap: 6mm; }
+  #druckbereich figure img { max-height: 90mm; object-fit: cover; }
+}
 @media (prefers-reduced-motion: reduce) { .onair.an, .live::before { animation: none; } .pegel div { transition: none; } }
 </style>
 
@@ -143,6 +218,7 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
     <button role="tab" id="tab-studio" aria-selected="true" data-ansicht="studio">Studio</button>
     <button role="tab" id="tab-seite" aria-selected="false" data-ansicht="seite">Öffentliche Seite</button>
     <button role="tab" id="tab-feed" aria-selected="false" data-ansicht="feed">Podcast-Feed</button>
+    <button role="tab" id="tab-zeitung" aria-selected="false" data-ansicht="zeitung">📰 Zeitung</button>
   </nav>
 </header>
 
@@ -164,8 +240,10 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
 
   <section id="ansicht-seite" hidden></section>
   <section id="ansicht-feed" hidden></section>
+  <section id="ansicht-zeitung" hidden></section>
 </main>
 
+<div id="druckbereich" aria-hidden="true"></div>
 <div id="toast" class="toast" role="status" hidden></div>
 
 <script>
@@ -347,13 +425,13 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
     { sendung: 1, titel: "Stimmen aus der Stadt", beschreibung: "Was Menschen um zwei Uhr nachts unterwegs erleben.", sek: 18, grund: 150, online: jetzt - 86400000, kapitel: [{ zeit: 0, titel: "Anfang" }, { zeit: 10, titel: "Taxifahrerin" }], ki: ["text"] },
     { sendung: 2, titel: "Der Bienenstock im Winter", beschreibung: "Wie überwintert ein Volk? Ein Besuch beim Imker.", sek: 20, grund: 130, online: jetzt - 86400000 * 5, kapitel: [{ zeit: 0, titel: "Begrüßung" }, { zeit: 11, titel: "Die Wintertraube" }] },
     { sendung: 2, titel: "Blühwiesen anlegen", beschreibung: "Entwurf – noch nicht veröffentlicht.", sek: 16, grund: 140, online: 0, kapitel: [] },
-    { sendung: 3, titel: "Teil 1: Wenn das Wasser geht", beschreibung: "Zweimal am Tag verschwindet das Meer. Wir gehen mit einer Wattführerin hinaus und hören, was dann passiert.", sek: 24, grund: 125, online: jetzt - 86400000 * 2, kapitel: [{ zeit: 0, titel: "Am Deich" }, { zeit: 9, titel: "Draußen im Watt" }, { zeit: 17, titel: "Die Flut kommt" }], musik: [{ titel: "Abendstimmung", kuenstler: "Studio Süd", lizenz: "Eigene Musik", quelle: "" }], mitMusik: true },
+    { sendung: 3, sprechtext: "Wir stehen am Deich. Hinter uns die Häuser, vor uns – nichts als Schlick, so weit das Auge reicht.\n\nVor sechs Stunden war hier noch Meer. Jetzt gehen wir hinaus, mit Anke, die seit zwanzig Jahren Wattführerin ist.\n\nUnd in ein paar Stunden kommt die Flut zurück.", titel: "Teil 1: Wenn das Wasser geht", beschreibung: "Zweimal am Tag verschwindet das Meer. Wir gehen mit einer Wattführerin hinaus und hören, was dann passiert.", sek: 24, grund: 125, online: jetzt - 86400000 * 2, kapitel: [{ zeit: 0, titel: "Am Deich" }, { zeit: 9, titel: "Draußen im Watt" }, { zeit: 17, titel: "Die Flut kommt" }], musik: [{ titel: "Abendstimmung", kuenstler: "Studio Süd", lizenz: "Eigene Musik", quelle: "" }], mitMusik: true },
   ];
   var bereit = Promise.all(beispiele.map(function (b, i) {
     return beispielFolge(b.sek, b.grund, b.mitMusik).then(function (blob) {
       stand.folgen.push({ id: i + 1, sendung: b.sendung, titel: b.titel, slug: slug(b.titel), beschreibung: b.beschreibung,
         blob: blob, url: URL.createObjectURL(blob), mime: "audio/wav", dauer: b.sek, kapitel: b.kapitel,
-        online: b.online, erstellt: b.online || jetzt, ki: b.ki || [], musik: b.musik || [] });
+        online: b.online, erstellt: b.online || jetzt, ki: b.ki || [], musik: b.musik || [], sprechtext: b.sprechtext || "" });
     });
   })).catch(function () { /* Ohne Web Audio gibt es keine Beispieltöne - die Demo läuft trotzdem. */ });
 
@@ -412,13 +490,14 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
   // ------------------------------------------------------------ Ansichten
   function ansicht(name) {
     stand.ansicht = name;
-    ["studio", "seite", "feed"].forEach(function (n) {
+    ["studio", "seite", "feed", "zeitung"].forEach(function (n) {
       $("#ansicht-" + n).hidden = n !== name;
       $("#tab-" + n).setAttribute("aria-selected", String(n === name));
     });
     if (name === "seite") seite();
     if (name === "feed") feed();
     if (name === "studio") studio();
+    if (name === "zeitung") zeitungAnsicht();
     window.scrollTo(0, 0);
   }
   document.querySelectorAll(".ansichten button").forEach(function (b) {
@@ -606,8 +685,47 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
     rec = null;
   }
 
+  // Teleprompter: läuft während der Aufnahme mit, hält bei Pause an
+  function teleprompter(feld) {
+    var text = el("div", { class: "prompter-text" });
+    var fenster = el("div", { class: "prompter-fenster", title: "Antippen: anhalten / weiter" }, text);
+    var tempo = el("input", { type: "range", min: "0.2", max: "4", step: "0.1", value: "1", "aria-label": "Tempo" });
+    var spiegeln = el("input", { type: "checkbox", style: "width:auto" });
+    var lauf = el("button", { class: "knopf klein", type: "button", text: "▶ Laufen lassen" });
+    var pos = 0, laeuft = false, zuletzt = null;
+    function zeigen() { text.textContent = feld.value; box.hidden = !feld.value.trim(); }
+    function schritt(t) {
+      if (!laeuft || !fenster.isConnected) return;
+      if (zuletzt !== null) {
+        pos = Math.min(pos + (t - zuletzt) / 1000 * parseFloat(tempo.value) * 12, fenster.scrollHeight);
+        fenster.scrollTop = pos;
+      }
+      zuletzt = t; requestAnimationFrame(schritt);
+    }
+    function start() { if (laeuft || box.hidden) return; laeuft = true; zuletzt = null; lauf.textContent = "⏸ Anhalten"; requestAnimationFrame(schritt); }
+    function halt() { laeuft = false; lauf.textContent = "▶ Laufen lassen"; }
+    function umschalten() { if (laeuft) halt(); else start(); }
+    lauf.addEventListener("click", umschalten);
+    fenster.addEventListener("click", umschalten);
+    fenster.addEventListener("wheel", function (e) { e.preventDefault(); pos = Math.max(0, pos + e.deltaY); fenster.scrollTop = pos; }, { passive: false });
+    spiegeln.addEventListener("change", function () { fenster.classList.toggle("gespiegelt", this.checked); });
+    feld.addEventListener("input", zeigen);
+    var box = el("div", { class: "stapel", style: "gap:8px" }, fenster,
+      el("div", { class: "prompter-regler" }, lauf,
+        el("button", { class: "knopf klein leicht", type: "button", text: "⏮ Anfang", onclick: function () { pos = 0; fenster.scrollTop = 0; } }),
+        el("label", {}, "Tempo", tempo), el("label", {}, spiegeln, "Spiegeln"),
+        el("button", { class: "knopf klein leicht", type: "button", text: "⛶ Vollbild", onclick: function () {
+          if (fenster.requestFullscreen) fenster.requestFullscreen().catch(function () { melden("Vollbild ist in diesem Rahmen gesperrt – im echten Studio geht es."); });
+        } })));
+    zeigen();
+    return { knoten: box, start: start, halt: halt };
+  }
+
   function aufnahme(s) {
     var kapitel = kapitelEditor([]);
+    var sprechtext = el("textarea", { id: "a-sprechtext", rows: "4", placeholder: "Was du sagen willst …" });
+    sprechtext.value = "Hallo und herzlich willkommen bei " + s.titel + "!\n\nHeute habe ich etwas Besonderes für euch: Dieser Text läuft als Teleprompter mit, während ich aufnehme. So muss ich nichts auswendig lernen.\n\nDrückt auf Pause, und der Text hält an. Drückt auf Weiter, und er läuft weiter.\n\nNach dem Veröffentlichen steht der gesprochene Text zum Mitlesen an der Folge – und als Transkript im Podcast-Feed.\n\nViel Spaß beim Zuhören!";
+    var prompter = teleprompter(sprechtext);
     var uhr = el("div", { class: "uhr", text: "0:00:00" });
     var pegel = el("div");
     var zustand = el("div", { class: "klein leise", text: "Bereit" });
@@ -681,7 +799,7 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
       stand.folgen.push({ id: stand.naechste++, sendung: s.id, titel: titel.value.trim(), slug: slug(titel.value), beschreibung: text.value,
         blob: ergebnis.blob, url: URL.createObjectURL(ergebnis.blob), mime: ergebnis.blob.type || "audio/webm",
         dauer: ergebnis.dauer || 0, kapitel: kapitel.liste(), online: online ? Date.now() : 0, erstellt: Date.now(), ki: kiListe.slice(),
-        musik: musikAngaben.slice() });
+        musik: musikAngaben.slice(), sprechtext: sprechtext.value });
       melden(online ? "Ist online! Schau auf „Öffentliche Seite“." : "Als Entwurf gespeichert – verschlüsselt");
       studio();
     });
@@ -691,16 +809,17 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
         start.disabled = true; pause.disabled = false; stopp.disabled = false; marke.disabled = false; quelle.disabled = true;
         zustand.textContent = "Aufnahme läuft"; $("#onair").classList.add("an");
         kapitel.neu(0, "Anfang");
+        prompter.start();
       }, function (err) {
         stoppeAufnahme();
         melden(quelle.value === "mikro" ? "Kein Mikrofon verfügbar – hier geht nur die Demo-Stimme oder eine Datei." : "Aufnahme geht in diesem Browser nicht – lade eine Datei hoch.");
       });
     });
     pause.addEventListener("click", function () {
-      if (rec.recorder.state === "recording") { rec.recorder.pause(); rec.summe = rec.vergangen(); rec.seit = null; pause.textContent = "Weiter"; zustand.textContent = "Pausiert"; $("#onair").classList.remove("an"); }
-      else { rec.recorder.resume(); rec.seit = performance.now(); pause.textContent = "Pause"; zustand.textContent = "Aufnahme läuft"; $("#onair").classList.add("an"); }
+      if (rec.recorder.state === "recording") { rec.recorder.pause(); rec.summe = rec.vergangen(); rec.seit = null; pause.textContent = "Weiter"; zustand.textContent = "Pausiert"; $("#onair").classList.remove("an"); prompter.halt(); }
+      else { rec.recorder.resume(); rec.seit = performance.now(); pause.textContent = "Pause"; zustand.textContent = "Aufnahme läuft"; $("#onair").classList.add("an"); prompter.start(); }
     });
-    stopp.addEventListener("click", function () { rec.summe = rec.vergangen(); rec.seit = null; zustand.textContent = "Wird abgeschlossen …"; rec.recorder.stop(); });
+    stopp.addEventListener("click", function () { prompter.halt(); rec.summe = rec.vergangen(); rec.seit = null; zustand.textContent = "Wird abgeschlossen …"; rec.recorder.stop(); });
     marke.addEventListener("click", function () { var t = Math.round(rec.vergangen() * 10) / 10; kapitel.neu(t); details.hidden = false; melden("Kapitelmarke bei " + zeit(t)); });
 
     function starten(art) {
@@ -774,6 +893,9 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
       el("h1", { text: "Neue Folge: " + s.titel }),
       el("div", { class: "zwei" }, el("label", { class: "feld" }, "Tonquelle", quelle),
         el("label", { class: "feld" }, "Oder fertige Datei hochladen", datei)),
+      el("label", { class: "feld" }, el("span", {}, "📝 Gesprochener Text ",
+        el("span", { class: "leise klein", style: "font-weight:400", text: "– läuft beim Aufnehmen als Teleprompter mit und steht später zum Mitlesen an der Folge" })), sprechtext),
+      prompter.knoten,
       el("div", { class: "pult" },
         el("div", {}, uhr, el("div", { class: "pegel" }, pegel), zustand),
         el("div", { class: "regler" }, el("label", {}, "Stimme", mikroLaut), el("label", {}, "Jingles", jingleLaut)),
@@ -794,6 +916,7 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
   function folgeForm(s, f) {
     var titel = el("input", { id: "f-titel", value: f.titel, maxlength: "200" });
     var text = el("textarea", { id: "f-text", rows: "6", text: f.beschreibung });
+    var sprech = el("textarea", { id: "f-sprechtext", rows: "6", text: f.sprechtext || "" });
     var kapitel = kapitelEditor(f.kapitel.slice());
     var kiListe = f.ki.slice();
     var player = el("audio", { controls: true, src: f.url });
@@ -805,6 +928,7 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
     var form = el("form", { class: "formular" },
       el("label", {}, "Titel", titel), el("label", {}, "Beschreibung / Shownotes", text),
       kiLeiste(s, titel, text, kiListe),
+      el("label", {}, "📝 Gesprochener Text (zum Mitlesen)", sprech),
       el("div", { class: "feld" }, "Kapitel", kapitel.knoten),
       el("div", { class: "knoepfe" },
         el("button", { class: "knopf klein leicht", type: "button", text: "+ Kapitel", onclick: function () { kapitel.neu(0); } }),
@@ -815,7 +939,7 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
       e.preventDefault();
       // Was die KI-Knöpfe gesetzt haben, landet in den Häkchen
       kiListe.forEach(function (k) { $("#ki-" + k, form).checked = true; });
-      f.titel = titel.value.trim() || f.titel; f.slug = slug(f.titel); f.beschreibung = text.value; f.kapitel = kapitel.liste();
+      f.titel = titel.value.trim() || f.titel; f.slug = slug(f.titel); f.beschreibung = text.value; f.sprechtext = sprech.value; f.kapitel = kapitel.liste();
       f.ki = Object.keys(KI_NAMEN).filter(function (k) { return $("#ki-" + k, form).checked; });
       melden("Gespeichert"); studio();
     });
@@ -910,6 +1034,7 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
         a,
         f.beschreibung ? el("p", { style: "white-space:pre-line", text: f.beschreibung }) : null,
         kap,
+        f.sprechtext ? el("details", { class: "sprech" }, el("summary", { text: "Gesprochener Text" }), el("div", { class: "text", text: f.sprechtext })) : null,
         f.musik.length ? el("div", { class: "klein" }, el("b", { text: "Musik: " }),
           f.musik.map(function (m) { return m.titel + " – " + m.kuenstler + " (" + m.lizenz + ")"; }).join("; ")) : null));
     });
@@ -961,7 +1086,7 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
     var ziel = $("#ansicht-feed"); ziel.textContent = "";
     var s = sendung(stand.aktiv), basis = "https://dein-sender.de", seiteUrl = basis + "/s/" + slug(s.titel) + "/";
     var z = ['<?xml version="1.0" encoding="UTF-8"?>',
-      '<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:psc="http://podlove.org/simple-chapters">',
+      '<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:psc="http://podlove.org/simple-chapters" xmlns:podcast="https://podcastindex.org/namespace/1.0">',
       "<channel>", "  <title>" + xml(s.titel) + "</title>", "  <link>" + seiteUrl + "</link>",
       "  <description>" + xml(s.beschreibung) + "</description>", "  <language>de</language>",
       '  <itunes:image href="' + basis + '/medien/cover.png"/>'];
@@ -978,6 +1103,7 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
         f.kapitel.forEach(function (k) { z.push('      <psc:chapter start="' + zeit(k.zeit).padStart(8, "0") + '" title="' + xml(k.titel) + '"/>'); });
         z.push("    </psc:chapters>");
       }
+      if (f.sprechtext) z.push('    <podcast:transcript url="' + seiteUrl + f.slug + '/text.txt" type="text/plain" language="de"/>');
       z.push("  </item>");
     });
     z.push("</channel>", "</rss>");
@@ -985,6 +1111,142 @@ pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; backgr
       el("div", {}, el("h1", { text: "Podcast-Feed: " + s.titel }),
         el("p", { class: "leise", text: "Diese Datei lesen Apple Podcasts, Spotify und alle anderen Apps. Das Studio schreibt sie bei jeder Veröffentlichung neu – nur veröffentlichte Folgen stehen drin, mit Kapiteln und KI-Hinweis." })),
       el("pre", { class: "feed", text: z.join("\n") })));
+  }
+
+  // ------------------------------------------------------------ Zeitung
+  function landschaft() {
+    var c = document.createElement("canvas"); c.width = 800; c.height = 450;
+    var g = c.getContext("2d");
+    var himmel = g.createLinearGradient(0, 0, 0, 320); himmel.addColorStop(0, "#78aaea"); himmel.addColorStop(1, "#dce9d8");
+    g.fillStyle = himmel; g.fillRect(0, 0, 800, 450);
+    g.fillStyle = "#ffd666"; g.beginPath(); g.arc(600, 120, 55, 0, 7); g.fill();
+    g.fillStyle = "#3f8f3a"; g.beginPath(); g.moveTo(0, 450);
+    for (var x = 0; x <= 800; x += 10) g.lineTo(x, 300 + 40 * Math.sin(x / 90) + 20 * Math.sin(x / 33));
+    g.lineTo(800, 450); g.fill();
+    g.strokeStyle = "#5a96d2"; g.lineWidth = 26; g.beginPath();
+    for (x = 0; x <= 800; x += 10) g[x ? "lineTo" : "moveTo"](x, 385 + 22 * Math.sin(x / 120));
+    g.stroke();
+    g.strokeStyle = "#7b5b3a"; g.lineWidth = 8; g.beginPath(); g.moveTo(330, 372); g.quadraticCurveTo(400, 330, 470, 372); g.stroke();
+    return c.toDataURL("image/jpeg", 0.85);
+  }
+  function heute() { return new Date().toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); }
+  var zeitung = {
+    name: "Der Talbote", untertitel: "Unabhängige Nachrichten aus dem Tal", nummer: "Nr. 1", datum: heute(), online: 0,
+    artikel: [
+      { rubrik: "Lokales", ueberschrift: "Die neue Brücke kommt", unterzeile: "Ab Montag wird gebaut – was das für den Verkehr bedeutet", autor: "Levi",
+        text: "Die alte Holzbrücke über den Talbach hat ausgedient. Nach mehr als achtzig Jahren wird sie durch eine neue Brücke aus Stahl und Beton ersetzt, die auch Lastwagen tragen kann.\n\nDie Bauarbeiten beginnen am Montag und sollen bis zum Sommer dauern. In dieser Zeit fährt der Bus eine Umleitung über die Mühlenstraße.\n\nDer Bürgermeister nennt die Brücke „das wichtigste Bauprojekt seit Jahren“. Die Anwohner freuen sich – und hoffen, dass es leise zugeht.",
+        bild: null, bildtext: "So soll das Tal mit der neuen Brücke aussehen." },
+      { rubrik: "Wetter", ueberschrift: "Sonne satt am Wochenende", unterzeile: "", autor: "", text: "Die Meteorologen sind sich einig: Am Samstag und Sonntag wird es sonnig und warm.\n\nAb Montag ziehen dann wieder Wolken auf.", bild: null, bildtext: "" },
+      { rubrik: "Sport", ueberschrift: "Der FC Tal gewinnt 3:1", unterzeile: "", autor: "", text: "Ein spannendes Spiel am Sonntag: Nach einem frühen Rückstand drehte die Mannschaft die Partie in der zweiten Halbzeit.\n\nDas nächste Heimspiel ist in zwei Wochen.", bild: null, bildtext: "" },
+      { rubrik: "Kultur", ueberschrift: "Lesenacht in der Bücherei", unterzeile: "", autor: "", text: "Am Freitag bleibt die Bücherei bis Mitternacht offen. Es gibt Kakao, Taschenlampen und Geschichten für alle ab acht Jahren.", bild: null, bildtext: "" },
+    ],
+  };
+
+  // Dieselbe Gestaltung wie sendestudio/zeitung.py
+  function zeitungSetzen(z) {
+    function absaetze(t) {
+      return el("div", { class: "z-text" }, ...String(t || "").split(/\n\s*\n/).filter(function (x) { return x.trim(); })
+        .map(function (x) { return el("p", { text: x.trim() }); }));
+    }
+    function artikel(a, aufmacher) {
+      return el("article", aufmacher ? { class: "z-aufmacher" } : {},
+        a.rubrik ? el("p", { class: "z-rubrik", text: a.rubrik }) : null,
+        a.ueberschrift ? el("h2", { text: a.ueberschrift }) : null,
+        a.unterzeile ? el("p", { class: "z-unterzeile", text: a.unterzeile }) : null,
+        a.autor ? el("p", { class: "z-autor", text: "Von " + a.autor }) : null,
+        a.bild ? el("figure", {}, el("img", { src: a.bild, alt: a.bildtext || "" }), a.bildtext ? el("figcaption", { text: a.bildtext }) : null) : null,
+        a.text ? absaetze(a.text) : null);
+    }
+    var zeile = [z.nummer, z.datum].filter(Boolean);
+    var rumpf = !z.artikel.length ? [el("p", { class: "z-leer", text: "Noch keine Artikel – links „Artikel hinzufügen“." })]
+      : [artikel(z.artikel[0], true)].concat(z.artikel.length > 1 ? [el("div", { class: "z-spalten" }, ...z.artikel.slice(1).map(function (a) { return artikel(a, false); }))] : []);
+    return el("div", { class: "zeitung" },
+      el("header", { class: "z-kopf" },
+        el("div", { class: "z-zeile" }, el("span", { text: zeile[0] || "" }), el("span", { text: zeile[1] || "" })),
+        el("div", { class: "z-name", text: z.name || "Die Zeitung" }),
+        z.untertitel ? el("p", { class: "z-untertitel", text: z.untertitel }) : null),
+      ...rumpf,
+      el("div", { class: "z-ende", text: [z.name || "Die Zeitung"].concat(zeile).join(" · ") }));
+  }
+
+  function zeitungAnsicht() {
+    var ziel = $("#ansicht-zeitung"); ziel.textContent = "";
+    if (zeitung.artikel[0].bild === null) zeitung.artikel[0].bild = landschaft();
+    zeitung.artikel.forEach(function (a) { if (a.bild === null) a.bild = ""; });
+    var vorschau = el("div");
+    var stand_ = el("span", { class: "etikett" });
+    var adresse = el("p", { class: "klein" });
+    function neu() {
+      vorschau.textContent = ""; vorschau.appendChild(zeitungSetzen(zeitung));
+      stand_.textContent = zeitung.online ? "Online" : "Entwurf";
+      stand_.className = "etikett " + (zeitung.online ? "online" : "entwurf");
+      veroeff.textContent = zeitung.online ? "Zurückziehen" : "Veröffentlichen";
+      adresse.textContent = zeitung.online ? "Online unter https://dein-sender.de/zeitung/" + slug(zeitung.name + " " + zeitung.nummer) + "/ – mit Drucken-Knopf für alle Leser." : "";
+    }
+    function feld(obj, k, titel, mehrzeilig, attrs) {
+      var e = el(mehrzeilig ? "textarea" : "input", Object.assign({ "aria-label": titel }, attrs || {}));
+      e.value = obj[k] || "";
+      e.addEventListener("input", function () { obj[k] = e.value; neu(); });
+      return el("label", {}, titel, e);
+    }
+    var liste = el("div", { class: "stapel", style: "gap:10px" });
+    function malen() {
+      liste.textContent = "";
+      zeitung.artikel.forEach(function (a, i) {
+        var bildBereich = el("div", { class: "artikel-bild" });
+        (function bildMalen() {
+          bildBereich.textContent = "";
+          if (a.bild) bildBereich.appendChild(el("img", { src: a.bild, alt: "" }));
+          var eingabe = el("input", { type: "file", accept: "image/*", hidden: true });
+          eingabe.addEventListener("change", function () {
+            var d = this.files[0]; if (!d) return;
+            var r = new FileReader();
+            r.onload = function () { a.bild = r.result; bildMalen(); neu(); };
+            r.readAsDataURL(d);
+          });
+          bildBereich.appendChild(el("label", { class: "knopf klein", style: "display:inline-flex" }, a.bild ? "Anderes Bild" : "🖼 Bild einfügen", eingabe));
+          if (a.bild) bildBereich.appendChild(el("button", { class: "knopf klein leicht", type: "button", text: "Bild entfernen", onclick: function () { a.bild = ""; bildMalen(); neu(); } }));
+        })();
+        function tauschen(j) { var x = zeitung.artikel[i]; zeitung.artikel[i] = zeitung.artikel[j]; zeitung.artikel[j] = x; malen(); neu(); }
+        liste.appendChild(el("div", { class: "artikel" },
+          el("div", { class: "artikel-kopf" }, el("b", { text: i === 0 ? "Aufmacher" : "Artikel " + (i + 1) }),
+            el("div", { class: "knoepfe" },
+              el("button", { class: "knopf klein leicht", type: "button", text: "↑", "aria-label": "Nach oben", disabled: i === 0, onclick: function () { tauschen(i - 1); } }),
+              el("button", { class: "knopf klein leicht", type: "button", text: "↓", "aria-label": "Nach unten", disabled: i === zeitung.artikel.length - 1, onclick: function () { tauschen(i + 1); } }),
+              el("button", { class: "knopf klein", style: "color:var(--rot);border-color:var(--rot)", type: "button", text: "✕", "aria-label": "Artikel löschen", onclick: function () { zeitung.artikel.splice(i, 1); malen(); neu(); } }))),
+          el("div", { class: "zwei" }, feld(a, "rubrik", "Rubrik"), feld(a, "autor", "Geschrieben von")),
+          feld(a, "ueberschrift", "Überschrift"), feld(a, "unterzeile", "Unterzeile"),
+          feld(a, "text", "Text (Absätze mit Leerzeile trennen)", true, { rows: "6" }),
+          bildBereich, feld(a, "bildtext", "Bildunterschrift")));
+      });
+    }
+    var veroeff = el("button", { class: "knopf", type: "button", onclick: function () {
+      zeitung.online = zeitung.online ? 0 : Date.now(); neu();
+      melden(zeitung.online ? "Die Zeitung ist online!" : "Offline – liegt wieder verschlüsselt im Tresor");
+    } });
+    var drucken = el("button", { class: "knopf primaer", type: "button", text: "🖨 Drucken", onclick: function () {
+      var bereich = $("#druckbereich"); bereich.textContent = ""; bereich.appendChild(zeitungSetzen(zeitung));
+      document.body.classList.add("druckt");
+      try { window.print(); } catch (e) {}
+      setTimeout(function () { document.body.classList.remove("druckt"); }, 500);
+    } });
+    malen();
+    ziel.appendChild(el("div", { class: "stapel" },
+      el("div", {}, el("h1", { text: "📰 Zeitung" }),
+        el("p", { class: "leise", text: "Artikel schreiben, Bilder einfügen – das Studio setzt alles wie eine echte Zeitung. Der erste Artikel ist der Aufmacher. Rechts siehst du sofort, wie sie gedruckt aussieht." })),
+      el("div", { class: "zeitung-raster" },
+        el("div", { class: "karte stapel" },
+          el("div", { class: "knoepfe", style: "align-items:center" }, el("b", { text: "Ausgabe" }), stand_),
+          feld(zeitung, "name", "Name der Zeitung"), feld(zeitung, "untertitel", "Untertitel"),
+          el("div", { class: "zwei" }, feld(zeitung, "nummer", "Nummer"), feld(zeitung, "datum", "Datum")),
+          el("h2", { text: "Artikel", style: "margin:.3em 0 0" }), liste,
+          el("button", { class: "knopf leicht", type: "button", text: "+ Artikel hinzufügen", onclick: function () {
+            zeitung.artikel.push({ rubrik: "", ueberschrift: "Neuer Artikel", unterzeile: "", autor: "", text: "", bild: "", bildtext: "" }); malen(); neu();
+          } }),
+          el("div", { class: "knoepfe" }, drucken, veroeff), adresse,
+          el("p", { class: "klein leise", text: "Im Druckfenster kannst du auch „Als PDF speichern“ wählen. Öffnet sich hier keins, sperrt der Rahmen dieser Demo das Drucken – im echten Programm und auf deiner Website öffnet der Knopf das Druckfenster." })),
+        el("div", {}, el("h2", { text: "Vorschau – so wird sie gedruckt", style: "margin-top:0" }), vorschau))));
+    neu();
   }
 
   // ------------------------------------------------------------ Start

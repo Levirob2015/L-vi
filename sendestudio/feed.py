@@ -36,7 +36,8 @@ def feed(sendung: Dict[str, Any], folgen: List[Dict[str, Any]], basis_url: str) 
     t.append('<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" '
              'xmlns:atom="http://www.w3.org/2005/Atom" '
              'xmlns:content="http://purl.org/rss/1.0/modules/content/" '
-             'xmlns:psc="http://podlove.org/simple-chapters">')
+             'xmlns:psc="http://podlove.org/simple-chapters" '
+             'xmlns:podcast="https://podcastindex.org/namespace/1.0">')
     t.append("<channel>")
     t.append(f"<title>{escape(sendung['titel'])}</title>")
     t.append(f"<link>{escape(seite)}</link>")
@@ -85,6 +86,9 @@ def feed(sendung: Dict[str, Any], folgen: List[Dict[str, Any]], basis_url: str) 
                 t.append(f"<psc:chapter start=\"{kapitel_zeit(k['zeit'])}\" "
                          f"title={quoteattr(k['titel'])}/>")
             t.append("</psc:chapters>")
+        if f.get("sprechtext", "").strip():
+            t.append(f'<podcast:transcript url={quoteattr(link + "text.txt")} type="text/plain" '
+                     f'language={quoteattr(sendung["sprache"])}/>')
         t.append("</item>")
     t.append("</channel>")
     t.append("</rss>")

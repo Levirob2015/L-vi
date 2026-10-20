@@ -259,6 +259,7 @@ def test_ki_stimme_wird_entwurf_und_gekennzeichnet(studio, attrappe):
     assert a["status"] == "fertig", a
     folge = a["ergebnis"]["folge"]
     assert folge["ki"] == ["text", "stimme"] and not folge["online"]
+    assert folge["sprechtext"] == "Bienen sind wichtig."  # was die Stimme spricht
 
     # Als Entwurf: verschluesselt im Tresor, oeffentlich unsichtbar
     assert os.listdir(studio.studio.cfg.medienordner) == [folge["datei"] + ".tresor"]
@@ -341,6 +342,7 @@ def test_ki_video_und_video_aus_aufnahme(studio):
     assert video["mime"] == "video/mp4" and video["ki"] == ["text", "stimme", "bild", "video"]
     assert video["titel"] == "Bienen erklärt" and video["dauer"] > 1.5
     assert "Bienen bestäuben Blumen." in video["beschreibung"]
+    assert "Bienen bestäuben Blumen." in video["sprechtext"]
 
     # Video aus einer Tonaufnahme: braucht ein Cover
     _, ton = c.json("POST", f"/api/sendungen/{s['id']}/folgen", {"titel": "Ton"})
@@ -441,7 +443,8 @@ def test_musik_unterlegen(studio):
         "art": "musik_ki", "beschreibung": "Klavier", "titel": "Teppich", "sekunden": 3})[1])
     musik = a["ergebnis"]["musik"]
     _, s = c.json("POST", "/api/sendungen", {"titel": "Abendfunk"})
-    _, f = c.json("POST", f"/api/sendungen/{s['id']}/folgen", {"titel": "Gespräch"})
+    _, f = c.json("POST", f"/api/sendungen/{s['id']}/folgen", {"titel": "Gespräch",
+                                                               "sprechtext": "Hallo zusammen."})
     c("PUT", f"/api/folgen/{f['id']}/medium?dauer=2", roh=wav_bytes(2.0))
     assert c.json("POST", "/api/ki/auftraege", {"art": "musikbett", "folge_id": f["id"],
                                                 "musik_id": musik["id"], "lautstaerke": 5})[0] == 400
@@ -450,6 +453,7 @@ def test_musik_unterlegen(studio):
     assert a["status"] == "fertig", a
     neu = a["ergebnis"]["folge"]
     assert neu["titel"] == "Gespräch (mit Musik)" and neu["ki"] == ["musik"]
+    assert neu["sprechtext"] == "Hallo zusammen."
     assert neu["musik"] == [{"titel": "Teppich", "kuenstler": "KI (ElevenLabs)",
                              "lizenz": "KI-generiert", "quelle": ""}]
     assert neu["dauer"] == pytest.approx(2.0, abs=0.3)

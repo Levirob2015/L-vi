@@ -7,6 +7,9 @@ Oeffentlich (ohne Anmeldung):
     /s/<sendung>/feed.xml     RSS-Feed fuer Podcast-Apps
     /s/<sendung>/<folge>/     einzelne Folge mit Player und Kapiteln
     /s/<sendung>/radio/       Radio: das Programm laeuft nach der Uhr
+    /s/<sendung>/<folge>/text.txt   gesprochener Text (Transkript)
+    /zeitung/                 alle Ausgaben der Zeitung
+    /zeitung/<ausgabe>/       eine Ausgabe - mit Knopf zum Drucken
     /medien/<datei>           Audio/Video/Cover (nur Veroeffentlichtes)
 
 Studio (mit Anmeldung): ``/studio`` und ``/api/...``.
@@ -31,9 +34,9 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from loginshield.netutils import ip_in_networks, parse_networks
 
-from . import feed, media, publish, radio, site, zweifaktor
+from . import feed, media, publish, radio, site, zeitung, zweifaktor
 from .config import Config, passwort_pruefen
-from .store import LIZENZEN, Store
+from .store import LIZENZEN, Store, zeitung_pruefen as store_zeitung_pruefen
 from .tresor import ENDUNG, Tresor, TresorFehler
 from .version import __version__
 from .ki import KiFehler
@@ -435,7 +438,7 @@ def handler_fuer(studio: Studio):
                 # SameSite=Strict am Cookie.
                 if self.headers.get("X-Studio") != "1":
                     raise ApiFehler(403, "Anfrage ohne Studio-Kennung")
-                if teile[-1:] not in (["medium"], ["cover"], ["datei"]):
+                if teile[-1:] not in (["medium"], ["cover"], ["datei"], ["bild"]):
                     # Den Koerper immer ganz lesen, auch wo er nicht gebraucht
                     # wird. Bliebe ein Rest im Strom, laese der Server ihn bei
                     # wiederverwendeter Verbindung als naechste Anfrage.
@@ -507,7 +510,7 @@ def handler_fuer(studio: Studio):
                         d = self._json_body()
                         return self._json(self._wert(lambda: st.folge_anlegen(
                             sid, d.pop("titel", ""),
-                            **_nur(d, ("beschreibung", "kapitel", "ki", "musik")))), 201)
+                            **_nur(d, ("beschreibung", "kapitel", "ki", "musik", "sprechtext")))), 201)
             if teile[0] == "folgen" and len(teile) >= 2:
                 fid = _id(teile[1])
                 if st.folge(fid) is None:
@@ -519,7 +522,7 @@ def handler_fuer(studio: Studio):
                     if methode == "PUT":
                         d = self._json_body()
                         return self._json(self._wert(lambda: st.folge_aendern(
-                            fid, **_nur(d, ("titel", "beschreibung", "kapitel", "ki", "musik")))))
+                            fid, **_nur(d, ("titel", "beschreibung", "kapitel", "ki", "musik", "sprechtext")))))
                     if methode == "DELETE":
                         studio.datei_weg(st.folge_loeschen(fid))
                         studio.abgleichen()
@@ -538,6 +541,8 @@ def handler_fuer(studio: Studio):
                 return self._ki(methode, teile[1:])
             if teile[0] == "musik":
                 return self._musik_api(methode, teile[1:])
+            if teile[0] == "zeitungen":
+                return self._zeitung_api(methode, teile[1:])
             if teile == ["export"] and methode == "POST":
                 return self._json(publish.exportieren(
                     st, studio.cfg.medienordner, studio.cfg.pfad(studio.cfg.export_ziel),
@@ -597,6 +602,57 @@ def handler_fuer(studio: Studio):
                 neu = st.musik_aendern(mid, datei=info["datei"], mime=info["mime"], dauer=info["dauer"])
                 studio.datei_weg(alt)
                 studio.abgleichen()  # Musik der Bibliothek liegt immer im Tresor
+                return self._json(neu)
+            raise ApiFehler(404, "Unbekannte Schnittstelle")
+
+        def _zeitung_api(self, methode: str, teile: list) -> None:
+            """Die Zeitung: Ausgaben anlegen, schreiben, Bilder, Vorschau, veroeffentlichen."""
+            st = studio.store
+            if not teile:
+                if methode == "GET":
+                    return self._json(st.zeitungen())
+                if methode == "POST":
+                    return self._json(self._wert(lambda: st.zeitung_anlegen(self._json_body())), 201)
+            if teile == ["vorschau"] and methode == "POST":
+                # Ungespeichert setzen - genau so, wie es spaeter aussieht.
+                inhalt = self._wert(lambda: store_zeitung_pruefen(self._json_body()))
+                return self._json({"html": zeitung.ausgabe(inhalt, bild_pfad="/medien/")})
+            if teile == ["bild"] and methode == "PUT":
+                tmp, _ = self._hochladen()
+                try:
+                    name = media.bild_speichern(tmp, studio.cfg.medienordner,
+                                                f"zeitung-{secrets.token_hex(10)}")
+                except ValueError as f:
+                    raise ApiFehler(415, str(f))
+                studio.abgleichen()  # bis zum Erscheinen im Tresor
+                return self._json({"bild": name}, 201)
+            zid = _id(teile[0])
+            z = st.zeitung(zid)
+            if z is None:
+                raise ApiFehler(404, "Ausgabe nicht gefunden")
+            rest = teile[1:]
+            if not rest:
+                if methode == "GET":
+                    return self._json(z)
+                if methode == "PUT":
+                    neu = self._wert(lambda: st.zeitung_aendern(zid, self._json_body()))
+                    # Bilder, die aus der Ausgabe geflogen sind, gleich mit weg.
+                    for name in _bilder(z) - _bilder(neu):
+                        studio.datei_weg(name)
+                    studio.abgleichen()
+                    return self._json(neu)
+                if methode == "DELETE":
+                    for name in st.zeitung_loeschen(zid):
+                        studio.datei_weg(name)
+                    studio.abgleichen()
+                    return self._json({"ok": True})
+            if rest == ["veroeffentlichen"] and methode == "POST":
+                neu = self._wert(lambda: st.zeitung_veroeffentlichen(zid))
+                studio.abgleichen()  # Bilder werden lesbar
+                return self._json(neu)
+            if rest == ["zurueckziehen"] and methode == "POST":
+                neu = st.zeitung_zurueckziehen(zid)
+                studio.abgleichen()  # Bilder zurueck in den Tresor
                 return self._json(neu)
             raise ApiFehler(404, "Unbekannte Schnittstelle")
 
@@ -781,6 +837,22 @@ def handler_fuer(studio: Studio):
                                     html_typ, seite_kopf)
             if pfad == "/stil.css":
                 return self._senden(200, site.STIL.encode(), "text/css; charset=utf-8", seite_kopf)
+            if pfad == "/zeitung.css":
+                return self._senden(200, zeitung.STIL.encode(), "text/css; charset=utf-8", seite_kopf)
+            if pfad in ("/zeitung", "/zeitung/", "/zeitung/index.html"):
+                if pfad == "/zeitung":
+                    return self._umleiten("/zeitung/")
+                return self._senden(200, zeitung.uebersicht(st.zeitungen(nur_online=True), titel,
+                                                            nav=nav).encode(), html_typ, seite_kopf)
+            m = re.fullmatch(r"/zeitung/([a-z0-9-]+)(/?)(index\.html)?", pfad)
+            if m:
+                z = st.zeitung_nach_slug(m.group(1))
+                if z is None:
+                    raise ApiFehler(404, "Nicht gefunden")
+                if not m.group(2):
+                    return self._umleiten(pfad + "/")
+                return self._senden(200, zeitung.ausgabe_seite(z, titel, nav=nav).encode(),
+                                    html_typ, seite_kopf)
             if pfad == "/seite.js":
                 return self._senden(200, site.SEITE_JS.encode(),
                                     "text/javascript; charset=utf-8", seite_kopf)
@@ -809,6 +881,13 @@ def handler_fuer(studio: Studio):
                     return self._umleiten(pfad + "/")
                 return self._senden(200, site.radio_seite(s, folgen, titel, nav=nav).encode(),
                                     html_typ, seite_kopf)
+            m2 = re.fullmatch(r"/([a-z0-9-]+)/text\.txt", rest)
+            if m2:
+                f = next((x for x in folgen if x["slug"] == m2.group(1)), None)
+                if f and f["sprechtext"].strip():
+                    return self._senden(200, publish.sprechtext_datei(s, f),
+                                        "text/plain; charset=utf-8", seite_kopf)
+                raise ApiFehler(404, "Nicht gefunden")
             m2 = re.fullmatch(r"/([a-z0-9-]+)(/?)(index\.html)?", rest)
             if m2:
                 f = next((x for x in folgen if x["slug"] == m2.group(1)), None)
@@ -894,6 +973,10 @@ def _nur(d: Dict[str, Any], erlaubt: Tuple[str, ...] = (
         "titel", "art", "beschreibung", "autor", "sprache", "kategorie")) -> Dict[str, Any]:
     """Nur bekannte Felder - Datei, Cover usw. setzt die API nie direkt."""
     return {k: v for k, v in d.items() if k in erlaubt}
+
+
+def _bilder(z: Dict[str, Any]) -> set:
+    return {a["bild"] for a in z["inhalt"]["artikel"] if a["bild"]}
 
 
 def _weg(pfad: str) -> None:

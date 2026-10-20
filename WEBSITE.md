@@ -5,9 +5,10 @@ Eine Adresse, alles drin:
 | Adresse | Was | Für wen |
 |---|---|---|
 | `https://deine-domain.de/` | Startseite mit allen Bereichen und den neuesten Folgen | alle |
-| `/sendungen/` | Podcasts, Radio (live nach der Uhr) und Dokumentationen, mit Feeds | alle |
+| `/sendungen/` | Podcasts, Radio (live nach der Uhr) und Dokumentationen, mit Feeds und gesprochenem Text zum Mitlesen | alle |
+| `/zeitung/` | **Die Zeitung** – alle Ausgaben, gesetzt wie gedruckt, mit Knopf zum Drucken | alle |
 | `/roboter/` | **ProBot Roboter-Designer** – Roboter beschreiben, Zeichnung, Teileliste, Code, 3D-Druckteile | alle |
-| `/studio` | **Sendestudio** – aufnehmen, Musik, KI, veröffentlichen | nur du (Anmeldung) |
+| `/studio` | **Sendestudio** – aufnehmen (mit Teleprompter), Zeitung schreiben, Musik, KI, veröffentlichen | nur du (Anmeldung) |
 | `/leitstand/` | **Hack-Schutz-Leitstand** (LoginShield) – wer versucht einzubrechen, wer ist gesperrt | nur du (Anmeldung) |
 
 Eine Anmeldung (Passwort, auf Wunsch mit Zwei-Faktor-Code) gilt für Studio

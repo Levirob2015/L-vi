@@ -218,12 +218,12 @@ def mp3_dauer_schaetzen(pfad: str) -> float:
 
 
 def bild_speichern(quelle: str, zielordner: str, basisname: str) -> str:
-    """Prueft ein Cover-Bild und legt es ab. Gibt den Dateinamen zurueck."""
+    """Prueft ein Bild (Cover, Zeitung) und legt es ab. Gibt den Dateinamen zurueck."""
     with open(quelle, "rb") as f:
         erkannt = erkennen(f.read(64))
     if erkannt is None or erkannt[1] != "bild":
         _weg(quelle)
-        raise ValueError("Cover bitte als JPG, PNG oder WebP")
+        raise ValueError("Bilder bitte als JPG, PNG oder WebP")
     ziel = os.path.join(zielordner, basisname + erkannt[0])
     os.replace(quelle, ziel)
     return os.path.basename(ziel)

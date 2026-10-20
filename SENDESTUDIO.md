@@ -22,6 +22,10 @@ KI-Antworten sind dort Beispiele. Über GitHub Pages erscheint sie unter
 - Pegelanzeige, Lautstärkeregler, Pause, Uhr
 - **Jingle-Pads**: sechs Tasten für Jingles, Intros und Einspieler, die live in die Aufnahme gemischt werden
 - **Kapitelmarken** per Knopfdruck während der Aufnahme
+- **Gesprochener Text** mit **Teleprompter**: Text vorher aufschreiben – beim
+  Aufnehmen läuft er groß mit (Tempo, Schriftgröße, Spiegeln, Vollbild) und
+  hält bei Pause an. Nach dem Veröffentlichen steht er zum Mitlesen an der
+  Folge, als `text.txt` und als Transkript im Podcast-Feed
 - **Hintergrundmusik**, die automatisch leiser wird, sobald gesprochen wird – wie im Radio
 - Oder eine fertige Datei hochladen (MP3, M4A, MP4, WebM, Ogg, WAV)
 
@@ -30,6 +34,17 @@ KI-Antworten sind dort Beispiele. Über GitHub Pages erscheint sie unter
 - Cover, Beschreibung, Shownotes, Kapitel bearbeiten
 - Entwürfe, die niemand sieht, bis du sie veröffentlichst – und die bis dahin
   **nur verschlüsselt** auf dem Server liegen (siehe [Sicherheit](#sicherheit))
+
+**Zeitung**
+- Ausgaben mit Name, Untertitel, Nummer und Datum; Artikel mit Rubrik,
+  Überschrift, Unterzeile, Autor, Text, Bild und Bildunterschrift
+- Das Studio setzt sie **wie eine gedruckte Zeitung**: großer Zeitungskopf,
+  der erste Artikel als Aufmacher, die übrigen in Spalten – mit Vorschau
+  neben dem Editor, gespeichert wird automatisch
+- **🖨 Drucken** per Knopfdruck auf A4 (oder „Als PDF speichern“) – im Studio
+  und auf der Website
+- **Veröffentlichen** unter `/zeitung/`; bis dahin liegt die Ausgabe samt
+  Bildern verschlüsselt
 
 **Musik**
 - **Musikbibliothek** mit Titel, Künstler, Lizenz und Quelle jedes Stücks
@@ -40,7 +55,8 @@ KI-Antworten sind dort Beispiele. Über GitHub Pages erscheint sie unter
 
 **Mit KI erstellen** (optional, siehe [KI-Werkzeuge](#ki-werkzeuge))
 - **Texte:** Shownotes, Titelvorschläge, Kapitel, Sendungsbeschreibung, Social-Media-Post, ganze Sprechskripte
-- **Aus der Aufnahme:** abschreiben lassen → Shownotes, Kapitel mit Zeitmarken und Titelvorschläge
+- **Gesprochener Text:** aus Stichpunkten einen Sprechtext schreiben lassen
+- **Aus der Aufnahme:** abschreiben lassen → gesprochener Text, Shownotes, Kapitel mit Zeitmarken und Titelvorschläge
 - **Bilder:** Cover per Beschreibung malen lassen
 - **KI-Stimme:** Text oder Skript als fertige Folge vorlesen lassen
 - **Videos:** aus einem Thema ein ganzes Erklär-/Doku-Video (Szenen mit KI-Bildern und KI-Stimme), oder aus einer Aufnahme + Cover ein Video für YouTube & Co.
@@ -334,7 +350,8 @@ dagegen mit jedem Bild- und Sprachdienst.
 
 Alles, was noch nicht öffentlich ist, liegt **nur verschlüsselt** auf dem
 Server: die Aufnahmen von Entwürfen und zurückgezogenen Folgen, deren Titel,
-Beschreibungen und Kapitel sowie das Cover einer Sendung, solange sie noch
+Beschreibungen, Kapitel und gesprochener Text, unveröffentlichte
+Zeitungsausgaben mit ihren Bildern sowie das Cover einer Sendung, solange sie noch
 keine veröffentlichte Folge hat. Auch die Dateinamen sind zufällig und
 verraten nichts über den Inhalt.
 

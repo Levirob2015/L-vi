@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sendestudio</title>
 <link rel="stylesheet" href="/studio.css">
+<link rel="stylesheet" href="/zeitung.css">
 </head>
 <body>
 
@@ -44,6 +45,7 @@
       <ul id="sendungsliste" class="liste"></ul>
       <button class="knopf primaer breit" id="knopf-neue-sendung">+ Neue Sendung</button>
       <button class="knopf leicht breit" id="knopf-musik">🎵 Musikbibliothek</button>
+      <button class="knopf leicht breit" id="knopf-zeitung">📰 Zeitung</button>
     </aside>
 
     <main id="inhalt" class="inhalt"></main>
@@ -155,6 +157,15 @@
     <p><a href="#" data-aktion="zurueck">← zurück</a></p>
     <h1>Neue Folge</h1>
 
+    <details class="sprechtext-block" data-feld="sprechtext-block" open>
+      <summary>📝 Gesprochener Text <span class="leise klein">– freiwillig</span></summary>
+      <p class="leise klein">Schreib auf, was du sagen willst. Beim Aufnehmen läuft er als Teleprompter mit, und nach dem Veröffentlichen steht er zum Mitlesen an der Folge.</p>
+      <textarea data-feld="sprechtext" rows="7" maxlength="300000" placeholder="Hallo und herzlich willkommen …"></textarea>
+      <div class="knoepfe" data-feld="ki-sprechtext-zeile" hidden>
+        <button type="button" class="knopf ki klein" data-aktion="ki-sprechtext">✨ Aus Stichpunkten einen Sprechtext machen</button>
+      </div>
+    </details>
+
     <div data-feld="vorbereitung">
       <div class="zwei">
         <label>Quelle
@@ -172,6 +183,21 @@
 
     <div data-feld="pult" hidden>
       <video data-feld="vorschau" class="vorschau" muted playsinline hidden></video>
+      <div class="prompter" data-feld="prompter" hidden>
+        <div class="prompter-fenster" data-feld="prompter-fenster" title="Antippen: anhalten / weiter">
+          <div class="prompter-text" data-feld="prompter-text"></div>
+        </div>
+        <div class="prompter-regler">
+          <button type="button" class="knopf klein" data-aktion="prompter-lauf">▶ Laufen lassen</button>
+          <button type="button" class="knopf klein leicht" data-aktion="prompter-anfang">⏮ Anfang</button>
+          <label>Tempo <input type="range" min="0.2" max="4" step="0.1" value="1" data-feld="prompter-tempo"></label>
+          <label>Schrift <input type="range" min="22" max="90" step="2" value="38" data-feld="prompter-groesse"></label>
+          <label class="haken"><input type="checkbox" data-feld="prompter-spiegeln"> Spiegeln</label>
+          <button type="button" class="knopf klein leicht" data-aktion="prompter-vollbild">⛶ Vollbild</button>
+        </div>
+        <p class="leise klein">Teleprompter: läuft mit der Aufnahme los und hält bei Pause an. Leertaste im Vollbild: anhalten/weiter.</p>
+      </div>
+
       <div class="pult">
         <div class="anzeige">
           <div class="uhr" data-feld="uhr">0:00:00</div>
@@ -255,9 +281,11 @@
         <div class="ki-leiste" data-feld="ki-leiste" hidden>
           <button type="button" class="knopf ki klein" data-aktion="ki-shownotes">✨ Shownotes schreiben</button>
           <button type="button" class="knopf ki klein" data-aktion="ki-titel">✨ Titel vorschlagen</button>
-          <button type="button" class="knopf ki klein" data-aktion="ki-aufnahme" data-feld="ki-aufnahme">✨ Aus der Aufnahme: Shownotes, Kapitel, Titel</button>
+          <button type="button" class="knopf ki klein" data-aktion="ki-aufnahme" data-feld="ki-aufnahme">✨ Aus der Aufnahme: Text, Shownotes, Kapitel, Titel</button>
           <div class="vorschlaege" data-feld="ki-vorschlaege"></div>
         </div>
+      <label>📝 Gesprochener Text <span class="leise klein">– steht öffentlich zum Mitlesen an der Folge (Transkript)</span>
+        <textarea name="sprechtext" data-feld="sprechtext" rows="8" maxlength="300000" placeholder="Was in der Aufnahme gesagt wird"></textarea></label>
       <h3>Kapitel</h3>
       <div data-feld="kapitel"></div>
       <div class="knoepfe">
@@ -376,6 +404,53 @@
   </section>
 </template>
 
+<template id="t-zeitungen">
+  <section>
+    <h1>📰 Zeitung</h1>
+    <p class="leise">Schreib Artikel, füg Bilder ein – das Studio setzt alles wie eine echte Zeitung. Mit einem Knopf wird sie gedruckt (oder als PDF gespeichert), mit einem anderen erscheint sie auf der Website.</p>
+    <div class="knoepfe"><button class="knopf primaer" data-aktion="neue-ausgabe">+ Neue Ausgabe</button>
+      <a class="knopf leicht" href="/zeitung/" target="_blank" rel="noopener">Zeitung auf der Website ↗</a></div>
+    <div data-feld="liste"></div>
+  </section>
+</template>
+
+<template id="t-zeitung">
+  <section data-ansicht="zeitung">
+    <p><a href="#" data-aktion="zurueck">← alle Ausgaben</a></p>
+    <div class="zeitung-raster">
+      <div class="karte zeitung-editor">
+        <div class="zeitung-titel"><h1>Ausgabe bearbeiten</h1>
+          <span class="etikett" data-feld="stand"></span></div>
+        <p class="leise klein" data-feld="speicherstand" role="status">Wird automatisch gespeichert.</p>
+        <form class="formular" data-feld="form">
+          <label>Name der Zeitung <input name="name" maxlength="80" placeholder="z. B. Der Dorfbote"></label>
+          <label>Untertitel <input name="untertitel" maxlength="160" placeholder="z. B. Neues aus unserem Viertel"></label>
+          <div class="zwei">
+            <label>Nummer <input name="nummer" maxlength="30" placeholder="Nr. 1"></label>
+            <label>Datum <input name="datum" maxlength="60"></label>
+          </div>
+          <h2>Artikel</h2>
+          <p class="leise klein">Der erste Artikel ist der <b>Aufmacher</b> – er steht groß oben. Mit ↑ ↓ änderst du die Reihenfolge.</p>
+          <div data-feld="artikel" class="artikel-liste"></div>
+          <button type="button" class="knopf leicht" data-aktion="artikel-neu">+ Artikel hinzufügen</button>
+          <div class="knoepfe zeitung-knoepfe">
+            <button type="button" class="knopf primaer" data-aktion="drucken">🖨 Drucken</button>
+            <button type="button" class="knopf" data-aktion="veroeffentlichen" data-feld="veroeffentlichen">Veröffentlichen</button>
+            <button type="button" class="knopf leicht" data-aktion="zurueckziehen" data-feld="zurueckziehen" hidden>Zurückziehen</button>
+            <a class="knopf leicht" data-feld="ansehen" target="_blank" rel="noopener" hidden>Ansehen ↗</a>
+            <button type="button" class="knopf gefahr" data-aktion="loeschen">Löschen</button>
+          </div>
+          <p class="leise klein">Drucken: Im Druckfenster kannst du auch „Als PDF speichern“ wählen.</p>
+        </form>
+      </div>
+      <div class="zeitung-vorschau">
+        <h2>Vorschau <span class="leise klein">– so wird sie gedruckt</span></h2>
+        <div data-feld="vorschau"></div>
+      </div>
+    </div>
+  </section>
+</template>
+
 <dialog id="netz">
   <form method="dialog" class="dialog">
     <h2>Ins Netz stellen</h2>
@@ -392,6 +467,7 @@
   </form>
 </dialog>
 
+<div id="druckbereich" aria-hidden="true"></div>
 <div id="toast" class="toast" role="status" hidden></div>
 <div id="auftraege" class="auftraege" aria-live="polite"></div>
 <script src="/studio.js"></script>

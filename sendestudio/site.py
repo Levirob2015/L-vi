@@ -15,7 +15,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from . import radio
+from . import radio, zeitung
 from .feed import dauer_text
 from .store import ARTEN, ki_text
 
@@ -93,7 +93,11 @@ aspect-ratio:1}h1{font-size:1.6rem}}
 .nav{display:flex;gap:4px 16px;flex-wrap:wrap;margin-left:auto;font-size:.95rem}
 .nav a{color:var(--leise);text-decoration:none}
 .nav a:hover,.nav a[aria-current]{color:var(--akzent)}
+details.sprechtext{margin:1.6em 0}
+details.sprechtext summary{cursor:pointer;font-weight:700;font-size:1.1rem}
+details.sprechtext .text{max-height:60vh;overflow:auto;border-left:3px solid var(--linie);padding-left:14px}
 """
+STIL += zeitung.STIL
 
 SEITE_JS = """\
 (function () {
@@ -117,6 +121,11 @@ SEITE_JS = """\
     (navigator.clipboard ? navigator.clipboard.writeText(feld.value) : Promise.reject())
       .catch(function () { document.execCommand("copy"); })
       .then(function () { b.textContent = "Kopiert"; });
+  });
+
+  // Zeitung drucken
+  document.addEventListener("click", function (e) {
+    if (e.target.closest("[data-drucken]")) window.print();
   });
 
   // Radio: dieselbe Rechnung wie sendestudio/radio.py
@@ -274,7 +283,7 @@ def _ki_marke(f: Dict[str, Any]) -> str:
 
 
 def startseite(eintraege: List[Dict[str, Any]], seitentitel: str, *, tiefe: int = 0,
-               nav: Optional[list] = None) -> str:
+               nav: Optional[list] = None, zeitung_da: bool = False) -> str:
     """``eintraege``: Sendungen mit Schluessel ``folgen`` (nur veroeffentlichte).
 
     Im statischen Export ist das die Startseite (``tiefe=0``), auf der
@@ -292,6 +301,10 @@ def startseite(eintraege: List[Dict[str, Any]], seitentitel: str, *, tiefe: int 
 <h2 class="eng"><a href="{w}s/{_e(s["slug"])}/">{_e(s["titel"])}</a></h2>
 <div class="leise">{len(s["folgen"])} {"Folge" if len(s["folgen"]) == 1 else "Folgen"} ·
 neu: {_e(neueste["titel"])}</div></div></div>""")
+    if zeitung_da and not nav:
+        # Im statischen Export gibt es keine Navigation - hier geht's zur Zeitung.
+        karten.append(f'<div class="karte"><h2 class="eng"><a href="{w}zeitung/">📰 Zeitung</a></h2>'
+                      '<div class="leise">Alle Ausgaben lesen und ausdrucken</div></div>')
     if not karten:
         karten.append('<p class="leise">Hier ist noch nichts veröffentlicht.</p>')
     ueberschrift = "Sendungen" if nav else seitentitel
@@ -369,6 +382,12 @@ def folge_seite(s: Dict[str, Any], f: Dict[str, Any], seitentitel: str,
             zeilen.append("<li>" + z + "</li>")
         zeilen = "".join(zeilen)
         musik = f'<h2>Musik</h2><ul class="musik">{zeilen}</ul>'
+    sprechtext = ""
+    if f.get("sprechtext", "").strip():
+        # Was gesprochen wird - zum Mitlesen, fuer Gehoerlose und Suchmaschinen.
+        sprechtext = ('<details class="sprechtext"><summary>Gesprochener Text</summary>'
+                      f'<div class="text">{absaetze(f["sprechtext"])}</div>'
+                      '<p><a href="text.txt">Als Textdatei</a></p></details>')
     inhalt = f"""<p><a href="../">← {_e(s["titel"])}</a></p>
 <span class="marke">{_e(ARTEN[s["art"]])}</span>
 <h1>{_e(f["titel"])}</h1>
@@ -378,6 +397,7 @@ def folge_seite(s: Dict[str, Any], f: Dict[str, Any], seitentitel: str,
 <div class="text">{absaetze(f["beschreibung"])}</div>
 {kapitel}
 {musik}
+{sprechtext}
 <p><a href="{w}medien/{_e(f["datei"])}" download>Datei herunterladen</a></p>"""
     bild = f"{basis_url.rstrip('/')}/medien/{s['cover']}" if basis_url and s["cover"] else ""
     return _rahmen(f"{f['titel']} – {s['titel']}", inhalt, 3, seitentitel=seitentitel, nav=nav,
