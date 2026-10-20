@@ -157,6 +157,8 @@
       $("#login").hidden = true;
       $("#app").hidden = false;
       $("#tresor-anzeige").hidden = !s.tresor;
+      $("#link-leitstand").hidden = !(s.website && s.website.leitstand);
+      $("#link-roboter").hidden = !(s.website && s.website.roboter);
       letzteAktivitaet = Date.now();
       return ladeSendungen().then(function () {
         if (zustand.sendungen.length) zeigeSendung(zustand.aktiv || zustand.sendungen[0].id);
@@ -375,7 +377,8 @@
   // KI
   // ------------------------------------------------------------------
   var AUFTRAG_NAMEN = { text: "✨ KI-Text", aus_aufnahme: "✨ Aus der Aufnahme", cover: "✨ KI-Cover",
-    stimme: "🔊 KI-Stimme", video_aufnahme: "🎬 Video aus Aufnahme", video_ki: "🎬 KI-Video" };
+    stimme: "🔊 KI-Stimme", video_aufnahme: "🎬 Video aus Aufnahme", video_ki: "🎬 KI-Video",
+    musik_ki: "🎵 KI-Musik", musikbett: "🎵 Musik unterlegen" };
 
   function kiFaehig(was) {
     return !!(zustand.status && zustand.status.ki && zustand.status.ki[was]);
@@ -468,6 +471,10 @@
               confirm("Die bisherige Beschreibung durch die KI-Shownotes ersetzen?")) {
             form.elements.beschreibung.value = e.shownotes;
           }
+          if (v.sprechtext && e.transkript && (!v.sprechtext.value.trim() ||
+              confirm("Den gesprochenen Text durch die Abschrift der Aufnahme ersetzen?"))) {
+            v.sprechtext.value = e.transkript;
+          }
           if (e.kapitel.length && (!kapitel.liste().length ||
               confirm(e.kapitel.length + " Kapitel vorgeschlagen – die bisherigen ersetzen?"))) {
             kapitel.setzen(e.kapitel);
@@ -543,6 +550,198 @@
   }
 
   // ------------------------------------------------------------------
+  // Musik
+  // ------------------------------------------------------------------
+  var bibliothek = null; // {musik: [...], lizenzen: [...]}
+  function ladeBibliothek() {
+    return api("GET", "musik").then(function (d) { bibliothek = d; return d; });
+  }
+  function stueckText(m) {
+    return m.titel + (m.kuenstler ? " – " + m.kuenstler : "") + (m.lizenz ? " (" + m.lizenz + ")" : "");
+  }
+  function auswahlFuellen(select) {
+    return ladeBibliothek().then(function (d) {
+      d.musik.forEach(function (m) {
+        if (m.datei) select.appendChild(el("option", { value: m.id, text: stueckText(m) + " · " + zeit(m.dauer) }));
+      });
+      return d;
+    });
+  }
+  function stueck(id) {
+    return (bibliothek ? bibliothek.musik : []).filter(function (m) { return String(m.id) === String(id); })[0];
+  }
+  // Ein Stueck der Bibliothek fuer Web Audio laden (liegt im Tresor - der Server entschluesselt).
+  function stueckPuffer(ctx, m) {
+    return fetch(mediumUrl(m.datei), { credentials: "same-origin" }).then(function (r) {
+      if (!r.ok) throw new Error("Musik konnte nicht geladen werden");
+      return r.arrayBuffer();
+    }).then(function (b) { return ctx.decodeAudioData(b); });
+  }
+
+  // Musik-Angaben einer Folge (oeffentlich sichtbar): Titel, Kuenstler, Lizenz, Quelle
+  function musikEditor(behaelter, liste, beiKiMusik) {
+    function malen() {
+      behaelter.textContent = "";
+      if (!liste.length) behaelter.appendChild(el("p", { class: "leise klein", text: "Keine Musik angegeben." }));
+      liste.forEach(function (m, i) {
+        function feld(k, ph) {
+          return el("input", { value: m[k] || "", placeholder: ph, "aria-label": ph, maxlength: "200",
+            oninput: function () { m[k] = this.value; } });
+        }
+        behaelter.appendChild(el("div", { class: "musik-zeile" },
+          feld("titel", "Titel"), feld("kuenstler", "Künstler"), feld("lizenz", "Lizenz"), feld("quelle", "Quelle (https://…)"),
+          el("button", { type: "button", class: "knopf klein leicht", "aria-label": "Angabe entfernen", text: "✕",
+            onclick: function () { liste.splice(i, 1); malen(); } })));
+      });
+      var wahl = el("select", { "aria-label": "Stück aus der Bibliothek übernehmen" },
+        el("option", { value: "", text: "+ aus der Musikbibliothek …" }));
+      (bibliothek ? bibliothek.musik : []).forEach(function (m) { wahl.appendChild(el("option", { value: m.id, text: stueckText(m) })); });
+      wahl.addEventListener("change", function () { var m = stueck(this.value); if (m) api_.hinzu(m); });
+      behaelter.appendChild(el("div", { class: "knoepfe" }, wahl,
+        el("button", { type: "button", class: "knopf klein leicht", text: "+ Angabe", onclick: function () {
+          liste.push({ titel: "", kuenstler: "", lizenz: "", quelle: "" }); malen(); } })));
+    }
+    var api_ = {
+      hinzu: function (m) {
+        var neu = { titel: m.titel, kuenstler: m.kuenstler || "", lizenz: m.lizenz || "", quelle: m.quelle || "" };
+        var da = liste.some(function (x) { return x.titel === neu.titel && x.kuenstler === neu.kuenstler; });
+        if (!da) { liste.push(neu); malen(); }
+        if (m.ki && beiKiMusik) beiKiMusik();
+      },
+      liste: function () { return liste.filter(function (m) { return (m.titel || "").trim(); }); },
+      neuMalen: malen,
+    };
+    malen();
+    if (!bibliothek) ladeBibliothek().then(malen).catch(function () {});
+    return api_;
+  }
+
+  $("#knopf-musik").addEventListener("click", function () { zeigeMusik(); });
+
+  function zeigeMusik() {
+    zustand.aktiv = null;
+    ladeSendungen();
+    var v = vorlage("t-musik");
+    var uf = v["upload-form"];
+    v["karte-ki"].hidden = !kiFaehig("musik");
+    uf.elements.datei.addEventListener("change", function () {
+      var d = this.files[0];
+      if (d && !uf.elements.titel.value) uf.elements.titel.value = d.name.replace(/\.[^.]+$/, "");
+    });
+    uf.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var d = uf.elements.datei.files[0];
+      if (!d) return;
+      var knopf = uf.querySelector("button[type=submit]");
+      knopf.disabled = true;
+      var neu;
+      api("POST", "musik", { titel: uf.elements.titel.value, kuenstler: uf.elements.kuenstler.value,
+        lizenz: uf.elements.lizenz.value, quelle: uf.elements.quelle.value }).then(function (m) {
+        neu = m;
+        return hochladen("musik/" + m.id + "/datei", d, v.fortschritt);
+      }).then(function () { melden("Zur Musikbibliothek hinzugefügt"); zeigeMusik(); })
+        .catch(function (f) {
+          melden(f.message, true); knopf.disabled = false;
+          if (neu) api("DELETE", "musik/" + neu.id).catch(function () {});
+        });
+    });
+    var kf = v["ki-form"];
+    kf.addEventListener("submit", function (e) {
+      e.preventDefault();
+      if (!kf.elements.beschreibung.value.trim()) { melden("Bitte beschreiben, wie es klingen soll", true); return; }
+      beschaeftigt(v["ki-los"], kiAuftrag({ art: "musik_ki", beschreibung: kf.elements.beschreibung.value,
+        titel: kf.elements.titel.value, sekunden: kf.elements.sekunden.value,
+        instrumental: kf.elements.instrumental.checked })).then(function (e) {
+        if (!e) return;
+        melden("KI-Musik „" + e.musik.titel + "“ ist in der Bibliothek");
+        if ($("#inhalt [data-ansicht=musik]")) zeigeMusik();
+      });
+    });
+    v.wurzel.setAttribute("data-ansicht", "musik");
+    ladeBibliothek().then(function (d) {
+      d.lizenzen.forEach(function (l) { v.lizenzen.appendChild(el("option", { value: l })); });
+      if (!d.musik.length) v.liste.appendChild(el("p", { class: "leise", text: "Noch keine Musik. Füge oben ein Stück hinzu." }));
+      d.musik.forEach(function (m) {
+        var karte = el("div", { class: "karte stueck" },
+          el("div", {},
+            el("b", { text: m.titel }), m.ki ? el("span", { class: "etikett ki-marke", text: " ✨ KI" }) : null,
+            el("div", { class: "leise klein", text: [m.kuenstler, m.lizenz, zeit(m.dauer)].filter(Boolean).join(" · ") })),
+          el("div", { class: "knoepfe" },
+            el("button", { class: "knopf klein leicht", text: "Bearbeiten", onclick: function () { bearbeiten(); } }),
+            el("button", { class: "knopf klein gefahr", text: "Löschen", onclick: function () {
+              if (!confirm("„" + m.titel + "“ aus der Bibliothek löschen? Bereits fertige Folgen behalten die Musik.")) return;
+              api("DELETE", "musik/" + m.id).then(function () { melden("Gelöscht"); zeigeMusik(); })
+                .catch(function (f) { melden(f.message, true); });
+            } })),
+          m.datei ? el("audio", { controls: "", preload: "none", src: mediumUrl(m.datei) }) : null);
+        function bearbeiten() {
+          var felder = {};
+          var form = el("form", { class: "formular", style: "grid-column:1/-1" });
+          [["titel", "Titel"], ["kuenstler", "Künstler"], ["lizenz", "Lizenz"], ["quelle", "Quelle (Link)"]].forEach(function (f) {
+            felder[f[0]] = el("input", { value: m[f[0]] || "", maxlength: "200", list: f[0] === "lizenz" ? "lizenzen" : null });
+            form.appendChild(el("label", {}, f[1], felder[f[0]]));
+          });
+          form.appendChild(el("div", { class: "knoepfe" }, el("button", { class: "knopf primaer", type: "submit", text: "Speichern" })));
+          form.addEventListener("submit", function (e) {
+            e.preventDefault();
+            api("PUT", "musik/" + m.id, { titel: felder.titel.value, kuenstler: felder.kuenstler.value,
+              lizenz: felder.lizenz.value, quelle: felder.quelle.value })
+              .then(function () { melden("Gespeichert"); zeigeMusik(); }).catch(function (f) { melden(f.message, true); });
+          });
+          karte.appendChild(form);
+        }
+        v.liste.appendChild(karte);
+      });
+    }).catch(function (f) { melden(f.message, true); });
+    inhalt(v.wurzel);
+  }
+
+  // Hintergrundmusik bei der Aufnahme: wird leiser, sobald jemand spricht.
+  function musikbett(v, r, ctx, ziel, mikroAnalyse) {
+    var laut = v["mb-laut"], ducking = v["mb-ducking"], knopf = $("[data-aktion=mb-start]", v.wurzel);
+    var gain = ctx.createGain(), duck = ctx.createGain();
+    gain.gain.value = parseFloat(laut.value);
+    gain.connect(duck); duck.connect(ziel); duck.connect(ctx.destination);
+    laut.addEventListener("input", function () { gain.gain.value = parseFloat(this.value); });
+    var quelle = null, puffer = null, m = null;
+    function laden() {
+      m = stueck(v["mb-auswahl"].value);
+      puffer = null; knopf.disabled = true;
+      if (!m) return;
+      knopf.textContent = "Lädt …";
+      stueckPuffer(ctx, m).then(function (p) { puffer = p; knopf.disabled = false; knopf.textContent = "▶ Musik starten"; })
+        .catch(function (f) { knopf.textContent = "▶ Musik starten"; melden(f.message, true); });
+    }
+    v["mb-auswahl"].addEventListener("change", function () { if (quelle) { quelle.stop(); } laden(); });
+    knopf.addEventListener("click", function () {
+      if (quelle) { quelle.stop(); return; }
+      if (!puffer) return;
+      quelle = ctx.createBufferSource();
+      quelle.buffer = puffer; quelle.loop = true;
+      quelle.connect(gain);
+      quelle.onended = function () { quelle = null; knopf.textContent = "▶ Musik starten"; };
+      quelle.start();
+      knopf.textContent = "■ Musik stoppen";
+      if (v.musikAngaben) v.musikAngaben.hinzu(m);
+    });
+    laden();
+    var probe = new Float32Array(mikroAnalyse.fftSize), sprichtSeit = 0;
+    r.quellenStoppen = function () { if (quelle) quelle.stop(); };
+    // Wird in jedem Bild der Pegelanzeige aufgerufen
+    return function () {
+      if (!quelle || !ducking.checked) { duck.gain.setTargetAtTime(1, ctx.currentTime, 0.3); return; }
+      mikroAnalyse.getFloatTimeDomainData(probe);
+      var spitze = 0;
+      for (var i = 0; i < probe.length; i++) spitze = Math.max(spitze, Math.abs(probe[i]));
+      var jetzt = ctx.currentTime;
+      if (spitze > 0.06) sprichtSeit = jetzt;
+      // Schnell herunter, langsam wieder herauf - wie ein Radio-Mischpult.
+      if (jetzt - sprichtSeit < 0.6) duck.gain.setTargetAtTime(0.22, jetzt, 0.05);
+      else duck.gain.setTargetAtTime(1, jetzt, 0.5);
+    };
+  }
+
+  // ------------------------------------------------------------------
   // Aufnahme
   // ------------------------------------------------------------------
   var rec = null; // laufende Studio-Sitzung
@@ -572,7 +771,21 @@
     var v = vorlage("t-aufnahme");
     var kapitel = kapitelEditor(v.kapitel, []);
     kiLeiste(v, s, kapitel, null);
+    v.musikAngaben = musikEditor(v["musik-angaben"], [], function () { kiAngabe(v.form, "musik"); });
+    auswahlFuellen(v["mb-auswahl"]).catch(function () {});
     var ergebnis = null; // { blob, dauer }
+    v.prompterApi = teleprompter(v);
+    v["ki-sprechtext-zeile"].hidden = !kiFaehig("text");
+    $("[data-aktion=ki-sprechtext]", v.wurzel).addEventListener("click", function () {
+      if (!v.sprechtext.value.trim()) { melden("Bitte zuerst ein paar Stichpunkte ins Feld schreiben", true); return; }
+      beschaeftigt(this, kiText("skript", { thema: v.sprechtext.value, dauer_minuten: 5,
+        titel: v.form.elements.titel.value }, s.id)).then(function (text) {
+        if (text === undefined) return;
+        v.sprechtext.value = text;
+        v.sprechtext.dispatchEvent(new Event("input"));
+        kiAngabe(v.form, "text");
+      });
+    });
 
     $("[data-aktion=zurueck]", v.wurzel).addEventListener("click", function (e) { e.preventDefault(); zeigeSendung(s.id); });
     $("[data-aktion=kapitel-neu]", v.wurzel).addEventListener("click", function () { kapitel.neu(0); });
@@ -632,6 +845,8 @@
         beschreibung: v.form.elements.beschreibung.value,
         kapitel: kapitel.liste(),
         ki: kiAngabenLesen(v.form),
+        musik: v.musikAngaben.liste(),
+        sprechtext: v.sprechtext.value,
       }).then(function (f) {
         folge = f;
         return hochladen("folgen/" + f.id + "/medium?normalisieren=" + normalisieren +
@@ -695,6 +910,9 @@
       var analyse = ctx.createAnalyser();
       analyse.fftSize = 1024;
       ctx.createMediaStreamSource(q.mikro).connect(mikroGain);
+      var mikroAnalyse = ctx.createAnalyser();
+      mikroAnalyse.fftSize = 1024;
+      mikroGain.connect(mikroAnalyse);
       mikroGain.connect(ziel);
       mikroGain.connect(analyse);
       jingleGain.connect(ziel);
@@ -729,9 +947,12 @@
       r.vergangen = function () { return summe + (seit ? (performance.now() - seit) / 1000 : 0); };
       r.uhrUhr = setInterval(function () { v.uhr.textContent = zeit(r.vergangen()); }, 250);
 
+      var musikDucken = musikbett(v, r, ctx, ziel, mikroAnalyse);
+
       // Pegelanzeige
       var puffer = new Float32Array(analyse.fftSize);
       (function pegel() {
+        musikDucken();
         analyse.getFloatTimeDomainData(puffer);
         var spitze = 0;
         for (var i = 0; i < puffer.length; i++) spitze = Math.max(spitze, Math.abs(puffer[i]));
@@ -749,21 +970,25 @@
         v.zustand.textContent = "Aufnahme läuft";
         $("#onair").classList.add("an");
         kapitel.neu(0, "Anfang");
+        v.prompterApi.start();
       });
       pause.addEventListener("click", function () {
         if (r.recorder.state === "recording") {
           r.recorder.pause(); summe = r.vergangen(); seit = null;
           pause.textContent = "Weiter"; v.zustand.textContent = "Pausiert";
           $("#onair").classList.remove("an");
+          v.prompterApi.halt();
         } else {
           r.recorder.resume(); seit = performance.now();
           pause.textContent = "Pause"; v.zustand.textContent = "Aufnahme läuft";
           $("#onair").classList.add("an");
+          v.prompterApi.start();
         }
       });
       stopp.addEventListener("click", function () {
         summe = r.vergangen(); seit = null;
         v.zustand.textContent = "Wird abgeschlossen …";
+        v.prompterApi.halt();
         r.recorder.stop();
       });
       marke.addEventListener("click", function () {
@@ -772,24 +997,41 @@
         melden("Kapitelmarke bei " + zeit(r.vergangen()));
       });
 
-      jinglePads(v.pads, r, ctx);
+      jinglePads(v, r, ctx);
+      // Der Text steht jetzt im Teleprompter - das Eingabefeld darf zuklappen.
+      if (v.sprechtext.value.trim()) v["sprechtext-block"].open = false;
       v.vorbereitung.hidden = true;
       v.pult.hidden = false;
       v.details.hidden = false;
     });
   }
 
-  function jinglePads(behaelter, r, ctx) {
+  function jinglePads(v, r, ctx) {
+    var behaelter = v.pads;
     for (var i = 0; i < 6; i++) (function (nr) {
-      var pad = { puffer: null, quelle: null };
+      var pad = { puffer: null, quelle: null, stueck: null };
       var knopf = el("button", { class: "spielen", disabled: "", text: "Pad " + nr });
       var eingabe = el("input", { type: "file", accept: "audio/*", hidden: "" });
       var label = el("label", {}, "Datei laden", eingabe);
+      var wahl = el("select", { "aria-label": "Pad " + nr + " aus der Musikbibliothek" },
+        el("option", { value: "", text: "… oder aus der Bibliothek" }));
+      (bibliothek ? bibliothek.musik : []).forEach(function (m) {
+        if (m.datei) wahl.appendChild(el("option", { value: m.id, text: m.titel }));
+      });
+      wahl.addEventListener("change", function () {
+        var m = stueck(this.value);
+        if (!m) return;
+        knopf.disabled = true; knopf.textContent = "Lädt …";
+        stueckPuffer(ctx, m).then(function (p) {
+          pad.puffer = p; pad.stueck = m;
+          knopf.textContent = m.titel; knopf.title = stueckText(m); knopf.disabled = false;
+        }).catch(function (f) { knopf.textContent = "Pad " + nr; melden(f.message, true); });
+      });
       eingabe.addEventListener("change", function () {
         var d = this.files[0];
         if (!d) return;
         d.arrayBuffer().then(function (b) { return ctx.decodeAudioData(b); }).then(function (puffer) {
-          pad.puffer = puffer;
+          pad.puffer = puffer; pad.stueck = null;
           knopf.textContent = d.name.replace(/\.[^.]+$/, "");
           knopf.title = d.name;
           knopf.disabled = false;
@@ -805,8 +1047,9 @@
         q.start();
         pad.quelle = q;
         knopf.classList.add("laeuft");
+        if (pad.stueck && v.musikAngaben) v.musikAngaben.hinzu(pad.stueck);
       });
-      behaelter.appendChild(el("div", { class: "pad" }, knopf, label));
+      behaelter.appendChild(el("div", { class: "pad" }, knopf, label, wahl));
     })(i + 1);
   }
 
@@ -820,8 +1063,22 @@
     if (p) v.abspieler.appendChild(p);
     v.form.elements.titel.value = f.titel;
     v.form.elements.beschreibung.value = f.beschreibung;
+    v.form.elements.sprechtext.value = f.sprechtext || "";
     kiAngabenSetzen(v.form, f.ki);
     kiLeiste(v, s, kapitel, f);
+    var musikAngaben = musikEditor(v["musik-angaben"], f.musik.map(function (m) { return Object.assign({}, m); }),
+      function () { kiAngabe(v.form, "musik"); });
+    v.unterlegen.hidden = !(f.datei && zustand.status.ki && zustand.status.ki.ffmpeg);
+    if (!v.unterlegen.hidden) auswahlFuellen(v["ub-auswahl"]).catch(function () {});
+    $("[data-aktion=unterlegen]", v.wurzel).addEventListener("click", function () {
+      if (!v["ub-auswahl"].value) { melden("Bitte ein Stück aus der Musikbibliothek wählen", true); return; }
+      beschaeftigt(this, kiAuftrag({ art: "musikbett", folge_id: f.id, musik_id: v["ub-auswahl"].value,
+        lautstaerke: v["ub-laut"].value, ducking: v["ub-ducking"].checked })).then(function (e) {
+        if (!e) return;
+        melden("„" + e.folge.titel + "“ als Entwurf angelegt");
+        aktualisieren(s.id);
+      });
+    });
     v["ki-video"].hidden = !(f.datei && zustand.status.ki && zustand.status.ki.ffmpeg &&
       f.mime.indexOf("video/") !== 0);
     v["ki-video"].addEventListener("click", function () {
@@ -843,6 +1100,8 @@
         beschreibung: v.form.elements.beschreibung.value,
         kapitel: kapitel.liste(),
         ki: kiAngabenLesen(v.form),
+        musik: musikAngaben.liste(),
+        sprechtext: v.form.elements.sprechtext.value,
       }).then(function () { melden("Gespeichert"); zeigeSendung(s.id); })
         .catch(function (e) { melden(e.message, true); });
     });
@@ -857,6 +1116,293 @@
     });
     inhalt(v.wurzel);
   }
+
+  // ------------------------------------------------------------------
+  // Teleprompter: der gesprochene Text laeuft beim Aufnehmen mit
+  // ------------------------------------------------------------------
+  function teleprompter(v) {
+    var fenster = v["prompter-fenster"], text = v["prompter-text"];
+    var lauf = $("[data-aktion=prompter-lauf]", v.wurzel);
+    var pos = 0, laeuft = false, zuletzt = null;
+
+    function groesse() { return parseFloat(v["prompter-groesse"].value); }
+    function zeigen() {
+      text.textContent = v.sprechtext.value;
+      text.style.fontSize = groesse() + "px";
+      v.prompter.hidden = !v.sprechtext.value.trim();
+    }
+    function schritt(t) {
+      if (!laeuft || !fenster.isConnected) return;
+      if (zuletzt !== null) {
+        // Etwa ein ruhiges Sprechtempo; der Regler macht es schneller oder langsamer.
+        var proSekunde = parseFloat(v["prompter-tempo"].value) * 0.4 * groesse();
+        pos = Math.min(pos + (t - zuletzt) / 1000 * proSekunde, fenster.scrollHeight);
+        fenster.scrollTop = pos;
+      }
+      zuletzt = t;
+      requestAnimationFrame(schritt);
+    }
+    function start() {
+      if (laeuft || v.prompter.hidden) return;
+      laeuft = true; zuletzt = null;
+      lauf.textContent = "⏸ Anhalten";
+      requestAnimationFrame(schritt);
+    }
+    function halt() {
+      laeuft = false;
+      lauf.textContent = "▶ Laufen lassen";
+    }
+    function umschalten() { if (laeuft) halt(); else start(); }
+
+    v.sprechtext.addEventListener("input", zeigen);
+    v["prompter-groesse"].addEventListener("input", zeigen);
+    v["prompter-spiegeln"].addEventListener("change", function () {
+      fenster.classList.toggle("gespiegelt", this.checked);
+    });
+    lauf.addEventListener("click", umschalten);
+    fenster.addEventListener("click", umschalten);
+    // Mit dem Mausrad oder Finger nachjustieren
+    fenster.addEventListener("wheel", function (e) {
+      e.preventDefault();
+      pos = Math.max(0, Math.min(pos + e.deltaY, fenster.scrollHeight));
+      fenster.scrollTop = pos;
+    }, { passive: false });
+    $("[data-aktion=prompter-anfang]", v.wurzel).addEventListener("click", function () {
+      pos = 0; fenster.scrollTop = 0;
+    });
+    $("[data-aktion=prompter-vollbild]", v.wurzel).addEventListener("click", function () {
+      if (fenster.requestFullscreen) fenster.requestFullscreen().catch(function () {});
+    });
+    document.addEventListener("keydown", function taste(e) {
+      if (!fenster.isConnected) { document.removeEventListener("keydown", taste); return; }
+      if (document.fullscreenElement === fenster && (e.key === " " || e.key === "Enter")) {
+        e.preventDefault();
+        umschalten();
+      }
+    });
+    zeigen();
+    return { start: start, halt: halt };
+  }
+
+  // ------------------------------------------------------------------
+  // Zeitung: Ausgaben schreiben, setzen, drucken, veroeffentlichen
+  // ------------------------------------------------------------------
+  $("#knopf-zeitung").addEventListener("click", function () { zeigeZeitungen(); });
+
+  function heute() {
+    return new Date().toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  }
+
+  function zeigeZeitungen() {
+    zustand.aktiv = null;
+    ladeSendungen();
+    var v = vorlage("t-zeitungen");
+    var liste = [];
+    v.wurzel.setAttribute("data-ansicht", "zeitungen");
+    $("[data-aktion=neue-ausgabe]", v.wurzel).addEventListener("click", function () {
+      var vorher = liste[0] && liste[0].kopf;
+      beschaeftigt(this, api("POST", "zeitungen", {
+        name: vorher ? vorher.name : "Meine Zeitung", untertitel: "",
+        nummer: "Nr. " + (liste.length + 1), datum: heute(), artikel: [{ ueberschrift: "" }],
+      })).then(function (z) { if (z) zeigeZeitung(z); });
+    });
+    api("GET", "zeitungen").then(function (l) {
+      liste = l;
+      if (!l.length) v.liste.appendChild(el("p", { class: "leise", text: "Noch keine Ausgabe. Leg oben die erste an." }));
+      l.forEach(function (z) {
+        var info = [z.kopf.nummer, z.kopf.datum, z.artikel_anzahl + " Artikel"].filter(Boolean).join(" · ");
+        var knoepfe = el("div", { class: "knoepfe" },
+          el("button", { class: "knopf klein primaer", text: "Bearbeiten", onclick: function () {
+            api("GET", "zeitungen/" + z.id).then(zeigeZeitung).catch(function (f) { melden(f.message, true); });
+          } }));
+        if (z.online) {
+          knoepfe.appendChild(el("a", { class: "knopf klein leicht", href: "/zeitung/" + z.slug + "/",
+            target: "_blank", rel: "noopener", text: "Ansehen ↗" }));
+        }
+        v.liste.appendChild(el("div", { class: "karte ausgabe" },
+          el("div", {},
+            el("span", { class: "etikett " + (z.online ? "online" : "entwurf"), text: z.online ? "Online" : "Entwurf" }),
+            el("h3", { text: z.kopf.name }),
+            el("div", { class: "leise klein", text: info })),
+          knoepfe));
+      });
+    }).catch(function (f) { melden(f.message, true); });
+    inhalt(v.wurzel);
+  }
+
+  function zeigeZeitung(z) {
+    var v = vorlage("t-zeitung");
+    var form = v.form;
+    var KOPF = ["name", "untertitel", "nummer", "datum"];
+    var artikel = z.inhalt.artikel.map(function (a) { return Object.assign({}, a); });
+    var uhr = null, aenderung = 0, gespeichert = 0, vorschauNr = 0;
+    KOPF.forEach(function (k) { form.elements[k].value = z.inhalt[k] || ""; });
+
+    function lesen() {
+      var inhalt_ = { artikel: artikel };
+      KOPF.forEach(function (k) { inhalt_[k] = form.elements[k].value; });
+      return inhalt_;
+    }
+    function stand() {
+      v.stand.textContent = z.online ? "Online" : "Entwurf";
+      v.stand.className = "etikett " + (z.online ? "online" : "entwurf");
+      v.veroeffentlichen.hidden = z.online;
+      v.zurueckziehen.hidden = !z.online;
+      v.ansehen.hidden = !z.online;
+      if (z.online) v.ansehen.href = "/zeitung/" + z.slug + "/";
+    }
+    function vorschau() {
+      var nr = ++vorschauNr;
+      return api("POST", "zeitungen/vorschau", lesen()).then(function (r) {
+        // Nur die neueste Antwort zeigen - Antworten koennen sich ueberholen.
+        if (nr === vorschauNr) v.vorschau.innerHTML = r.html;  // vom Server gesetzt und maskiert
+      });
+    }
+    function speichern() {
+      clearTimeout(uhr); uhr = null;
+      var nr = aenderung;
+      v.speicherstand.textContent = "Speichert …";
+      return api("PUT", "zeitungen/" + z.id, lesen()).then(function (neu) {
+        z = neu; gespeichert = Math.max(gespeichert, nr);
+        v.speicherstand.textContent = z.online ? "✓ Gespeichert – Änderungen sind sofort online."
+          : "✓ Gespeichert – verschlüsselt, bis du veröffentlichst.";
+        stand();
+      }, function (f) { v.speicherstand.textContent = f.message; melden(f.message, true); throw f; });
+    }
+    function geaendert() {
+      aenderung++;
+      v.speicherstand.textContent = "Änderungen …";
+      clearTimeout(uhr);
+      uhr = setTimeout(function () {
+        speichern().catch(function () {});
+        vorschau().catch(function () {});
+      }, 700);
+    }
+    // Vor jedem Knopf erst Ungespeichertes sichern.
+    function gesichert() { return uhr || aenderung > gespeichert ? speichern() : Promise.resolve(); }
+
+    function tauschen(i, j) {
+      var a = artikel[i]; artikel[i] = artikel[j]; artikel[j] = a;
+      malen(); geaendert();
+    }
+
+    function artikelKarte(a, i) {
+      function feld(k, titel, attrs, mehrzeilig) {
+        var e = el(mehrzeilig ? "textarea" : "input", attrs);
+        e.value = a[k] || "";
+        e.addEventListener("input", function () { a[k] = e.value; geaendert(); });
+        return el("label", {}, titel, e);
+      }
+      var bildBereich = el("div", { class: "artikel-bild" });
+      function bildMalen() {
+        bildBereich.textContent = "";
+        if (a.bild) bildBereich.appendChild(el("img", { src: mediumUrl(a.bild), alt: "" }));
+        var eingabe = el("input", { type: "file", accept: "image/jpeg,image/png,image/webp", hidden: "" });
+        eingabe.addEventListener("change", function () {
+          var d = this.files[0];
+          if (!d) return;
+          melden("Bild wird hochgeladen …");
+          hochladen("zeitungen/bild", d).then(function (r) {
+            a.bild = r.bild;
+            bildMalen();
+            aenderung++;
+            return speichern();
+          }).then(vorschau).catch(function (f) { melden(f.message, true); });
+        });
+        bildBereich.appendChild(el("label", { class: "knopf klein" }, a.bild ? "Anderes Bild" : "🖼 Bild einfügen", eingabe));
+        if (a.bild) {
+          bildBereich.appendChild(el("button", { type: "button", class: "knopf klein leicht", text: "Bild entfernen",
+            onclick: function () { a.bild = ""; bildMalen(); geaendert(); } }));
+        }
+      }
+      bildMalen();
+      var letzter = i === artikel.length - 1;
+      return el("div", { class: "artikel" },
+        el("div", { class: "artikel-kopf" },
+          el("b", { text: i === 0 ? "Aufmacher" : "Artikel " + (i + 1) }),
+          el("div", { class: "knoepfe" },
+            el("button", { type: "button", class: "knopf klein leicht", text: "↑", title: "Nach oben",
+              "aria-label": "Nach oben", disabled: i === 0 ? "" : null, onclick: function () { tauschen(i, i - 1); } }),
+            el("button", { type: "button", class: "knopf klein leicht", text: "↓", title: "Nach unten",
+              "aria-label": "Nach unten", disabled: letzter ? "" : null, onclick: function () { tauschen(i, i + 1); } }),
+            el("button", { type: "button", class: "knopf klein gefahr", text: "✕", title: "Artikel löschen",
+              "aria-label": "Artikel löschen", onclick: function () {
+                if (!confirm("Diesen Artikel löschen?")) return;
+                artikel.splice(i, 1); malen(); geaendert();
+              } }))),
+        el("div", { class: "zwei" },
+          feld("rubrik", "Rubrik", { maxlength: "60", placeholder: "z. B. Lokales" }),
+          feld("autor", "Geschrieben von", { maxlength: "100" })),
+        feld("ueberschrift", "Überschrift", { maxlength: "200" }),
+        feld("unterzeile", "Unterzeile", { maxlength: "300", placeholder: "Ein Satz, worum es geht" }),
+        feld("text", "Text", { maxlength: "50000", rows: "8", placeholder: "Absätze mit einer Leerzeile trennen" }, true),
+        bildBereich,
+        feld("bildtext", "Bildunterschrift", { maxlength: "300" }));
+    }
+
+    function malen() {
+      v.artikel.textContent = "";
+      artikel.forEach(function (a, i) { v.artikel.appendChild(artikelKarte(a, i)); });
+    }
+
+    KOPF.forEach(function (k) { form.elements[k].addEventListener("input", geaendert); });
+    form.addEventListener("submit", function (e) { e.preventDefault(); });
+    $("[data-aktion=artikel-neu]", v.wurzel).addEventListener("click", function () {
+      if (artikel.length >= 60) { melden("Mehr als 60 Artikel passen nicht in eine Ausgabe", true); return; }
+      artikel.push({ rubrik: "", ueberschrift: "", unterzeile: "", autor: "", text: "", bild: "", bildtext: "" });
+      malen(); geaendert();
+      var karten = v.artikel.querySelectorAll(".artikel");
+      karten[karten.length - 1].querySelector("input").focus();
+    });
+    $("[data-aktion=zurueck]", v.wurzel).addEventListener("click", function (e) {
+      e.preventDefault();
+      gesichert().then(zeigeZeitungen, function () {});
+    });
+    $("[data-aktion=drucken]", v.wurzel).addEventListener("click", function () {
+      beschaeftigt(this, gesichert().then(vorschau).then(function () { drucken(v.vorschau.innerHTML); }));
+    });
+    v.veroeffentlichen.addEventListener("click", function () {
+      beschaeftigt(this, gesichert().then(function () {
+        return api("POST", "zeitungen/" + z.id + "/veroeffentlichen");
+      }).then(function (neu) {
+        z = neu; stand();
+        v.speicherstand.textContent = "Ist online!";
+        melden("Die Zeitung ist online!");
+      }));
+    });
+    v.zurueckziehen.addEventListener("click", function () {
+      beschaeftigt(this, gesichert().then(function () {
+        return api("POST", "zeitungen/" + z.id + "/zurueckziehen");
+      }).then(function (neu) { z = neu; stand(); melden("Offline genommen"); }));
+    });
+    $("[data-aktion=loeschen]", v.wurzel).addEventListener("click", function () {
+      if (!confirm("Diese Ausgabe mit allen Artikeln und Bildern endgültig löschen?")) return;
+      clearTimeout(uhr); uhr = null;
+      api("DELETE", "zeitungen/" + z.id).then(function () { melden("Gelöscht"); zeigeZeitungen(); })
+        .catch(function (f) { melden(f.message, true); });
+    });
+
+    stand();
+    malen();
+    vorschau().catch(function (f) { melden(f.message, true); });
+    inhalt(v.wurzel);
+  }
+
+  // Drucken: nur die Zeitung, ohne Studio drumherum (siehe studio.css).
+  function drucken(html) {
+    var bereich = $("#druckbereich");
+    bereich.innerHTML = html;  // vom Server gesetzt und maskiert
+    document.body.classList.add("druckt");
+    var bilder = Array.prototype.map.call(bereich.querySelectorAll("img"), function (b) {
+      return b.complete ? null : new Promise(function (ok) { b.onload = b.onerror = ok; });
+    });
+    // Erst drucken, wenn die Bilder geladen sind - sonst fehlen sie auf dem Papier.
+    return Promise.all(bilder).then(function () { window.print(); });
+  }
+  window.addEventListener("afterprint", function () {
+    document.body.classList.remove("druckt");
+    $("#druckbereich").textContent = "";
+  });
 
   // ------------------------------------------------------------------
   // Ins Netz stellen

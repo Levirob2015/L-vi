@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sendestudio</title>
 <link rel="stylesheet" href="/studio.css">
+<link rel="stylesheet" href="/zeitung.css">
 </head>
 <body>
 
@@ -31,7 +32,9 @@
       <span class="schloss" id="tresor-anzeige" title="Unveröffentlichte Aufnahmen liegen nur verschlüsselt auf dem Server" hidden>🔒 Entwürfe verschlüsselt</span></div>
     <nav>
       <button class="knopf" id="knopf-netz">Ins Netz stellen</button>
-      <a class="knopf leicht" id="link-oeffentlich" href="/" target="_blank" rel="noopener">Öffentliche Seite ↗</a>
+      <a class="knopf leicht" id="link-oeffentlich" href="/" target="_blank" rel="noopener">Website ↗</a>
+      <a class="knopf leicht" id="link-leitstand" href="/leitstand/" hidden>🛡 Leitstand</a>
+      <a class="knopf leicht" id="link-roboter" href="/roboter/" target="_blank" rel="noopener" hidden>🤖 Roboter ↗</a>
       <button class="knopf leicht" id="knopf-abmelden">Abmelden</button>
     </nav>
   </header>
@@ -41,6 +44,8 @@
       <h2>Sendungen</h2>
       <ul id="sendungsliste" class="liste"></ul>
       <button class="knopf primaer breit" id="knopf-neue-sendung">+ Neue Sendung</button>
+      <button class="knopf leicht breit" id="knopf-musik">🎵 Musikbibliothek</button>
+      <button class="knopf leicht breit" id="knopf-zeitung">📰 Zeitung</button>
     </aside>
 
     <main id="inhalt" class="inhalt"></main>
@@ -152,6 +157,15 @@
     <p><a href="#" data-aktion="zurueck">← zurück</a></p>
     <h1>Neue Folge</h1>
 
+    <details class="sprechtext-block" data-feld="sprechtext-block" open>
+      <summary>📝 Gesprochener Text <span class="leise klein">– freiwillig</span></summary>
+      <p class="leise klein">Schreib auf, was du sagen willst. Beim Aufnehmen läuft er als Teleprompter mit, und nach dem Veröffentlichen steht er zum Mitlesen an der Folge.</p>
+      <textarea data-feld="sprechtext" rows="7" maxlength="300000" placeholder="Hallo und herzlich willkommen …"></textarea>
+      <div class="knoepfe" data-feld="ki-sprechtext-zeile" hidden>
+        <button type="button" class="knopf ki klein" data-aktion="ki-sprechtext">✨ Aus Stichpunkten einen Sprechtext machen</button>
+      </div>
+    </details>
+
     <div data-feld="vorbereitung">
       <div class="zwei">
         <label>Quelle
@@ -169,6 +183,21 @@
 
     <div data-feld="pult" hidden>
       <video data-feld="vorschau" class="vorschau" muted playsinline hidden></video>
+      <div class="prompter" data-feld="prompter" hidden>
+        <div class="prompter-fenster" data-feld="prompter-fenster" title="Antippen: anhalten / weiter">
+          <div class="prompter-text" data-feld="prompter-text"></div>
+        </div>
+        <div class="prompter-regler">
+          <button type="button" class="knopf klein" data-aktion="prompter-lauf">▶ Laufen lassen</button>
+          <button type="button" class="knopf klein leicht" data-aktion="prompter-anfang">⏮ Anfang</button>
+          <label>Tempo <input type="range" min="0.2" max="4" step="0.1" value="1" data-feld="prompter-tempo"></label>
+          <label>Schrift <input type="range" min="22" max="90" step="2" value="38" data-feld="prompter-groesse"></label>
+          <label class="haken"><input type="checkbox" data-feld="prompter-spiegeln"> Spiegeln</label>
+          <button type="button" class="knopf klein leicht" data-aktion="prompter-vollbild">⛶ Vollbild</button>
+        </div>
+        <p class="leise klein">Teleprompter: läuft mit der Aufnahme los und hält bei Pause an. Leertaste im Vollbild: anhalten/weiter.</p>
+      </div>
+
       <div class="pult">
         <div class="anzeige">
           <div class="uhr" data-feld="uhr">0:00:00</div>
@@ -187,8 +216,17 @@
         </div>
       </div>
 
+      <h2>Hintergrundmusik</h2>
+      <p class="leise klein">Läuft leise unter deiner Stimme und wird automatisch leiser, sobald du sprichst – wie im Radio. Stücke kommen aus der Musikbibliothek.</p>
+      <div class="musikbett">
+        <select data-feld="mb-auswahl" aria-label="Stück für die Hintergrundmusik"><option value="">– Stück wählen –</option></select>
+        <label class="regler-zeile">Lautstärke <input type="range" min="0" max="1" step="0.05" value="0.35" data-feld="mb-laut"></label>
+        <label class="haken"><input type="checkbox" data-feld="mb-ducking" checked> Automatisch leiser beim Sprechen</label>
+        <button class="knopf" type="button" data-aktion="mb-start" disabled>▶ Musik starten</button>
+      </div>
+
       <h2>Jingles &amp; Einspieler</h2>
-      <p class="leise klein">Datei laden, dann antippen – sie wird live in die Aufnahme gemischt.</p>
+      <p class="leise klein">Datei laden oder aus der Musikbibliothek wählen, dann antippen – wird live in die Aufnahme gemischt.</p>
       <div class="pads" data-feld="pads"></div>
     </div>
 
@@ -210,11 +248,14 @@
         <h3>Kapitel</h3>
         <div data-feld="kapitel"></div>
         <button type="button" class="knopf leicht klein" data-aktion="kapitel-neu">+ Kapitel</button>
+        <h3>Verwendete Musik <span class="leise klein">– steht öffentlich an der Folge</span></h3>
+        <div data-feld="musik-angaben"></div>
         <fieldset class="ki-angaben">
           <legend>KI-Anteile <span class="leise klein">– werden öffentlich gekennzeichnet</span></legend>
           <label><input type="checkbox" name="ki" value="text"> Text</label>
           <label><input type="checkbox" name="ki" value="stimme"> Stimme</label>
           <label><input type="checkbox" name="ki" value="bild"> Bilder</label>
+          <label><input type="checkbox" name="ki" value="musik"> Musik</label>
           <label><input type="checkbox" name="ki" value="video"> Video</label>
         </fieldset>
         <label class="haken" data-feld="normalisieren-zeile"><input type="checkbox" name="normalisieren" checked> Lautstärke angleichen (−16 LUFS, Podcast-Standard)</label>
@@ -240,20 +281,35 @@
         <div class="ki-leiste" data-feld="ki-leiste" hidden>
           <button type="button" class="knopf ki klein" data-aktion="ki-shownotes">✨ Shownotes schreiben</button>
           <button type="button" class="knopf ki klein" data-aktion="ki-titel">✨ Titel vorschlagen</button>
-          <button type="button" class="knopf ki klein" data-aktion="ki-aufnahme" data-feld="ki-aufnahme">✨ Aus der Aufnahme: Shownotes, Kapitel, Titel</button>
+          <button type="button" class="knopf ki klein" data-aktion="ki-aufnahme" data-feld="ki-aufnahme">✨ Aus der Aufnahme: Text, Shownotes, Kapitel, Titel</button>
           <div class="vorschlaege" data-feld="ki-vorschlaege"></div>
         </div>
+      <label>📝 Gesprochener Text <span class="leise klein">– steht öffentlich zum Mitlesen an der Folge (Transkript)</span>
+        <textarea name="sprechtext" data-feld="sprechtext" rows="8" maxlength="300000" placeholder="Was in der Aufnahme gesagt wird"></textarea></label>
       <h3>Kapitel</h3>
       <div data-feld="kapitel"></div>
       <div class="knoepfe">
         <button type="button" class="knopf leicht klein" data-aktion="kapitel-neu">+ Kapitel</button>
         <button type="button" class="knopf leicht klein" data-aktion="kapitel-hier">⚑ Kapitel an aktueller Stelle</button>
       </div>
+      <h3>Verwendete Musik <span class="leise klein">– steht öffentlich an der Folge</span></h3>
+      <div data-feld="musik-angaben"></div>
+      <div class="ki-block" data-feld="unterlegen" hidden>
+        <h3>🎵 Musik unterlegen</h3>
+        <p class="leise klein">Legt ein Stück aus der Musikbibliothek unter die ganze Aufnahme und wird beim Sprechen automatisch leiser. Es entsteht ein neuer Entwurf, das Original bleibt.</p>
+        <div class="musikbett">
+          <select data-feld="ub-auswahl" aria-label="Musikstück"><option value="">– Stück wählen –</option></select>
+          <label class="regler-zeile">Lautstärke <input type="range" min="0.05" max="1" step="0.05" value="0.3" data-feld="ub-laut"></label>
+          <label class="haken"><input type="checkbox" data-feld="ub-ducking" checked> Automatisch leiser beim Sprechen</label>
+          <button class="knopf" type="button" data-aktion="unterlegen">🎵 Musik unterlegen</button>
+        </div>
+      </div>
       <fieldset class="ki-angaben">
           <legend>KI-Anteile <span class="leise klein">– werden öffentlich gekennzeichnet</span></legend>
           <label><input type="checkbox" name="ki" value="text"> Text</label>
           <label><input type="checkbox" name="ki" value="stimme"> Stimme</label>
           <label><input type="checkbox" name="ki" value="bild"> Bilder</label>
+          <label><input type="checkbox" name="ki" value="musik"> Musik</label>
           <label><input type="checkbox" name="ki" value="video"> Video</label>
         </fieldset>
       <div class="knoepfe">
@@ -263,6 +319,51 @@
       </div>
       <div class="fortschritt" data-feld="fortschritt" hidden><div></div><span></span></div>
     </form>
+  </section>
+</template>
+
+<template id="t-musik">
+  <section>
+    <h1>🎵 Musikbibliothek</h1>
+    <div class="karte hinweis-karte">
+      <b>Welche Musik darf ich verwenden?</b>
+      <p>Nur Musik, an der du die Rechte hast: selbst gemacht, unter freier Lizenz (z. B. CC0, CC BY – dann den Namen nennen) oder gekauft mit Lizenz für Podcasts. <b>Songs aus Spotify, Apple Music oder YouTube gehen nicht</b>: Sie sind kopiergeschützt, und das Abo erlaubt nur privates Hören. Freie Musik gibt es z. B. bei Pixabay Music, im Free Music Archive oder in der YouTube Audio Library – Lizenz jedes Stücks prüfen. Für Webradio mit bekannten Songs braucht es in Deutschland Lizenzen von GEMA und GVL.</p>
+    </div>
+
+    <div class="karte">
+      <h2>Stück hinzufügen</h2>
+      <form class="formular" data-feld="upload-form">
+        <label>Audiodatei <input type="file" accept="audio/*" name="datei" required></label>
+        <div class="zwei">
+          <label>Titel <input name="titel" maxlength="200" required></label>
+          <label>Künstler / Urheber <input name="kuenstler" maxlength="200"></label>
+        </div>
+        <div class="zwei">
+          <label>Lizenz <input name="lizenz" maxlength="200" list="lizenzen" placeholder="z. B. CC BY"></label>
+          <label>Quelle (Link) <input name="quelle" type="url" maxlength="200" placeholder="https://…"></label>
+        </div>
+        <datalist id="lizenzen" data-feld="lizenzen"></datalist>
+        <div class="fortschritt" data-feld="fortschritt" hidden><div></div><span></span></div>
+        <div class="knoepfe"><button class="knopf primaer" type="submit">Hinzufügen</button></div>
+      </form>
+    </div>
+
+    <div class="karte" data-feld="karte-ki" hidden>
+      <h2>✨ Musik mit KI erzeugen</h2>
+      <p class="leise klein">Beschreib Stimmung, Instrumente und Tempo. Erzeugt von ElevenLabs („Eleven Music“) – ob du die Musik veröffentlichen darfst, regeln die Bedingungen deines ElevenLabs-Tarifs.</p>
+      <form class="formular" data-feld="ki-form">
+        <label>Wie soll es klingen? <textarea name="beschreibung" rows="2" maxlength="4000" placeholder="z. B. ruhiges Klavier mit leichtem Regen, warm, langsam – als Intro für einen Nacht-Podcast"></textarea></label>
+        <div class="zwei">
+          <label>Titel <input name="titel" maxlength="200" placeholder="z. B. Nachtfunk-Intro"></label>
+          <label>Länge (Sekunden) <input name="sekunden" type="number" min="3" max="600" step="1" value="20"></label>
+        </div>
+        <label class="haken"><input type="checkbox" name="instrumental" checked> Nur instrumental (ohne Gesang)</label>
+        <div class="knoepfe"><button class="knopf ki" type="submit" data-feld="ki-los">✨ Musik erzeugen</button></div>
+      </form>
+    </div>
+
+    <h2>Stücke</h2>
+    <div data-feld="liste"></div>
   </section>
 </template>
 
@@ -303,6 +404,53 @@
   </section>
 </template>
 
+<template id="t-zeitungen">
+  <section>
+    <h1>📰 Zeitung</h1>
+    <p class="leise">Schreib Artikel, füg Bilder ein – das Studio setzt alles wie eine echte Zeitung. Mit einem Knopf wird sie gedruckt (oder als PDF gespeichert), mit einem anderen erscheint sie auf der Website.</p>
+    <div class="knoepfe"><button class="knopf primaer" data-aktion="neue-ausgabe">+ Neue Ausgabe</button>
+      <a class="knopf leicht" href="/zeitung/" target="_blank" rel="noopener">Zeitung auf der Website ↗</a></div>
+    <div data-feld="liste"></div>
+  </section>
+</template>
+
+<template id="t-zeitung">
+  <section data-ansicht="zeitung">
+    <p><a href="#" data-aktion="zurueck">← alle Ausgaben</a></p>
+    <div class="zeitung-raster">
+      <div class="karte zeitung-editor">
+        <div class="zeitung-titel"><h1>Ausgabe bearbeiten</h1>
+          <span class="etikett" data-feld="stand"></span></div>
+        <p class="leise klein" data-feld="speicherstand" role="status">Wird automatisch gespeichert.</p>
+        <form class="formular" data-feld="form">
+          <label>Name der Zeitung <input name="name" maxlength="80" placeholder="z. B. Der Dorfbote"></label>
+          <label>Untertitel <input name="untertitel" maxlength="160" placeholder="z. B. Neues aus unserem Viertel"></label>
+          <div class="zwei">
+            <label>Nummer <input name="nummer" maxlength="30" placeholder="Nr. 1"></label>
+            <label>Datum <input name="datum" maxlength="60"></label>
+          </div>
+          <h2>Artikel</h2>
+          <p class="leise klein">Der erste Artikel ist der <b>Aufmacher</b> – er steht groß oben. Mit ↑ ↓ änderst du die Reihenfolge.</p>
+          <div data-feld="artikel" class="artikel-liste"></div>
+          <button type="button" class="knopf leicht" data-aktion="artikel-neu">+ Artikel hinzufügen</button>
+          <div class="knoepfe zeitung-knoepfe">
+            <button type="button" class="knopf primaer" data-aktion="drucken">🖨 Drucken</button>
+            <button type="button" class="knopf" data-aktion="veroeffentlichen" data-feld="veroeffentlichen">Veröffentlichen</button>
+            <button type="button" class="knopf leicht" data-aktion="zurueckziehen" data-feld="zurueckziehen" hidden>Zurückziehen</button>
+            <a class="knopf leicht" data-feld="ansehen" target="_blank" rel="noopener" hidden>Ansehen ↗</a>
+            <button type="button" class="knopf gefahr" data-aktion="loeschen">Löschen</button>
+          </div>
+          <p class="leise klein">Drucken: Im Druckfenster kannst du auch „Als PDF speichern“ wählen.</p>
+        </form>
+      </div>
+      <div class="zeitung-vorschau">
+        <h2>Vorschau <span class="leise klein">– so wird sie gedruckt</span></h2>
+        <div data-feld="vorschau"></div>
+      </div>
+    </div>
+  </section>
+</template>
+
 <dialog id="netz">
   <form method="dialog" class="dialog">
     <h2>Ins Netz stellen</h2>
@@ -319,6 +467,7 @@
   </form>
 </dialog>
 
+<div id="druckbereich" aria-hidden="true"></div>
 <div id="toast" class="toast" role="status" hidden></div>
 <div id="auftraege" class="auftraege" aria-live="polite"></div>
 <script src="/studio.js"></script>

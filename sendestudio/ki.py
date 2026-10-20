@@ -6,6 +6,9 @@
   anthropic``. Der Rest des Programms kommt weiter ohne fremde Pakete aus.
 * **Bilder**, **KI-Stimme** und **Transkription** laufen ueber die
   OpenAI-API (oder einen kompatiblen Dienst, ``ki.openai_url``).
+* **Musik** erzeugt ElevenLabs („Eleven Music“, ``ki.elevenlabs_schluessel``).
+  Ob und wie die Musik veroeffentlicht werden darf, regeln die Bedingungen
+  des eigenen ElevenLabs-Tarifs.
 * **Videos** baut das Studio selbst mit ffmpeg aus KI-Bildern und KI-Stimme
   zusammen (siehe :mod:`sendestudio.media`).
 
@@ -159,6 +162,9 @@ class Ki:
     def _openai_schluessel(self) -> str:
         return self.cfg.openai_schluessel or os.environ.get("OPENAI_API_KEY", "")
 
+    def _elevenlabs_schluessel(self) -> str:
+        return self.cfg.elevenlabs_schluessel or os.environ.get("ELEVENLABS_API_KEY", "")
+
     def faehigkeiten(self) -> Dict[str, bool]:
         aktiv = self.cfg.tageslimit > 0
         text = aktiv and anthropic is not None and bool(
@@ -167,6 +173,7 @@ class Ki:
         ffmpeg = media.ffmpeg_verfuegbar()
         return {"text": text, "bild": openai, "stimme": openai, "transkript": openai,
                 "video": openai and ffmpeg, "ffmpeg": ffmpeg,
+                "musik": aktiv and bool(self._elevenlabs_schluessel()),
                 "sdk_fehlt": anthropic is None}
 
     def _gezaehlt(self) -> None:
@@ -241,8 +248,15 @@ class Ki:
         if not schluessel or self.cfg.tageslimit <= 0:
             raise KiFehler("Kein OpenAI-API-Schlüssel eingerichtet (OPENAI_API_KEY oder "
                            "ki.openai_schluessel)", 501)
+        return self._http("OpenAI", self.cfg.openai_url.rstrip("/") + pfad,
+                          {"Authorization": f"Bearer {schluessel}"},
+                          daten=daten, datei=datei, felder=felder, timeout=timeout)
+
+    def _http(self, anbieter: str, url: str, kopf: Dict[str, str], *,
+              daten: Optional[dict] = None, datei: Optional[tuple] = None,
+              felder: Optional[dict] = None, timeout: float = 300.0) -> bytes:
         self._gezaehlt()
-        kopf = {"Authorization": f"Bearer {schluessel}"}
+        kopf = dict(kopf)
         if datei is not None:
             grenze = "----sendestudio" + secrets.token_hex(12)
             teile = []
@@ -259,23 +273,41 @@ class Ki:
         else:
             koerper = json.dumps(daten).encode()
             kopf["Content-Type"] = "application/json"
-        req = urllib.request.Request(self.cfg.openai_url.rstrip("/") + pfad, data=koerper,
-                                     headers=kopf, method="POST")
+        req = urllib.request.Request(url, data=koerper, headers=kopf, method="POST")
         try:
             with urllib.request.urlopen(req, timeout=timeout) as antwort:
                 return antwort.read()
         except urllib.error.HTTPError as f:
-            try:
-                meldung = json.loads(f.read()).get("error", {}).get("message", "")
-            except (ValueError, AttributeError):
-                meldung = ""
+            meldung = _fehlertext(f.read())
             if f.code == 401:
-                raise KiFehler("OpenAI: API-Schlüssel ungültig")
+                raise KiFehler(f"{anbieter}: API-Schlüssel ungültig")
             if f.code == 429:
-                raise KiFehler("OpenAI: Ratenlimit oder Guthaben erschöpft", 429)
-            raise KiFehler(f"OpenAI-Fehler {f.code}: {meldung[:300] or 'unbekannt'}")
+                raise KiFehler(f"{anbieter}: Ratenlimit oder Guthaben erschöpft", 429)
+            raise KiFehler(f"{anbieter}-Fehler {f.code}: {meldung[:300] or 'unbekannt'}")
         except (urllib.error.URLError, OSError) as f:
-            raise KiFehler(f"Keine Verbindung zu OpenAI ({getattr(f, 'reason', f)})")
+            raise KiFehler(f"Keine Verbindung zu {anbieter} ({getattr(f, 'reason', f)})")
+
+    def musik(self, beschreibung: str, sekunden: float, *, instrumental: bool = True) -> bytes:
+        """Erzeugt Musik nach Beschreibung (ElevenLabs, „Eleven Music“). Gibt MP3-Bytes zurueck."""
+        schluessel = self._elevenlabs_schluessel()
+        if not schluessel or self.cfg.tageslimit <= 0:
+            raise KiFehler("Kein ElevenLabs-API-Schlüssel eingerichtet (ELEVENLABS_API_KEY oder "
+                           "ki.elevenlabs_schluessel)", 501)
+        if not beschreibung.strip():
+            raise KiFehler("Bitte beschreiben, wie die Musik klingen soll", 400)
+        if not 3 <= sekunden <= 600:
+            raise KiFehler("Die Länge muss zwischen 3 Sekunden und 10 Minuten liegen", 400)
+        daten: Dict[str, Any] = {"prompt": beschreibung[:4000],
+                                 "music_length_ms": int(sekunden * 1000),
+                                 "force_instrumental": bool(instrumental)}
+        if self.cfg.musik_modell:
+            daten["model_id"] = self.cfg.musik_modell
+        ton = self._http("ElevenLabs", self.cfg.musik_url.rstrip("/") + "/music?output_format=mp3_44100_128",
+                         {"xi-api-key": schluessel, "Accept": "audio/mpeg"}, daten=daten, timeout=900.0)
+        erkannt = media.erkennen(ton[:64])
+        if not erkannt or erkannt[0] != ".mp3":
+            raise KiFehler("ElevenLabs hat keine MP3-Datei geliefert")
+        return ton
 
     def bild(self, beschreibung: str, groesse: str = "1024x1024") -> bytes:
         """Erzeugt ein Bild und gibt die Bilddatei (PNG/JPEG/WebP) zurueck."""
@@ -343,6 +375,21 @@ class Ki:
         segmente = [{"start": float(s.get("start", 0)), "ende": float(s.get("end", 0)),
                      "text": str(s.get("text", ""))} for s in daten.get("segments") or []]
         return {"text": str(daten.get("text", "")), "segmente": segmente}
+
+
+def _fehlertext(roh: bytes) -> str:
+    """Fehlermeldung aus der Antwort eines Anbieters - deren Formate unterscheiden sich."""
+    try:
+        daten = json.loads(roh)
+    except ValueError:
+        return ""
+    fehler = daten.get("error") if isinstance(daten, dict) else None
+    if isinstance(fehler, dict):
+        return str(fehler.get("message", ""))
+    detail = daten.get("detail") if isinstance(daten, dict) else None
+    if isinstance(detail, dict):
+        return str(detail.get("message", ""))
+    return str(detail or fehler or "")
 
 
 def teilen(text: str, laenge: int) -> List[str]:

@@ -82,6 +82,8 @@ class Attrappe:
                 {"created": 1, "data": [{"b64_json": base64.b64encode(png()).decode()}]}).encode()
         if pfad == "/v1/audio/speech":
             return 200, "audio/mpeg", mp3(1.0)
+        if pfad.startswith("/v1/music"):  # ElevenLabs
+            return 200, "audio/mpeg", mp3(min(json.loads(koerper)["music_length_ms"] / 1000, 3))
         if pfad == "/v1/audio/transcriptions":
             return 200, "application/json", json.dumps({
                 "text": "Hallo und willkommen. Heute geht es um Bienen.",
@@ -128,12 +130,14 @@ def attrappe(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     monkeypatch.setenv("ANTHROPIC_BASE_URL", a.url)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-test")
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "el-test")
     yield a
     a.stoppen()
 
 
 def ki_cfg(attrappe, **extra):
-    return KiConfig(**dict({"openai_url": attrappe.url + "/v1"}, **extra))
+    return KiConfig(**dict({"openai_url": attrappe.url + "/v1", "musik_url": attrappe.url + "/v1"},
+                           **extra))
 
 
 # ----------------------------------------------------------------------
@@ -255,6 +259,7 @@ def test_ki_stimme_wird_entwurf_und_gekennzeichnet(studio, attrappe):
     assert a["status"] == "fertig", a
     folge = a["ergebnis"]["folge"]
     assert folge["ki"] == ["text", "stimme"] and not folge["online"]
+    assert folge["sprechtext"] == "Bienen sind wichtig."  # was die Stimme spricht
 
     # Als Entwurf: verschluesselt im Tresor, oeffentlich unsichtbar
     assert os.listdir(studio.studio.cfg.medienordner) == [folge["datei"] + ".tresor"]
@@ -312,7 +317,7 @@ def test_auftraege_pruefen_eingaben_sofort(studio):
 
 
 def test_ohne_schluessel_keine_ki(tmp_path, monkeypatch):
-    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY"):
+    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "ELEVENLABS_API_KEY"):
         monkeypatch.delenv(name, raising=False)
     lauf = Laufend(tmp_path)
     try:
@@ -337,6 +342,7 @@ def test_ki_video_und_video_aus_aufnahme(studio):
     assert video["mime"] == "video/mp4" and video["ki"] == ["text", "stimme", "bild", "video"]
     assert video["titel"] == "Bienen erklärt" and video["dauer"] > 1.5
     assert "Bienen bestäuben Blumen." in video["beschreibung"]
+    assert "Bienen bestäuben Blumen." in video["sprechtext"]
 
     # Video aus einer Tonaufnahme: braucht ein Cover
     _, ton = c.json("POST", f"/api/sendungen/{s['id']}/folgen", {"titel": "Ton"})
@@ -359,3 +365,97 @@ def test_ki_modul_ohne_sdk(monkeypatch):
     assert k.faehigkeiten()["sdk_fehlt"]
     with pytest.raises(KiFehler, match="pip install anthropic"):
         k.schreiben("shownotes", {})
+
+
+# ----------------------------------------------------------------------
+# Musik
+# ----------------------------------------------------------------------
+def test_ki_musik_anfrage(attrappe):
+    ton = Ki(ki_cfg(attrappe)).musik("ruhiges Klavier", 20, instrumental=True)
+    assert media_erkannt(ton) == ".mp3"
+    a = attrappe.anfragen[-1]
+    assert a["pfad"] == "/v1/music?output_format=mp3_44100_128"
+    assert {k.lower(): v for k, v in a["kopf"].items()}["xi-api-key"] == "el-test"
+    daten = json.loads(a["koerper"])
+    assert daten == {"prompt": "ruhiges Klavier", "music_length_ms": 20000, "force_instrumental": True}
+    with pytest.raises(KiFehler, match="zwischen 3 Sekunden"):
+        Ki(ki_cfg(attrappe)).musik("x", 1)
+
+
+def media_erkannt(daten):
+    from sendestudio import media
+    return media.erkennen(daten[:64])[0]
+
+
+def test_musikbibliothek(studio):
+    import sqlite3
+    c = studio.client()
+    status, m = c.json("POST", "/api/musik", {"titel": "Abendlied", "kuenstler": "Anna",
+                                              "lizenz": "CC BY", "quelle": "https://beispiel.org/abend"})
+    assert status == 201
+    assert c.json("POST", "/api/musik", {"titel": "X", "quelle": "javascript:alert(1)"})[0] == 400
+    status, inhalt, _ = c("PUT", f"/api/musik/{m['id']}/datei", roh=mp3(1.0))
+    assert status == 200, inhalt
+    m = json.loads(inhalt)
+    # Musik der Bibliothek ist nie oeffentlich - sie liegt im Tresor
+    assert os.listdir(studio.studio.cfg.medienordner) == [m["datei"] + ".tresor"]
+    assert Client(studio.basis)("GET", "/medien/" + m["datei"])[0] == 404
+    assert c("GET", "/medien/" + m["datei"])[0] == 200
+    liste = c.json("GET", "/api/musik")[1]
+    assert [x["titel"] for x in liste["musik"]] == ["Abendlied"] and "CC BY" in liste["lizenzen"]
+
+    # Musik-Angaben einer Folge: im Entwurf verschluesselt, veroeffentlicht oeffentlich
+    _, s = c.json("POST", "/api/sendungen", {"titel": "Abendfunk"})
+    _, f = c.json("POST", f"/api/sendungen/{s['id']}/folgen", {
+        "titel": "Folge", "musik": [{"titel": "Abendlied", "kuenstler": "Anna", "lizenz": "CC BY",
+                                      "quelle": "https://beispiel.org/abend"}]})
+    roh = sqlite3.connect(os.path.join(studio.studio.cfg.datenordner, "sendestudio.db")).execute(
+        "SELECT musik FROM folgen").fetchone()[0]
+    assert "Abendlied" not in roh
+    assert c.json("PUT", f"/api/folgen/{f['id']}", {"musik": [{"titel": "x", "quelle": "ftp://x"}]})[0] == 400
+    c("PUT", f"/api/folgen/{f['id']}/medium?dauer=1", roh=mp3(1.0))
+    c.json("POST", f"/api/folgen/{f['id']}/veroeffentlichen")
+    _, seite, _ = Client(studio.basis)("GET", "/s/abendfunk/folge/")
+    assert "Abendlied – Anna".encode() in seite and b"(CC BY)" in seite
+    _, feed, _ = Client(studio.basis)("GET", "/s/abendfunk/feed.xml")
+    assert "Musik: Abendlied – Anna (CC BY)".encode() in feed
+
+    assert c.json("DELETE", f"/api/musik/{m['id']}")[0] == 200
+    assert not [n for n in os.listdir(studio.studio.cfg.medienordner) if n.startswith(m["datei"])]
+
+
+def test_ki_musik_landet_in_der_bibliothek(studio):
+    c = studio.client()
+    a = warten(c, c.json("POST", "/api/ki/auftraege", {
+        "art": "musik_ki", "beschreibung": "warmes Klavier", "titel": "Intro", "sekunden": 5})[1])
+    assert a["status"] == "fertig", a
+    m = a["ergebnis"]["musik"]
+    assert m["ki"] == 1 and m["titel"] == "Intro" and m["lizenz"] == "KI-generiert"
+    assert c.json("POST", "/api/ki/auftraege", {"art": "musik_ki", "beschreibung": "x",
+                                                "sekunden": 2})[0] == 400
+
+
+@pytest.mark.skipif(not FFMPEG, reason="braucht ffmpeg")
+def test_musik_unterlegen(studio):
+    from test_sendestudio import wav_bytes
+    c = studio.client()
+    a = warten(c, c.json("POST", "/api/ki/auftraege", {
+        "art": "musik_ki", "beschreibung": "Klavier", "titel": "Teppich", "sekunden": 3})[1])
+    musik = a["ergebnis"]["musik"]
+    _, s = c.json("POST", "/api/sendungen", {"titel": "Abendfunk"})
+    _, f = c.json("POST", f"/api/sendungen/{s['id']}/folgen", {"titel": "Gespräch",
+                                                               "sprechtext": "Hallo zusammen."})
+    c("PUT", f"/api/folgen/{f['id']}/medium?dauer=2", roh=wav_bytes(2.0))
+    assert c.json("POST", "/api/ki/auftraege", {"art": "musikbett", "folge_id": f["id"],
+                                                "musik_id": musik["id"], "lautstaerke": 5})[0] == 400
+    a = warten(c, c.json("POST", "/api/ki/auftraege", {
+        "art": "musikbett", "folge_id": f["id"], "musik_id": musik["id"], "lautstaerke": 0.3})[1], 120)
+    assert a["status"] == "fertig", a
+    neu = a["ergebnis"]["folge"]
+    assert neu["titel"] == "Gespräch (mit Musik)" and neu["ki"] == ["musik"]
+    assert neu["sprechtext"] == "Hallo zusammen."
+    assert neu["musik"] == [{"titel": "Teppich", "kuenstler": "KI (ElevenLabs)",
+                             "lizenz": "KI-generiert", "quelle": ""}]
+    assert neu["dauer"] == pytest.approx(2.0, abs=0.3)
+    # Das Original bleibt
+    assert c.json("GET", f"/api/folgen/{f['id']}")[1]["titel"] == "Gespräch"

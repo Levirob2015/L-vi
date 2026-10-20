@@ -15,7 +15,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from . import radio
+from . import radio, zeitung
 from .feed import dauer_text
 from .store import ARTEN, ki_text
 
@@ -68,13 +68,36 @@ animation:puls 1.4s infinite}
 @keyframes puls{50%{opacity:.25}}
 .programm li.laeuft{font-weight:700;color:var(--akzent)}
 .text p{margin:.6em 0}
+ul.musik{padding-left:1.2em}ul.musik li{margin:.2em 0}
 .ki{display:inline-block;font-size:.8rem;color:var(--leise);border:1px dashed var(--leise);
 border-radius:8px;padding:2px 8px;margin:4px 0}
 h2.eng{margin:.2em 0 .4em}
 footer{margin-top:48px;font-size:.85rem;color:var(--leise)}
 @media (max-width:560px){.sendung{flex-direction:column}.cover.gross{width:100%;height:auto;
 aspect-ratio:1}h1{font-size:1.6rem}}
+/* Startseite und Navigation der ganzen Website */
+.portal-kopf{margin:8px 0 28px}
+.portal-kopf h1{font-size:2.3rem;margin:.1em 0 .2em}
+.portal-kopf p{font-size:1.1rem;color:var(--leise);max-width:42em;margin:0}
+.bereiche{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:14px;margin-bottom:32px}
+.bereich{display:flex;flex-direction:column;gap:6px}
+.bereich .symbol{font-size:1.8rem;line-height:1}
+.bereich h2{margin:.2em 0 0}
+.bereich p{margin:0;color:var(--leise);flex:1}
+.bereich .knopf{align-self:flex-start;margin-top:10px}
+.knopf.zweit{background:transparent;color:var(--akzent);border:1px solid var(--akzent)}
+.neu{list-style:none;padding:0;margin:0}
+.neu li{border-top:1px solid var(--linie);padding:10px 0;display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+.neu li a{font-weight:600;color:var(--text);text-decoration:none}
+.neu li a:hover{color:var(--akzent)}
+.nav{display:flex;gap:4px 16px;flex-wrap:wrap;margin-left:auto;font-size:.95rem}
+.nav a{color:var(--leise);text-decoration:none}
+.nav a:hover,.nav a[aria-current]{color:var(--akzent)}
+details.sprechtext{margin:1.6em 0}
+details.sprechtext summary{cursor:pointer;font-weight:700;font-size:1.1rem}
+details.sprechtext .text{max-height:60vh;overflow:auto;border-left:3px solid var(--linie);padding-left:14px}
 """
+STIL += zeitung.STIL
 
 SEITE_JS = """\
 (function () {
@@ -98,6 +121,11 @@ SEITE_JS = """\
     (navigator.clipboard ? navigator.clipboard.writeText(feld.value) : Promise.reject())
       .catch(function () { document.execCommand("copy"); })
       .then(function () { b.textContent = "Kopiert"; });
+  });
+
+  // Zeitung drucken
+  document.addEventListener("click", function (e) {
+    if (e.target.closest("[data-drucken]")) window.print();
   });
 
   // Radio: dieselbe Rechnung wie sendestudio/radio.py
@@ -186,8 +214,21 @@ def absaetze(text: str) -> str:
 
 
 def _rahmen(titel: str, inhalt: str, tiefe: int, *, seitentitel: str,
-            beschreibung: str = "", bild: str = "", feed: str = "") -> str:
+            beschreibung: str = "", bild: str = "", feed: str = "",
+            nav: Optional[list] = None, nav_aktiv: Optional[str] = None) -> str:
+    """Der gemeinsame Rahmen jeder oeffentlichen Seite.
+
+    ``nav``: Links ``[(Name, Pfad ab Wurzel)]`` im Kopf - auf der ganzen
+    Website (Server), nicht im statischen Export.
+    """
     w = "../" * tiefe
+    navigation = ""
+    if nav:
+        links = []
+        for name, pfad in nav:
+            aktuell = ' aria-current="page"' if pfad == nav_aktiv else ""
+            links.append(f'<a href="{w}{_e(pfad)}"{aktuell}>{_e(name)}</a>')
+        navigation = '<nav class="nav" aria-label="Website">' + "".join(links) + "</nav>"
     meta = [f'<meta property="og:title" content="{_e(titel)}">']
     if beschreibung:
         kurz = beschreibung.strip().split("\n")[0][:200]
@@ -209,7 +250,7 @@ def _rahmen(titel: str, inhalt: str, tiefe: int, *, seitentitel: str,
 </head>
 <body>
 <div class="huelle">
-<header class="kopf"><span class="punkt"></span><a href="{w}">{_e(seitentitel)}</a></header>
+<header class="kopf"><span class="punkt"></span><a href="{w}">{_e(seitentitel)}</a>{navigation}</header>
 {inhalt}
 <footer>Gemacht mit Sendestudio</footer>
 </div>
@@ -241,27 +282,39 @@ def _ki_marke(f: Dict[str, Any]) -> str:
             f'KI-generiert: {_e(ki_text(f["ki"]))}</div>')
 
 
-def startseite(eintraege: List[Dict[str, Any]], seitentitel: str) -> str:
-    """``eintraege``: Sendungen mit Schluessel ``folgen`` (nur veroeffentlichte)."""
+def startseite(eintraege: List[Dict[str, Any]], seitentitel: str, *, tiefe: int = 0,
+               nav: Optional[list] = None, zeitung_da: bool = False) -> str:
+    """``eintraege``: Sendungen mit Schluessel ``folgen`` (nur veroeffentlichte).
+
+    Im statischen Export ist das die Startseite (``tiefe=0``), auf der
+    ganzen Website die Seite ``/sendungen/`` (``tiefe=1``).
+    """
+    w = "../" * tiefe
     karten = []
     for s in eintraege:
         if not s["folgen"]:
             continue
         neueste = s["folgen"][0]
         karten.append(f"""<div class="karte sendung">
-{_cover(s, "")}
+{_cover(s, w)}
 <div><span class="marke">{_e(ARTEN[s["art"]])}</span>
-<h2 class="eng"><a href="s/{_e(s["slug"])}/">{_e(s["titel"])}</a></h2>
+<h2 class="eng"><a href="{w}s/{_e(s["slug"])}/">{_e(s["titel"])}</a></h2>
 <div class="leise">{len(s["folgen"])} {"Folge" if len(s["folgen"]) == 1 else "Folgen"} ·
 neu: {_e(neueste["titel"])}</div></div></div>""")
+    if zeitung_da and not nav:
+        # Im statischen Export gibt es keine Navigation - hier geht's zur Zeitung.
+        karten.append(f'<div class="karte"><h2 class="eng"><a href="{w}zeitung/">📰 Zeitung</a></h2>'
+                      '<div class="leise">Alle Ausgaben lesen und ausdrucken</div></div>')
     if not karten:
         karten.append('<p class="leise">Hier ist noch nichts veröffentlicht.</p>')
-    return _rahmen(seitentitel, f"<h1>{_e(seitentitel)}</h1>\n" + "\n".join(karten), 0,
-                   seitentitel=seitentitel)
+    ueberschrift = "Sendungen" if nav else seitentitel
+    return _rahmen(ueberschrift if not nav else f"Sendungen – {seitentitel}",
+                   f"<h1>{_e(ueberschrift)}</h1>\n" + "\n".join(karten), tiefe,
+                   seitentitel=seitentitel, nav=nav, nav_aktiv="sendungen/")
 
 
 def sendung_seite(s: Dict[str, Any], folgen: List[Dict[str, Any]], seitentitel: str,
-                  basis_url: str = "") -> str:
+                  basis_url: str = "", *, nav: Optional[list] = None) -> str:
     w = "../../"
     feed_rel = "feed.xml"
     feed_abs = f"{basis_url.rstrip('/')}/s/{s['slug']}/feed.xml" if basis_url else ""
@@ -301,12 +354,12 @@ aria-label="Feed-Adresse"><button class="knopf" data-kopieren="feedurl">Kopieren
 <h2>Folgen</h2>
 {"".join(liste)}"""
     bild = f"{basis_url.rstrip('/')}/medien/{s['cover']}" if basis_url and s["cover"] else ""
-    return _rahmen(s["titel"], inhalt, 2, seitentitel=seitentitel,
+    return _rahmen(s["titel"], inhalt, 2, seitentitel=seitentitel, nav=nav,
                    beschreibung=s["beschreibung"], bild=bild, feed=feed_rel)
 
 
 def folge_seite(s: Dict[str, Any], f: Dict[str, Any], seitentitel: str,
-                basis_url: str = "") -> str:
+                basis_url: str = "", *, nav: Optional[list] = None) -> str:
     w = "../../../"
     kapitel = ""
     if f["kapitel"]:
@@ -314,6 +367,27 @@ def folge_seite(s: Dict[str, Any], f: Dict[str, Any], seitentitel: str,
             f'<li><button data-zeit="{k["zeit"]}"><span class="zeit">{dauer_text(int(k["zeit"]))}'
             f'</span><span>{_e(k["titel"])}</span></button></li>' for k in f["kapitel"])
         kapitel = f'<h2>Kapitel</h2><ul class="kapitel">{punkte}</ul>'
+    musik = ""
+    if f.get("musik"):
+        # Nennung der Musik - verlangen viele freie Lizenzen (z.B. CC BY)
+        zeilen = []
+        for m in f["musik"]:
+            z = _e(m["titel"])
+            if m.get("kuenstler"):
+                z += " – " + _e(m["kuenstler"])
+            if m.get("lizenz"):
+                z += ' <span class="leise">(' + _e(m["lizenz"]) + ")</span>"
+            if m.get("quelle"):
+                z += ' · <a href="' + _e(m["quelle"]) + '" rel="nofollow noopener">Quelle</a>'
+            zeilen.append("<li>" + z + "</li>")
+        zeilen = "".join(zeilen)
+        musik = f'<h2>Musik</h2><ul class="musik">{zeilen}</ul>'
+    sprechtext = ""
+    if f.get("sprechtext", "").strip():
+        # Was gesprochen wird - zum Mitlesen, fuer Gehoerlose und Suchmaschinen.
+        sprechtext = ('<details class="sprechtext"><summary>Gesprochener Text</summary>'
+                      f'<div class="text">{absaetze(f["sprechtext"])}</div>'
+                      '<p><a href="text.txt">Als Textdatei</a></p></details>')
     inhalt = f"""<p><a href="../">← {_e(s["titel"])}</a></p>
 <span class="marke">{_e(ARTEN[s["art"]])}</span>
 <h1>{_e(f["titel"])}</h1>
@@ -322,13 +396,16 @@ def folge_seite(s: Dict[str, Any], f: Dict[str, Any], seitentitel: str,
 {_player(f, w)}
 <div class="text">{absaetze(f["beschreibung"])}</div>
 {kapitel}
+{musik}
+{sprechtext}
 <p><a href="{w}medien/{_e(f["datei"])}" download>Datei herunterladen</a></p>"""
     bild = f"{basis_url.rstrip('/')}/medien/{s['cover']}" if basis_url and s["cover"] else ""
-    return _rahmen(f"{f['titel']} – {s['titel']}", inhalt, 3, seitentitel=seitentitel,
+    return _rahmen(f"{f['titel']} – {s['titel']}", inhalt, 3, seitentitel=seitentitel, nav=nav,
                    beschreibung=f["beschreibung"], bild=bild, feed="../feed.xml")
 
 
-def radio_seite(s: Dict[str, Any], folgen: List[Dict[str, Any]], seitentitel: str) -> str:
+def radio_seite(s: Dict[str, Any], folgen: List[Dict[str, Any]], seitentitel: str, *,
+                nav: Optional[list] = None) -> str:
     w = "../../../"
     liste = radio.programm(folgen)
     daten = {
@@ -358,4 +435,4 @@ def radio_seite(s: Dict[str, Any], folgen: List[Dict[str, Any]], seitentitel: st
     inhalt = f"""<p><a href="../">← {_e(s["titel"])}</a></p>
 <h1>{_e(s["titel"])}</h1>
 {hauptteil}"""
-    return _rahmen(f"{s['titel']} – Live", inhalt, 3, seitentitel=seitentitel)
+    return _rahmen(f"{s['titel']} – Live", inhalt, 3, seitentitel=seitentitel, nav=nav)

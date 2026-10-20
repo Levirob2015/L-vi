@@ -1,0 +1,26 @@
+# Sendestudio - die ganze Website hinter Caddy.
+# Caddy holt und erneuert das HTTPS-Zertifikat (Let's Encrypt) selbst.
+# install.sh ersetzt radio.example.de durch deine Domain.
+
+radio.example.de {
+	# Grosse Aufnahmen und Videos hochladen
+	request_body {
+		max_size 4GB
+	}
+	reverse_proxy 127.0.0.1:8790
+	header -Server
+}
+
+# Optional: Der Roboter-Designer unter eigener Unteradresse. Dort kann er
+# sich deinen KI-Schluessel und dein letztes Projekt im Browser merken
+# (unter /roboter/ laeuft er abgeschottet und vergisst beides).
+# Dafuer einen DNS-Eintrag fuer roboter.radio.example.de anlegen, die Seite
+# ablegen und die Zeilen unten aktivieren:
+#   sudo mkdir -p /opt/sendestudio-roboter
+#   sudo cp /opt/sendestudio/lib/python3*/site-packages/sendestudio/static/roboter.html \
+#           /opt/sendestudio-roboter/index.html
+#
+# roboter.radio.example.de {
+# 	root * /opt/sendestudio-roboter
+# 	file_server
+# }

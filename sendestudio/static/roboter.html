@@ -1,0 +1,2054 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ProBot</title>
+<style>
+  :root { --bg:#0f1420; --card:#182033; --line:#2a3550; --text:#e7ecf5; --muted:#93a0b8; --acc:#4fb3ff; --ok:#3ecf8e; --err:#ff6b6b; --warn:#ffc15e; }
+  :root { color-scheme:dark; }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --bg:#f3f5fa; --card:#fff; --line:#d6dcea; --text:#141a26; --muted:#5b6780; --acc:#0a74c9; --ok:#15894f; --err:#c62d2d; --warn:#a86500; color-scheme:light; } }
+  :root[data-theme="light"] { --bg:#f3f5fa; --card:#fff; --line:#d6dcea; --text:#141a26; --muted:#5b6780; --acc:#0a74c9; --ok:#15894f; --err:#c62d2d; --warn:#a86500; color-scheme:light; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui, sans-serif; }
+  header { padding:24px 16px 8px; max-width:1100px; margin:auto; }
+  h1 { margin:0; font-size:28px; } header p { color:var(--muted); margin:4px 0 0; }
+  main { max-width:1100px; margin:auto; padding:16px; display:grid; gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; min-width:0; }
+  .card h2 { margin:0 0 12px; font-size:18px; } .card h3 { margin:14px 0 6px; font-size:16px; }
+  select { max-width:100%; text-overflow:ellipsis; }
+  textarea, input, select { width:100%; background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:10px; font:inherit; }
+  textarea#desc { min-height:110px; resize:vertical; }
+  button { background:var(--acc); color:#fff; border:0; border-radius:8px; padding:10px 16px; font-weight:600; cursor:pointer; font:inherit; font-weight:600; }
+  button.sec { background:transparent; color:var(--text); border:1px solid var(--line); }
+  button:disabled { opacity:.5; cursor:wait; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:800px) { .grid2 { grid-template-columns:1fr; } }
+  #design { background:#fff; border-radius:8px; min-height:260px; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+  #design svg { max-width:100%; height:auto; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); vertical-align:top; }
+  td.num, th.num { text-align:right; white-space:nowrap; }
+  tfoot td { font-weight:700; border:0; }
+  #code { min-height:380px; font:13px/1.45 ui-monospace, Menlo, Consolas, monospace; tab-size:2; white-space:pre; resize:vertical; }
+  .muted { color:var(--muted); font-size:14px; }
+  #status { font-size:14px; } .err { color:var(--err); } .ok { color:var(--ok); } .warn { color:var(--warn); }
+  ol, ul { margin:0; padding-left:20px; } .hidden { display:none !important; }
+  a { color:var(--acc); }
+  .tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+  .tabs button { background:transparent; color:var(--text); border:1px solid var(--line); padding:6px 12px; }
+  .tabs button.on { background:var(--acc); color:#fff; border-color:var(--acc); }
+  #viewer { width:100%; height:340px; background:#dfe6f2; border-radius:8px; touch-action:none; cursor:grab; display:block; }
+  .partlist { display:grid; gap:10px; }
+  .part { border:1px solid var(--line); border-radius:8px; padding:10px; }
+  .part.on { border-color:var(--acc); }
+  .part b { cursor:pointer; }
+  .badge { display:inline-block; font-size:12px; border:1px solid var(--line); border-radius:99px; padding:1px 8px; margin:2px 4px 0 0; color:var(--muted); }
+  #serial { background:#05080d; color:#8ef0a8; font:13px/1.4 ui-monospace, monospace; padding:10px; border-radius:8px; min-height:160px; max-height:320px; overflow:auto; white-space:pre-wrap; }
+  .studio-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:800px) { .studio-grid { grid-template-columns:1fr; } }
+  .shape { display:grid; grid-template-columns:repeat(auto-fill,minmax(70px,1fr)); gap:6px; align-items:end; border:1px solid var(--line); border-radius:8px; padding:8px; }
+  .shape label { font-size:12px; color:var(--muted); display:grid; gap:2px; }
+  .shape input, .shape select, #s-parts input { padding:6px; font-size:14px; }
+  .shape.cut { border-style:dashed; }
+  #s-parts td { padding:3px 2px; }
+  #s-svg, #s-json { font:13px/1.4 ui-monospace, monospace; min-height:180px; }
+  #s-view { width:100%; height:300px; background:#dfe6f2; border-radius:8px; display:block; touch-action:none; }
+  .mode { font-size:13px; padding:4px 10px; border-radius:99px; border:1px solid var(--line); color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🤖 ProBot <span style="font-size:15px;font-weight:500;color:var(--muted)">KI-Roboter-Designer</span></h1>
+  <p>Beschreibe deinen Roboter – die KI entwirft ihn, sagt dir was du brauchst und was es kostet, schreibt den Code, konstruiert 3D-Druckteile und erstellt die Anleitung.</p>
+</header>
+<main>
+  <section class="card" id="keycard">
+    <h2>1. API-Schlüssel</h2>
+    <input id="key" type="password" placeholder="Anthropic API-Key (sk-ant-…)">
+    <p class="muted">Der Schlüssel bleibt nur in deinem Browser und geht direkt an api.anthropic.com (<a href="https://console.anthropic.com" target="_blank" rel="noopener">Schlüssel holen</a>). Ohne Schlüssel kannst du trotzdem den <b>Demo-Roboter</b> ausprobieren.</p>
+  </section>
+
+  <section class="card">
+    <h2>Beschreibe deinen Roboter <span class="mode" id="mode">KI: API-Schlüssel</span></h2>
+    <textarea id="desc" placeholder="z.B. Ein kleiner Roboter auf Rädern, der Hindernissen ausweicht, per Bluetooth gesteuert wird und LED-Augen hat. Budget ca. 60 €."></textarea>
+    <div class="row">
+      <label class="muted">KI:</label>
+      <select id="engine" style="width:auto">
+        <option value="probot">ProBot-KI – gratis, ohne Anmeldung</option>
+        <option value="claude">Claude – beste Qualität, für freie Ideen</option>
+      </select>
+      <button class="sec" id="loadai">Sprach-KI dazuladen (einmalig ca. 1 GB)</button>
+    </div>
+    <p class="muted" id="engineinfo"></p>
+    <div class="row">
+      <label class="muted">Plattform:</label>
+      <select id="platform" style="width:auto">
+        <option>Arduino (C++)</option><option>ESP32 (C++)</option><option>Raspberry Pi (Python)</option><option>micro:bit (MicroPython)</option><option>KI soll wählen</option>
+      </select>
+      <label class="muted">3D-Drucker:</label>
+      <select id="printer" style="width:auto">
+        <option value="n4">Elegoo Neptune 4 / 4 Pro (225×225×265)</option>
+        <option value="n4plus">Elegoo Neptune 4 Plus (320×320×385)</option>
+        <option value="n4max">Elegoo Neptune 4 Max (420×420×480)</option>
+        <option value="n3pro">Elegoo Neptune 3 Pro (225×225×280)</option>
+        <option value="cc2">Elegoo Centauri Carbon 2 + CANVAS – 4 Farben (256×256×256)</option>
+        <option value="cc">Elegoo Centauri Carbon (256×256×256)</option>
+        <option value="mars5">Elegoo Mars 5 Ultra – Resin (153×77×165)</option>
+        <option value="saturn4">Elegoo Saturn 4 Ultra – Resin (218×123×220)</option>
+        <option value="other">Anderer Drucker (200×200×200)</option>
+      </select>
+      <label class="muted"><input type="checkbox" id="want3d" checked style="width:auto"> 3D-Druckteile</label>
+      <button id="go">Roboter entwerfen</button>
+      <button class="sec" id="demo">Demo-Roboter laden (ohne KI)</button>
+      <button class="sec" id="openstudio">🛠 Studio öffnen – selbst bauen</button>
+    </div>
+    <p id="status"></p>
+  </section>
+
+  <div id="result" class="hidden" style="display:grid;gap:16px">
+    <section class="card">
+      <h2 id="rname">Dein Roboter</h2>
+      <p id="rsum"></p>
+      <div class="tabs" id="tabs">
+        <button data-t="t-design" class="on">Design &amp; Kosten</button>
+        <button data-t="t-3d">3D-Druckteile</button>
+        <button data-t="t-guide">Anleitung</button>
+        <button data-t="t-code">Code</button>
+        <button data-t="t-test">Test-Labor</button>
+        <button data-t="t-web">Recherche</button>
+        <button data-t="t-studio">🛠 Studio</button>
+      </div>
+    </section>
+
+    <div id="t-design" class="tab grid2">
+      <section class="card"><h2>Design</h2><div id="design"></div></section>
+      <section class="card">
+        <h2>Teileliste &amp; Kosten</h2>
+        <table>
+          <thead><tr><th>Teil</th><th class="num">Anz.</th><th class="num">Preis</th></tr></thead>
+          <tbody id="parts"></tbody>
+          <tfoot><tr><td>Gesamt (ca.)</td><td></td><td class="num" id="total"></td></tr></tfoot>
+        </table>
+        <p class="muted">Preise sind Schätzungen. 3D-Filament ist mit eingerechnet, falls die KI Druckteile konstruiert hat.</p>
+        <h3>Werkzeug</h3><p id="tools" style="margin:0"></p>
+      </section>
+    </div>
+
+    <div id="t-3d" class="tab grid2 hidden">
+      <section class="card">
+        <h2>3D-Vorschau</h2>
+        <canvas id="viewer"></canvas>
+        <p class="muted">Ziehen zum Drehen, Mausrad/zwei Finger zum Zoomen.</p>
+      </section>
+      <section class="card">
+        <h2>Druckteile</h2>
+        <div class="partlist" id="p3d"></div>
+        <div class="row">
+          <button class="sec" id="gen3d">3D-Teile von der KI (neu) konstruieren lassen</button>
+        </div>
+        <p class="muted">STL-Dateien öffnest du direkt im Slicer (Cura, PrusaSlicer, Bambu Studio). Die .scad-Datei kannst du in OpenSCAD genau anpassen.</p>
+      </section>
+    </div>
+
+    <section id="t-guide" class="tab card hidden">
+      <h2>Anleitung</h2>
+      <div id="guide"></div>
+      <div class="row"><button class="sec" id="dlguide">Anleitung herunterladen (.md)</button></div>
+    </section>
+
+    <section id="t-code" class="tab card hidden">
+      <h2>Code <span class="muted" id="lang"></span></h2>
+      <p class="muted">Du kannst den Code direkt hier bearbeiten. Oder sag der KI, was sie ändern soll.</p>
+      <textarea id="code" spellcheck="false"></textarea>
+      <div class="row">
+        <button class="sec" id="copy">Kopieren</button>
+        <button class="sec" id="dl">Herunterladen</button>
+      </div>
+      <div class="row">
+        <input id="change" placeholder="z.B. Mach den Roboter langsamer und lass die LEDs blinken" style="flex:1;min-width:200px">
+        <button id="fix">KI ändern lassen</button>
+      </div>
+    </section>
+
+    <section id="t-studio" class="tab card hidden">
+      <h2>🛠 Studio – alles selbst gestalten</h2>
+      <p class="muted">Hier baust du deinen Roboter komplett von Hand: Teile und Preise, 3D-Teile Form für Form, Verkabelung, Anleitung, Zeichnung und Code. Alles wird automatisch in deinem Browser gespeichert. Das Test-Labor prüft dein Werk danach mit KI.</p>
+      <div class="row">
+        <button class="sec" id="s-new">Leeres Projekt</button>
+        <button class="sec" id="s-save">Projekt speichern (.json)</button>
+        <label class="sec" style="border:1px solid var(--line);border-radius:8px;padding:10px 16px;cursor:pointer;font-weight:600">Projekt öffnen<input type="file" id="s-open" accept=".json,application/json" hidden></label>
+        <button class="sec" id="s-test">Im Test-Labor prüfen →</button>
+      </div>
+
+      <h3>Name &amp; Beschreibung</h3>
+      <input id="s-name" placeholder="Name des Roboters">
+      <textarea id="s-sum" rows="2" placeholder="Was kann der Roboter?" style="margin-top:8px"></textarea>
+
+      <h3>Teileliste &amp; Kosten</h3>
+      <div style="overflow-x:auto"><table id="s-parts"><thead><tr><th>Teil</th><th class="num">Anz.</th><th class="num">€/Stück</th><th></th></tr></thead><tbody></tbody>
+      <tfoot><tr><td>Gesamt</td><td></td><td class="num" id="s-total"></td><td></td></tr></tfoot></table></div>
+      <div class="row"><button class="sec" id="s-addpart">+ Teil</button></div>
+
+      <h3>3D-Teile</h3>
+      <div class="studio-grid">
+        <div>
+          <div class="row" style="margin-top:0"><select id="s-p3d" style="flex:1"></select><button class="sec" id="s-add3d">+ Neues Teil</button><button class="sec" id="s-del3d">Teil löschen</button></div>
+          <div class="row"><input id="s-p3dname" placeholder="Name des 3D-Teils" style="flex:1"></div>
+          <div id="s-shapes" class="partlist" style="margin-top:10px"></div>
+          <div class="row"><button class="sec" id="s-addbox">+ Quader</button><button class="sec" id="s-addcyl">+ Zylinder</button><button class="sec" id="s-addhole">+ Loch (M3)</button></div>
+        </div>
+        <div>
+          <canvas id="s-view"></canvas>
+          <p class="muted">Ziehen zum Drehen. Gestrichelte Formen sind Ausschnitte (Löcher). Maße in mm, Teil liegt auf z = 0.</p>
+          <div class="row"><button id="s-stl">STL herunterladen</button><button class="sec" id="s-scad">.scad</button></div>
+        </div>
+      </div>
+
+      <div class="studio-grid" style="margin-top:8px">
+        <div><h3>Verkabelung (eine Zeile pro Verbindung)</h3><textarea id="s-wiring" rows="7"></textarea></div>
+        <div><h3>Bauanleitung (ein Schritt pro Zeile)</h3><textarea id="s-steps" rows="7"></textarea></div>
+      </div>
+
+      <h3>Zeichnung (SVG)</h3>
+      <div class="studio-grid">
+        <textarea id="s-svg" spellcheck="false" placeholder="<svg viewBox='0 0 400 300'>…</svg>"></textarea>
+        <div id="s-svgview" style="background:#fff;border-radius:8px;min-height:180px;overflow:hidden"></div>
+      </div>
+
+      <h3>Code</h3>
+      <p class="muted">Der Code steht im Tab „Code“ – dort direkt bearbeiten, kopieren oder herunterladen.</p>
+      <details><summary class="muted" style="cursor:pointer">Für Profis: ganzes Projekt als JSON bearbeiten</summary>
+        <textarea id="s-json" spellcheck="false" style="margin-top:8px"></textarea>
+        <div class="row"><button class="sec" id="s-jsonapply">JSON übernehmen</button></div>
+      </details>
+    </section>
+
+    <section id="t-web" class="tab card hidden">
+      <h2>Recherche im Internet</h2>
+      <p class="muted">ProBot sucht in Wikipedia nach Erklärungen zu deinem Roboter und seinen Teilen und gibt dir Links zu Anleitungen, Videos, Beispiel-Code und aktuellen Preisen. Gratis, ohne Anmeldung.</p>
+      <div class="row">
+        <input id="webq" placeholder="Wonach suchen? z.B. ESP-NOW, Schwarmrobotik, HC-SR04" style="flex:1;min-width:200px">
+        <button id="websearch">Suchen</button>
+      </div>
+      <p id="webstatus" class="muted"></p>
+      <div id="webres" class="partlist"></div>
+      <h3>Weiter suchen</h3>
+      <div id="weblinks" class="row"></div>
+    </section>
+
+    <section id="t-test" class="tab card hidden">
+      <h2>Test-Labor</h2>
+      <p class="muted">Teste deinen Roboter, bevor du ihn baust: Die KI führt den (auch von dir bearbeiteten) Code in Gedanken aus, simuliert die Sensoren und zeigt dir, was im seriellen Monitor erscheinen würde – plus eine Prüfung, ob Code, Teile und Verkabelung zusammenpassen.</p>
+      <input id="scenario" placeholder="Test-Situation, z.B. Ein Hindernis taucht 15 cm vor dem Roboter auf">
+      <div class="row"><button id="runtest">Test starten</button><span class="muted">Mit Claude: echte Simulation. Mit ProBot-KI: sofortiger Schnell-Check.</span><span id="teststatus" class="muted"></span></div>
+      <h3>Serieller Monitor (simuliert)</h3>
+      <div id="serial">– noch kein Test –</div>
+      <h3>Was der Roboter macht</h3><p id="behavior" class="muted">–</p>
+      <h3>Prüfung</h3><ul id="checks"><li class="muted">–</li></ul>
+    </section>
+  </div>
+</main>
+
+<script>
+const MODEL = "claude-sonnet-5";
+const $ = id => document.getElementById(id);
+let current = null, sampleApi = null, downloadsApi = null, sel3d = 0;
+
+try { $("key").value = localStorage.getItem("anthropic_key") || ""; } catch {}
+$("key").addEventListener("change", () => { try { localStorage.setItem("anthropic_key", $("key").value.trim()); } catch {} });
+
+// In claude.ai läuft die Seite ohne API-Schlüssel über Claude selbst.
+if (window.claude?.use) {
+  claude.use("sample").then(s => { if (s) { sampleApi = s; $("keycard").classList.add("hidden"); $("mode").textContent = "KI: Claude (kein Schlüssel nötig)"; } });
+  claude.use("downloads").then(d => { downloadsApi = d; });
+}
+
+/* ---------- KI ---------- */
+const BASE = `Du bist ein erfahrener Robotik-Ingenieur und 3D-Konstrukteur und hilfst Hobby-Bastlern (auch Anfängern). Antworte immer auf Deutsch.
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt (kein Markdown, kein Text drumherum).`;
+
+const PRINTERS = {
+  n4: { name: "Elegoo Neptune 4 / 4 Pro", bed: [225, 225, 265], resin: false },
+  n4plus: { name: "Elegoo Neptune 4 Plus", bed: [320, 320, 385], resin: false },
+  n4max: { name: "Elegoo Neptune 4 Max", bed: [420, 420, 480], resin: false },
+  n3pro: { name: "Elegoo Neptune 3 Pro", bed: [225, 225, 280], resin: false },
+  cc2: { name: "Elegoo Centauri Carbon 2 (CANVAS, 4 Farben)", bed: [256, 256, 256], resin: false, colors: 4 },
+  cc: { name: "Elegoo Centauri Carbon", bed: [256, 256, 256], resin: false },
+  mars5: { name: "Elegoo Mars 5 Ultra (Resin)", bed: [153, 77, 165], resin: true },
+  saturn4: { name: "Elegoo Saturn 4 Ultra (Resin)", bed: [218, 123, 220], resin: true },
+  other: { name: "FDM-Drucker", bed: [200, 200, 200], resin: false }
+};
+const printer = () => PRINTERS[$("printer").value] || PRINTERS.n4;
+function printerRule() {
+  const p = printer(), b = p.bed;
+  return `Zieldrucker: ${p.name}, Bauraum ${b[0]}×${b[1]}×${b[2]} mm – jedes Teil MUSS da hineinpassen (mit 5 mm Rand), sonst in mehrere Teile aufteilen. ` +
+    (p.resin
+      ? `Resin-Drucker (MSLA): "material" z.B. "Elegoo ABS-Like Resin", "infill" = "hohl, 2 mm Wand" oder "massiv", "layer" = "0.05 mm", "supports" meist true. Tipps für CHITUBOX / VoxelDance Tango (Elegoo-Slicer für Resin): Belichtungszeit, Waschen in IPA, Nachhärten. Kleine, präzise Teile bevorzugen.`
+      : (p.colors ? `MEHRFARBIG: Der Drucker kann bis zu ${p.colors} Farben in einem Teil drucken (CANVAS-System). Gib jedem Teil "colors": ["Weiß", "Schwarz", "Rot", …] (max. ${p.colors}, Filamentfarben) und jeder festen Form "color": 1..${p.colors} (Index in "colors", Standard 1). Nutze das sinnvoll: z.B. Augen, Logo, Beschriftungen, farbige Akzente – Farbflächen mind. 0.6 mm dick. In print_guide erklären: in ElegooSlicer alle STL-Dateien eines Teils gleichzeitig laden, als EIN Objekt mit mehreren Teilen übernehmen und jedem Teil den CANVAS-Slot zuweisen. ` : "") + `FDM-Drucker: Einstellungen für ElegooSlicer (bzw. OrcaSlicer/Cura) angeben – z.B. PLA 210 °C Düse / 60 °C Bett, 0.4 mm Düse.`);
+}
+function fitsBed(part) {
+  const lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+  part.shapes.filter(s => !s.cut).forEach(s => { const [a, b] = bounds(s); for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], a[k]); hi[k] = Math.max(hi[k], b[k]); } });
+  const d = hi.map((h, k) => Math.round(h - lo[k])), bed = printer().bed;
+  const ok = (d[0] <= bed[0] && d[1] <= bed[1] || d[1] <= bed[0] && d[0] <= bed[1]) && d[2] <= bed[2];
+  return { ok, size: d.join("×") + " mm" };
+}
+const PARTS3D_SPEC = () => `"parts3d": [{
+  "name": "z.B. Chassis-Platte",
+  "purpose": "wofür das Teil ist und wie es montiert wird",
+  "material": "PLA", "infill": "20%", "layer": "0.2 mm", "supports": false,
+  "filament_g": 35, "print_min": 90,
+  "shapes": [
+    {"type":"box","size":[120,90,3],"at":[0,0,0]},
+    {"type":"cyl","r":1.6,"h":3,"at":[10,10,0],"axis":"z","cut":true}
+  ]
+}]
+Regeln für shapes: Maße in mm. "box": "at" ist die untere linke vordere Ecke, "size" [x,y,z]. "cyl": "at" ist der Mittelpunkt der Grundfläche, "r" Radius, "h" Länge entlang "axis" ("x","y" oder "z"). "cut": true schneidet das Volumen aus (Löcher, Aussparungen) – Schnitte wirken auf alle festen Formen. Jedes Teil liegt flach auf z=0 und ist druckbar ohne oder mit wenig Stützmaterial. Schraublöcher M3 = r 1.6, Wandstärke mind. 2 mm. Maße müssen exakt zu den gekauften Teilen passen (Motoren, Sensoren, Platinen-Lochabstände). ${printerRule()} 2 bis 4 Teile, jedes max. ca. 15 Formen. Nur das JSON, keine Erklärungen.`;
+
+// Schritt 1 ist absichtlich klein (schnell); Code, Anleitung, Zeichnung und 3D laufen danach gleichzeitig.
+const PLAN_SPEC = `Format (kurz und knapp halten!):
+{
+  "name": "kurzer Name des Roboters",
+  "summary": "2-3 Sätze, was der Roboter kann und wie er funktioniert",
+  "parts": [{"name":"Teil","qty":1,"price_eur":4.5,"note":"max. 6 Wörter"}],
+  "tools": ["Lötkolben", "..."],
+  "wiring": ["Motor links IN1 -> Pin 5", "..."],
+  "language": "z.B. Arduino C++",
+  "filename": "z.B. roboter.ino"
+}
+price_eur ist der Stückpreis in Euro (realistische Preise). Die Verkabelung legt alle Pins verbindlich fest. Wenn mehrere gleiche Roboter gebaut werden, gilt qty für alle zusammen.`;
+
+async function askText(prompt, tier = "default", onText) {
+  if (sampleApi) return (await sampleApi(prompt, { modelTier: tier, onText: onText ? u => onText(u.text) : undefined })).text;
+  const key = $("key").value.trim();
+  if (!key) throw new Error("Bitte zuerst den API-Schlüssel eingeben – oder den Demo-Roboter laden.");
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "content-type":"application/json", "x-api-key":key, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" },
+    body: JSON.stringify({ model: MODEL, max_tokens: 32000, messages: [{ role: "user", content: prompt }] })
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error?.message || ("Fehler " + r.status));
+  return data.content.filter(b => b.type === "text").map(b => b.text).join("");
+}
+// Macht aus halb fertigem JSON (beim Streamen) gültiges JSON, damit schon Teile angezeigt werden können.
+function partialJson(t) {
+  const s0 = t.indexOf("{"); if (s0 < 0) return null;
+  let s = t.slice(s0), stack = [], str = false, esc = false, cut = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (str) { if (esc) esc = false; else if (c === "\\") esc = true; else if (c === '"') str = false; continue; }
+    if (c === '"') str = true; else if (c === "{" || c === "[") stack.push(c); else if (c === "}" || c === "]") { stack.pop(); cut = i + 1; } else if (c === ",") cut = i;
+  }
+  if (!stack.length) { try { return JSON.parse(s.slice(0, cut || s.length)); } catch { return null; } }
+  // bis zum letzten vollständigen Element abschneiden und Klammern schließen
+  let body = s.slice(0, cut).replace(/,\s*$/, ""), open = [];
+  str = false; esc = false;
+  for (const c of body) { if (str) { if (esc) esc = false; else if (c === "\\") esc = true; else if (c === '"') str = false; continue; }
+    if (c === '"') str = true; else if (c === "{" || c === "[") open.push(c); else if (c === "}" || c === "]") open.pop(); }
+  body = body.replace(/[,:]\s*$/, "").replace(/,\s*"[^"]*"\s*$/, "");
+  try { return JSON.parse(body + open.reverse().map(c => c === "{" ? "}" : "]").join("")); } catch { return null; }
+}
+async function askJson(prompt, tier, onPartial) {
+  const text = await askText(BASE + "\n\n" + prompt, tier, onPartial ? t => { const j = partialJson(t); if (j) onPartial(j); } : undefined);
+  const s = text.indexOf("{"), e = text.lastIndexOf("}");
+  if (s < 0) throw new Error("Die KI hat keine gültige Antwort geliefert. Bitte nochmal versuchen.");
+  return JSON.parse(text.slice(s, e + 1));
+}
+const slim = r => Object.fromEntries(Object.entries(r).filter(([k]) => k !== "svg" && k[0] !== "_"));
+
+function status(msg, cls = "") { $("status").textContent = msg; $("status").className = cls; }
+const eur = n => (Number(n) || 0).toLocaleString("de-DE", { style:"currency", currency:"EUR" });
+
+/* ---------- Anzeige ---------- */
+// Lockerer HTML-Parser statt strengem XML: kleine Fehler der KI (z.B. "&") machen die Zeichnung nicht kaputt.
+function cleanSvg(svg) {
+  const t = document.createElement("template");
+  t.innerHTML = svg || "";
+  const el = t.content.querySelector("svg");
+  if (!el) return null;
+  el.querySelectorAll("script, foreignObject, iframe").forEach(n => n.remove());
+  [el, ...el.querySelectorAll("*")].forEach(n => [...n.attributes].forEach(a => { if (/^on/i.test(a.name) || /javascript:/i.test(a.value)) n.removeAttribute(a.name); }));
+  if (!el.getAttribute("viewBox")) {
+    const w = parseFloat(el.getAttribute("width")) || 400, h = parseFloat(el.getAttribute("height")) || 300;
+    el.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  }
+  el.setAttribute("width", "100%"); el.removeAttribute("height");
+  el.style.display = "block";
+  return el.outerHTML;
+}
+function showDesign(r) {
+  const html = cleanSvg(r.svg);
+  if (html) { $("design").innerHTML = html; return; }
+  $("design").innerHTML = r._svgBusy
+    ? "<p style='color:#445'>⏳ Die KI zeichnet deinen Roboter…</p>"
+    : "<p style='color:#445;text-align:center;padding:16px'>Die Zeichnung hat nicht geklappt.<br><button id='redraw'>Neu zeichnen</button></p>";
+  const b = $("redraw"); if (b) b.onclick = () => drawSvg(current);
+}
+async function drawSvg(r) {
+  r._svgBusy = true; if (current === r) showDesign(r);
+  try {
+    const t = await askText(`Zeichne diesen Roboter als farbige, saubere SVG-Grafik (Seitenansicht oder schräg von vorne) mit beschrifteten Hauptteilen auf Deutsch.
+Roboter: ${r.name} – ${r.summary}
+Teile: ${(r.parts || []).map(p => p.name).join(", ")}
+Antworte NUR mit dem SVG-Code: <svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">…</svg>. Weißer oder heller Hintergrund, kräftige Farben, max. ca. 60 Elemente, keine Bilder, keine Skripte.`, "default");
+    const m = t.match(/<svg[\s\S]*<\/svg>/i);
+    r.svg = m ? m[0] : "";
+  } catch (e) { r.svg = ""; }
+  r._svgBusy = false;
+  if (current === r || current?.name === r.name) { current.svg = r.svg; showDesign(current); }
+}
+function list(el, items, ordered) {
+  el.innerHTML = "";
+  (items || []).forEach(s => { const li = document.createElement("li"); li.textContent = s; el.appendChild(li); });
+}
+function filamentCost(r) { return (r.parts3d || []).reduce((a, p) => a + (p.filament_g || 0), 0) * 0.025; }
+
+function render(r) {
+  current = r;
+  $("rname").textContent = r.name || "Dein Roboter";
+  $("rsum").textContent = r.summary || "";
+  showDesign(r);
+  const tb = $("parts"); tb.innerHTML = ""; let sum = 0;
+  const addRow = (name, qty, price) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = "<td></td><td class='num'></td><td class='num'></td>";
+    tr.children[0].textContent = name; tr.children[1].textContent = qty; tr.children[2].textContent = eur(price);
+    if (!/Filament/.test(name)) { const a = document.createElement("a"); a.href = "https://www.idealo.de/preisvergleich/MainSearchProductCategory.html?q=" + encodeURIComponent(name.split(" – ")[0].split(" (")[0]); a.target = "_blank"; a.rel = "noopener"; a.textContent = " Preis prüfen ↗"; a.style.fontSize = "12px"; tr.children[0].appendChild(a); }
+    tb.appendChild(tr); sum += price;
+  };
+  (r.parts || []).forEach(p => addRow(p.name + (p.note ? " – " + p.note : ""), p.qty || 1, (p.qty || 1) * (p.price_eur || 0)));
+  const fc = filamentCost(r);
+  if (fc) addRow("3D-Druck-Filament (" + (r.parts3d || []).reduce((a, p) => a + (p.filament_g || 0), 0) + " g PLA)", 1, fc);
+  $("total").textContent = eur(sum);
+  $("tools").textContent = (r.tools || []).join(", ");
+  $("lang").textContent = r.language ? "(" + r.language + ")" : "";
+  if ($("code").value !== (r.code || "")) $("code").value = r.code || "";
+  renderGuide(r);
+  render3dList(r);
+  $("result").classList.remove("hidden");
+}
+
+function guideMarkdown(r) {
+  const L = [];
+  L.push("# " + (r.name || "Roboter") + " – Bauanleitung", "", r.summary || "", "");
+  L.push("## Einkaufsliste");
+  (r.parts || []).forEach(p => L.push(`- ${p.qty || 1}× ${p.name} (${eur((p.qty || 1) * (p.price_eur || 0))})${p.note ? " – " + p.note : ""}`));
+  L.push("", "**Werkzeug:** " + (r.tools || []).join(", "), "");
+  if (r.parts3d?.length) {
+    L.push("## 3D-Druckteile", "Drucker: " + printer().name + " (Bauraum " + printer().bed.join("×") + " mm)", "");
+    r.parts3d.forEach(p => L.push(`- **${p.name}** – ${p.purpose || ""} (${p.material || "PLA"}, Infill ${p.infill || "20%"}, Schicht ${p.layer || "0.2 mm"}, Stützmaterial: ${p.supports ? "ja" : "nein"}, ca. ${p.filament_g || "?"} g, ca. ${p.print_min || "?"} min)`));
+    (r.print_guide || []).forEach(s => L.push("- " + s));
+    L.push("");
+  }
+  if (r.wiring?.length) { L.push("## Verkabelung"); r.wiring.forEach(s => L.push("- " + s)); L.push(""); }
+  L.push("## Zusammenbau"); (r.steps || []).forEach((s, i) => L.push(`${i + 1}. ${s}`)); L.push("");
+  L.push("## Code hochladen", `Datei: ${r.filename || "roboter.txt"} (${r.language || ""}). Code aus dem Tab „Code“ kopieren oder herunterladen.`, "");
+  if (r.tips?.length) { L.push("## Tipps & Fehlersuche"); r.tips.forEach(s => L.push("- " + s)); }
+  if (r.glossary?.length) { L.push("", "## Bauteile erklärt"); r.glossary.forEach(s => L.push("- " + s)); }
+  return L.join("\n");
+}
+function renderGuide(r) {
+  const g = $("guide"); g.innerHTML = "";
+  const sec = (title, items, ordered) => {
+    if (!items?.length) return;
+    const h = document.createElement("h3"); h.textContent = title; g.appendChild(h);
+    const l = document.createElement(ordered ? "ol" : "ul"); list(l, items); g.appendChild(l);
+  };
+  sec("Einkaufsliste", (r.parts || []).map(p => `${p.qty || 1}× ${p.name}`));
+  sec("3D-Druckteile drucken – " + printer().name, [
+    ...(r.parts3d || []).map(p => `${p.name}: ${p.material || "PLA"}, Infill ${p.infill || "20%"}, Schicht ${p.layer || "0.2 mm"}, Stützmaterial ${p.supports ? "ja" : "nein"}, ca. ${p.print_min || "?"} min – ${p.purpose || ""}`),
+    ...(r.print_guide || [])]);
+  sec("Verkabelung", r.wiring);
+  sec("Zusammenbau", r.steps, true);
+  sec("Tipps & Fehlersuche", r.tips);
+  sec("Bauteile erklärt", r.glossary);
+}
+
+/* ---------- 3D: Voxel-CSG → STL ---------- */
+function inside(s, x, y, z) {
+  const a = s.at || [0, 0, 0];
+  if (s.type === "box") { const q = s.size; return x >= a[0] && x <= a[0] + q[0] && y >= a[1] && y <= a[1] + q[1] && z >= a[2] && z <= a[2] + q[2]; }
+  const ax = s.axis || "z"; let u, v, w;
+  if (ax === "x") { w = x - a[0]; u = y - a[1]; v = z - a[2]; }
+  else if (ax === "y") { w = y - a[1]; u = x - a[0]; v = z - a[2]; }
+  else { w = z - a[2]; u = x - a[0]; v = y - a[1]; }
+  const r = s.r1 != null ? s.r1 + (s.r2 - s.r1) * (w / s.h) : s.r;
+  return w >= 0 && w <= s.h && u * u + v * v <= r * r;
+}
+function bounds(s) {
+  const a = s.at || [0, 0, 0];
+  if (s.type === "box") return [a, [a[0] + s.size[0], a[1] + s.size[1], a[2] + s.size[2]]];
+  const r = Math.max(s.r || 0, s.r1 || 0, s.r2 || 0), i = { x: 0, y: 1, z: 2 }[s.axis || "z"];
+  const lo = a.map((c, k) => k === i ? c : c - r), hi = a.map((c, k) => k === i ? c + s.h : c + r);
+  return [lo, hi];
+}
+function buildMesh(part, color) {
+  const solids = part.shapes.filter(s => !s.cut), cuts = part.shapes.filter(s => s.cut);
+  if (!solids.length) return new Float32Array(0);
+  const lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+  solids.forEach(s => { const [a, b] = bounds(s); for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], a[k]); hi[k] = Math.max(hi[k], b[k]); } });
+  let res = 0.4; const vol = (hi[0] - lo[0]) * (hi[1] - lo[1]) * (hi[2] - lo[2]);
+  while (vol / res ** 3 > 4e6) res *= 1.25;
+  const N = [0, 1, 2].map(k => Math.max(1, Math.round((hi[k] - lo[k]) / res)));
+  const [nx, ny, nz] = N, grid = new Uint8Array(nx * ny * nz);
+  const sb = solids.map(bounds), cb = cuts.map(bounds);
+  for (let k = 0; k < nz; k++) { const z = lo[2] + (k + .5) * res;
+    for (let j = 0; j < ny; j++) { const y = lo[1] + (j + .5) * res;
+      for (let i = 0; i < nx; i++) { const x = lo[0] + (i + .5) * res;
+        let on = false;
+        for (let n = 0; n < solids.length && !on; n++) { const b = sb[n]; if (x >= b[0][0] && x <= b[1][0] && y >= b[0][1] && y <= b[1][1] && z >= b[0][2] && z <= b[1][2] && inside(solids[n], x, y, z)) { on = !color || (solids[n].color || 1) === color; break; } }
+        for (let n = 0; n < cuts.length && on; n++) { const b = cb[n]; if (x >= b[0][0] && x <= b[1][0] && y >= b[0][1] && y <= b[1][1] && z >= b[0][2] && z <= b[1][2] && inside(cuts[n], x, y, z)) on = false; }
+        grid[i + nx * (j + ny * k)] = on ? 1 : 0;
+  } } }
+  const get = (p) => p[0] >= 0 && p[1] >= 0 && p[2] >= 0 && p[0] < nx && p[1] < ny && p[2] < nz && grid[p[0] + nx * (p[1] + ny * p[2])];
+  const tris = [];
+  // Greedy-Meshing: pro Richtung und Schicht Flächen zu großen Rechtecken zusammenfassen
+  for (let d = 0; d < 3; d++) {
+    const u = (d + 1) % 3, v = (d + 2) % 3;
+    for (const sgn of [1, -1]) {
+      const mask = new Uint8Array(N[u] * N[v]);
+      for (let s = 0; s < N[d]; s++) {
+        const p = [0, 0, 0], q = [0, 0, 0];
+        for (let b = 0; b < N[v]; b++) for (let a = 0; a < N[u]; a++) {
+          p[d] = s; p[u] = a; p[v] = b; q[d] = s + sgn; q[u] = a; q[v] = b;
+          mask[a + b * N[u]] = get(p) && !get(q) ? 1 : 0;
+        }
+        for (let b = 0; b < N[v]; b++) for (let a = 0; a < N[u];) {
+          if (!mask[a + b * N[u]]) { a++; continue; }
+          let w = 1; while (a + w < N[u] && mask[a + w + b * N[u]]) w++;
+          let h = 1; outer: for (; b + h < N[v]; h++) for (let t = 0; t < w; t++) if (!mask[a + t + (b + h) * N[u]]) break outer;
+          for (let hh = 0; hh < h; hh++) for (let t = 0; t < w; t++) mask[a + t + (b + hh) * N[u]] = 0;
+          const plane = lo[d] + (s + (sgn > 0 ? 1 : 0)) * res;
+          const c = (aa, bb) => { const o = [0, 0, 0]; o[d] = plane; o[u] = lo[u] + aa * res; o[v] = lo[v] + bb * res; return o; };
+          const A = c(a, b), B = c(a + w, b), C = c(a + w, b + h), D = c(a, b + h);
+          if (sgn > 0) tris.push(A, B, C, A, C, D); else tris.push(A, C, B, A, D, C);
+          a += w;
+        }
+      }
+    }
+  }
+  const out = new Float32Array(tris.length * 3);
+  tris.forEach((t, i) => out.set(t, i * 3));
+  return out;
+}
+function toStl(pos, name) {
+  const n = pos.length / 9, buf = new ArrayBuffer(84 + n * 50), dv = new DataView(buf);
+  const hdr = ("ProBot: " + name).slice(0, 80);
+  for (let i = 0; i < hdr.length; i++) dv.setUint8(i, hdr.charCodeAt(i) & 127);
+  dv.setUint32(80, n, true);
+  for (let t = 0; t < n; t++) {
+    const o = 84 + t * 50, p = pos.subarray(t * 9, t * 9 + 9);
+    const ux = p[3] - p[0], uy = p[4] - p[1], uz = p[5] - p[2], vx = p[6] - p[0], vy = p[7] - p[1], vz = p[8] - p[2];
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; const l = Math.hypot(nx, ny, nz) || 1;
+    dv.setFloat32(o, nx / l, true); dv.setFloat32(o + 4, ny / l, true); dv.setFloat32(o + 8, nz / l, true);
+    for (let k = 0; k < 9; k++) dv.setFloat32(o + 12 + k * 4, p[k], true);
+  }
+  return buf;
+}
+function toScad(part) {
+  const f = s => {
+    const a = s.at || [0, 0, 0];
+    const c = colorsOf(part) ? `color("${({weiß:"white",schwarz:"black",rot:"red",blau:"blue",grün:"green",gelb:"yellow",orange:"orange",grau:"gray"})[(part.colors[(s.color || 1) - 1] || "").toLowerCase()] || "gray"}") ` : "";
+    return c + g();
+    function g() {
+    if (s.type === "box") return `translate([${a}]) cube([${s.size}]);`;
+    const rot = { x: "rotate([0,90,0])", y: "rotate([-90,0,0])", z: "" }[s.axis || "z"];
+    const r = s.r1 != null ? `r1=${s.r1}, r2=${s.r2}` : `r=${s.r}`;
+    return `translate([${a}]) ${rot} cylinder(h=${s.h}, ${r});`;
+    }
+  };
+  const sol = part.shapes.filter(s => !s.cut).map(f), cut = part.shapes.filter(s => s.cut).map(f);
+  return `// ${part.name} – erstellt mit ProBot\n// ${part.purpose || ""}\n$fn = 64;\n\ndifference() {\n  union() {\n    ${sol.join("\n    ")}\n  }\n  ${cut.join("\n  ")}\n}\n`;
+}
+const meshCache = new Map();
+function meshOf(part, color) { const k = part.name + "|" + (color || 0) + "|" + JSON.stringify(part.shapes);
+  if (!meshCache.has(k)) meshCache.set(k, buildMesh(part, color)); return meshCache.get(k); }
+const colorsOf = p => (printer().colors && p.colors && p.colors.length > 1) ? p.colors.slice(0, printer().colors) : null;
+const PALETTE = { weiß:[.93,.93,.93], weiss:[.93,.93,.93], schwarz:[.12,.12,.14], rot:[.85,.15,.15], blau:[.16,.45,.9], grün:[.2,.7,.3], gruen:[.2,.7,.3], gelb:[.95,.8,.15], orange:[.95,.5,.1], grau:[.55,.57,.6], silber:[.75,.76,.8], lila:[.55,.3,.8], pink:[.95,.45,.7], braun:[.5,.32,.18] };
+const DEFAULT_COLS = [[.16,.52,.95],[.95,.5,.1],[.2,.7,.3],[.85,.15,.15]];
+const rgbOf = (name, i) => PALETTE[(name || "").toLowerCase().split(/\s/)[0]] || DEFAULT_COLS[i % 4];
+function previewOf(p) {
+  const cs = colorsOf(p);
+  if (!cs) return [[meshOf(p), DEFAULT_COLS[0]]];
+  return cs.map((c, i) => [meshOf(p, i + 1), rgbOf(c, i)]);
+}
+const fileBase = s => (s || "teil").toLowerCase().replace(/[äöüß]/g, c => ({ ä:"ae", ö:"oe", ü:"ue", ß:"ss" })[c]).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+function render3dList(r) {
+  const box = $("p3d"); box.innerHTML = "";
+  const ps = r.parts3d || [];
+  if (!ps.length) {
+    box.innerHTML = r._3dBusy ? "<p class='muted'>⏳ Die KI konstruiert gerade die 3D-Druckteile… (meist 30–90 Sekunden)</p>" : "<p class='muted'>Noch keine 3D-Teile. Klicke unten, damit die KI welche konstruiert.</p>";
+    viewer.set(null); return;
+  }
+  if (sel3d >= ps.length) sel3d = 0;
+  ps.forEach((p, i) => {
+    const d = document.createElement("div"); d.className = "part" + (i === sel3d ? " on" : "");
+    const b = document.createElement("b"); b.textContent = "▸ " + p.name; b.onclick = () => { sel3d = i; render3dList(r); };
+    const t = document.createElement("div"); t.className = "muted"; t.textContent = p.purpose || "";
+    const badges = document.createElement("div");
+    const fit = fitsBed(p);
+    [fit.size + (fit.ok ? " ✓ passt auf " : " ✗ zu groß für ") + printer().name, p.material || "PLA", "Infill " + (p.infill || "20%"), p.supports ? "mit Stützen" : "ohne Stützen", "~" + (p.filament_g || "?") + " g", "~" + (p.print_min || "?") + " min"]
+      .forEach(x => { const s = document.createElement("span"); s.className = "badge"; s.textContent = x; badges.appendChild(s); });
+    const row = document.createElement("div"); row.className = "row";
+    const b1 = document.createElement("button"); b1.textContent = "STL herunterladen";
+    b1.onclick = () => save(fileBase(p.name) + ".stl", new Blob([toStl(meshOf(p), p.name)], { type: "model/stl" }));
+    const b2 = document.createElement("button"); b2.className = "sec"; b2.textContent = "OpenSCAD (.scad)";
+    b2.onclick = () => save(fileBase(p.name) + ".scad", new Blob([toScad(p)], { type: "text/plain" }));
+    const cs = colorsOf(p);
+    if (cs) {
+      b1.textContent = "STL je Farbe (" + cs.length + " Dateien)";
+      b1.onclick = async () => { for (let i = 0; i < cs.length; i++) await save(fileBase(p.name) + "-farbe" + (i + 1) + "-" + fileBase(cs[i]) + ".stl", new Blob([toStl(meshOf(p, i + 1), p.name + " " + cs[i])], { type: "model/stl" })); };
+      const s = document.createElement("span"); s.className = "badge"; s.textContent = "Farben: " + cs.map((c, i) => (i + 1) + "=" + c).join(", "); badges.appendChild(s);
+    }
+    row.append(b1, b2); d.append(b, t, badges, row); box.appendChild(d);
+  });
+  viewer.set(previewOf(ps[sel3d]));
+}
+
+/* ---------- 3D-Vorschau (WebGL) ---------- */
+const viewer = (() => {
+  const cv = $("viewer"), gl = cv.getContext("webgl");
+  let count = 0, rotX = -0.9, rotZ = 0.6, dist = 1, center = [0, 0, 0], size = 1, drag = null;
+  if (!gl) { cv.replaceWith(Object.assign(document.createElement("p"), { className: "muted", textContent: "Dein Browser kann keine 3D-Vorschau anzeigen (WebGL aus). Die STL-Dateien funktionieren trotzdem." })); return { set() {} }; }
+  const sh = (t, src) => { const s = gl.createShader(t); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+  const prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, "attribute vec3 p;attribute vec3 n;attribute vec3 c;uniform mat4 m;varying vec3 vn;varying vec3 vc;void main(){vc=c;vn=(m*vec4(n,0.)).xyz;gl_Position=m*vec4(p,1.);}"));
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, "precision mediump float;varying vec3 vn;varying vec3 vc;void main(){float l=.35+.65*max(dot(normalize(vn),normalize(vec3(.4,.5,-.8))),0.);gl_FragColor=vec4(vc*l+.05,1.);}"));
+  gl.linkProgram(prog); gl.useProgram(prog);
+  const pb = gl.createBuffer(), nb = gl.createBuffer(), cb = gl.createBuffer(), lc = gl.getAttribLocation(prog, "c");
+  const lp = gl.getAttribLocation(prog, "p"), ln = gl.getAttribLocation(prog, "n"), lm = gl.getUniformLocation(prog, "m");
+  function draw() {
+    const w = cv.clientWidth, h = cv.clientHeight, dpr = devicePixelRatio || 1;
+    if (cv.width !== w * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
+    gl.viewport(0, 0, cv.width, cv.height); gl.clearColor(.875, .9, .95, 1); gl.clear(16640); gl.enable(gl.DEPTH_TEST);
+    if (!count) return;
+    const cz = Math.cos(rotZ), sz = Math.sin(rotZ), cx = Math.cos(rotX), sx = Math.sin(rotX), s = 1.6 / (size * dist), asp = h / w;
+    // Rotation um Z, dann um X, Skalierung, orthografisch
+    const R = [cz, sz * cx, sz * sx, -sz, cz * cx, cz * sx, 0, -sx, cx];
+    const t = [0, 1, 2].map(i => -(center[0] * R[i] + center[1] * R[3 + i] + center[2] * R[6 + i]));
+    const m = [R[0] * s * asp, R[1] * s, -R[2] * s * .5, 0, R[3] * s * asp, R[4] * s, -R[5] * s * .5, 0, R[6] * s * asp, R[7] * s, -R[8] * s * .5, 0, t[0] * s * asp, t[1] * s, -t[2] * s * .5, 1];
+    gl.uniformMatrix4fv(lm, false, m); gl.drawArrays(gl.TRIANGLES, 0, count);
+  }
+  function set(list) {
+    let pos = null, col = null;
+    if (list) {
+      const total = list.reduce((a, [m]) => a + m.length, 0); pos = new Float32Array(total); col = new Float32Array(total); let o = 0;
+      list.forEach(([m, rgb]) => { pos.set(m, o); for (let i = 0; i < m.length; i += 3) col.set(rgb, o + i); o += m.length; });
+    }
+    count = pos ? pos.length / 3 : 0;
+    if (count) {
+      const nrm = new Float32Array(pos.length), lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+      for (let t = 0; t < pos.length; t += 9) {
+        const ux = pos[t + 3] - pos[t], uy = pos[t + 4] - pos[t + 1], uz = pos[t + 5] - pos[t + 2], vx = pos[t + 6] - pos[t], vy = pos[t + 7] - pos[t + 1], vz = pos[t + 8] - pos[t + 2];
+        const n = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx], l = Math.hypot(...n) || 1;
+        for (let k = 0; k < 3; k++) { nrm.set(n.map(c => c / l), t + k * 3); for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], pos[t + k * 3 + a]); hi[a] = Math.max(hi[a], pos[t + k * 3 + a]); } }
+      }
+      center = lo.map((c, i) => (c + hi[i]) / 2); size = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]); dist = 1;
+      gl.bindBuffer(gl.ARRAY_BUFFER, pb); gl.bufferData(gl.ARRAY_BUFFER, pos, gl.STATIC_DRAW); gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp, 3, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, cb); gl.bufferData(gl.ARRAY_BUFFER, col, gl.STATIC_DRAW); gl.enableVertexAttribArray(lc); gl.vertexAttribPointer(lc, 3, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, nb); gl.bufferData(gl.ARRAY_BUFFER, nrm, gl.STATIC_DRAW); gl.enableVertexAttribArray(ln); gl.vertexAttribPointer(ln, 3, gl.FLOAT, false, 0, 0);
+    }
+    draw();
+  }
+  cv.addEventListener("pointerdown", e => { drag = [e.clientX, e.clientY]; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener("pointermove", e => { if (!drag) return; rotZ += (e.clientX - drag[0]) * .01; rotX = Math.max(-3.1, Math.min(0, rotX + (e.clientY - drag[1]) * .01)); drag = [e.clientX, e.clientY]; draw(); });
+  cv.addEventListener("pointerup", () => drag = null);
+  cv.addEventListener("wheel", e => { e.preventDefault(); dist = Math.max(.2, Math.min(5, dist * (e.deltaY > 0 ? 1.1 : .9))); draw(); }, { passive: false });
+  addEventListener("resize", draw);
+  return { set, draw };
+})();
+
+/* ---------- Dateien speichern ---------- */
+async function save(name, blob) {
+  if (downloadsApi) { try { await downloadsApi.save({ filename: name, data: blob }); return; } catch (e) { if (e?.code === "declined") return; } }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/* ---------- Aktionen ---------- */
+async function gen3d(r) {
+  const p = await askJson(`Konstruiere die 3D-Druckteile für diesen Roboter (Gehäuse, Halterungen, Chassis – alles, was nicht gekauft wird).
+Roboter: ${JSON.stringify(slim(r))}
+Antworte mit {${PARTS3D_SPEC()}, "print_guide": ["Drucktipps speziell für den ${printer().name} …"], "steps": ["aktualisierte Bauanleitung, die erwähnt wann welches Druckteil montiert wird …"]}`);
+  meshCache.clear();
+  return { ...r, parts3d: p.parts3d || [], print_guide: p.print_guide || r.print_guide, steps: p.steps?.length ? p.steps : r.steps };
+}
+
+const stripFence = t => t.replace(/^[\s\S]*?```[a-zA-Z+]*\n/, "").replace(/\n```[\s\S]*$/, "");
+async function genCode(r) {
+  const t = await askText(`Schreibe den vollständigen, lauffähigen, gut kommentierten Code (${r.language || $("platform").value}) für diesen Roboter. Pin-Belegung oben als Konstanten, exakt laut Verkabelung. Kommentare auf Deutsch.
+Roboter: ${JSON.stringify(slim(r))}
+Antworte NUR mit dem Code, ohne Erklärungen davor oder danach.`, "default", txt => { if (current === r) $("code").value = stripFence(txt); });
+  r.code = stripFence(t).trim() + "\n";
+}
+async function genGuide(r) {
+  const g = await askJson(`Schreibe die Bauanleitung für diesen Roboter. Roboter: ${JSON.stringify(slim(r))}
+3D-Drucker: ${printer().name}. ${$("want3d").checked ? "Es werden 3D-Druckteile (Chassis, Halter, Gehäuse) gedruckt – erwähne, wann sie montiert werden." : ""}
+Antworte mit {"steps": ["Schritt …"], "print_guide": ["Drucktipps für den ${printer().name} …"], "tips": ["Fehlersuche / Sicherheit …"]}. Kurz und klar, für Anfänger.`, "quick");
+  if (!r.steps?.length) r.steps = g.steps; r.print_guide = r.print_guide || g.print_guide; r.tips = g.tips;
+}
+
+const claudeGo = async () => {
+  const desc = $("desc").value.trim();
+  if (!desc) return status("Bitte beschreibe zuerst deinen Roboter.", "err");
+  $("go").disabled = true;
+  const t0 = Date.now(), sec = () => Math.round((Date.now() - t0) / 1000);
+  let phase = "Die KI plant deinen Roboter (Teile & Kosten)…";
+  const tick = setInterval(() => status(phase + " " + sec() + " s"), 1000);
+  try {
+    let shown = 0;
+    const r = await askJson(`${PLAN_SPEC}\n\nPlattform: ${$("platform").value}\n\nMein Roboter:\n${desc}`, "quick", j => {
+      const n = (j.parts || []).length;
+      if (j.name && n > shown) { shown = n; render({ ...j, code: "", steps: [], _svgBusy: true }); }
+    });
+    r.code = "// Die KI schreibt den Code gerade…\n"; r.steps = []; r._svgBusy = true; r._3dBusy = $("want3d").checked;
+    meshCache.clear(); render(r); show("t-design");
+    phase = "Teile & Kosten stehen! Code, Anleitung, Zeichnung" + (r._3dBusy ? " und 3D-Teile" : "") + " entstehen gleichzeitig…";
+    const errs = [];
+    const job = (p, what) => p.catch(e => errs.push(what + ": " + e.message)).finally(() => { if (current === r) render(r); });
+    const jobs = [job(genCode(r), "Code"), job(genGuide(r), "Anleitung"), drawSvg(r)];
+    if (r._3dBusy) jobs.push(job(gen3d(r).then(x => { r.parts3d = x.parts3d; if (x.print_guide) r.print_guide = x.print_guide; if (x.steps?.length) r.steps = x.steps; }), "3D-Teile").finally(() => { r._3dBusy = false; if (current === r) render(r); }));
+    await Promise.all(jobs);
+    clearInterval(tick);
+    status(errs.length ? "Fertig nach " + sec() + " s, aber nicht alles hat geklappt: " + errs.join("; ") : "Fertig in " + sec() + " s! Schau dir alle Tabs an – und probier den Roboter im Test-Labor aus.", errs.length ? "warn" : "ok");
+  } catch (e) { clearInterval(tick); status(e.message, "err"); }
+  $("go").disabled = false;
+};
+
+$("gen3d").onclick = async () => {
+  if (!current) return;
+  const b = $("gen3d"); b.disabled = true; b.textContent = "KI konstruiert…";
+  try { render(await gen3d({ ...current, code: $("code").value })); } catch (e) { status(e.message, "err"); }
+  b.disabled = false; b.textContent = "3D-Teile von der KI (neu) konstruieren lassen";
+};
+
+$("fix").onclick = async () => {
+  const wish = $("change").value.trim();
+  if (!current || !wish) return;
+  $("fix").disabled = true; $("fix").textContent = "KI arbeitet…";
+  try {
+    const cur = { ...current, code: $("code").value };
+    const r = await askJson(`Hier ist der aktuelle Roboter als JSON (der Code wurde evtl. vom Benutzer bearbeitet; die Zeichnung ist weggelassen):
+${JSON.stringify(slim(cur))}
+Änderungswunsch: ${wish}
+Gib ein JSON mit NUR den geänderten Feldern zurück (z.B. {"code": "...", "parts": [...]}). Mögliche Felder: name, summary, parts, tools, wiring, steps, tips, language, filename, code, svg, parts3d, print_guide.`);
+    if (r.parts3d) meshCache.clear();
+    render({ ...cur, ...r }); $("change").value = "";
+  } catch (e) { status(e.message, "err"); }
+  $("fix").disabled = false; $("fix").textContent = "KI ändern lassen";
+};
+
+$("runtest").onclick = async () => {
+  if (!current) return;
+  const sc = $("scenario").value.trim() || "Normaler Start: Roboter wird eingeschaltet und läuft 20 Sekunden in einem Raum mit ein paar Hindernissen.";
+  $("runtest").disabled = true; $("teststatus").textContent = "Simulation läuft…"; $("serial").textContent = "…";
+  try {
+    const t = await askJson(`Simuliere Schritt für Schritt, was dieser Roboter-Code auf echter Hardware tun würde. Führe den Code gedanklich exakt aus (inkl. Bugs!), erfinde realistische Sensorwerte passend zur Test-Situation.
+Test-Situation: ${sc}
+Teile: ${JSON.stringify(current.parts)}
+Verkabelung: ${JSON.stringify(current.wiring || [])}
+Code (${current.language || ""}):
+${$("code").value}
+Antworte mit {"serial": "genaue Ausgabe des seriellen Monitors, Zeilen mit \\n getrennt, mit Zeitstempel [0.00s]", "behavior": "was der Roboter physisch macht, 2-5 Sätze", "checks": [{"ok": true, "text": "Prüfpunkt: Compiliert / Pins passen zur Verkabelung / Stromversorgung reicht / Logik erfüllt die Aufgabe / …"}]}`);
+    $("serial").textContent = t.serial || "(keine Ausgabe)";
+    $("behavior").textContent = t.behavior || "";
+    const ul = $("checks"); ul.innerHTML = "";
+    (t.checks || []).forEach(c => { const li = document.createElement("li"); li.className = c.ok ? "ok" : "warn"; li.textContent = (c.ok ? "✓ " : "⚠ ") + c.text; ul.appendChild(li); });
+    $("teststatus").textContent = "";
+  } catch (e) { $("teststatus").textContent = e.message; }
+  $("runtest").disabled = false;
+};
+
+$("copy").onclick = async () => {
+  try { await navigator.clipboard.writeText($("code").value); $("copy").textContent = "Kopiert ✓"; }
+  catch { $("code").select(); document.execCommand("copy"); }
+  setTimeout(() => $("copy").textContent = "Kopieren", 1500);
+};
+$("dl").onclick = () => save(current?.filename || "roboter.txt", new Blob([$("code").value], { type: "text/plain" }));
+$("dlguide").onclick = () => current && save(fileBase(current.name) + "-anleitung.md", new Blob([guideMarkdown({ ...current, code: $("code").value })], { type: "text/markdown" }));
+$("code").addEventListener("keydown", e => {
+  if (e.key === "Tab") { e.preventDefault(); const t = e.target; t.setRangeText("  ", t.selectionStart, t.selectionEnd, "end"); }
+});
+
+function show(id) {
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("hidden", t.id !== id));
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.t === id));
+  if (id === "t-3d") viewer.draw?.();
+}
+document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => show(b.dataset.t));
+
+try { const pv = localStorage.getItem("printer"); if (pv && PRINTERS[pv]) $("printer").value = pv; } catch {}
+$("printer").addEventListener("change", () => {
+  try { localStorage.setItem("printer", $("printer").value); } catch {}
+  if (current) { render3dList(current); renderGuide(current); }
+});
+
+/* ---------- Demo-Roboter (funktioniert ohne KI) ---------- */
+const DEMO = {
+  name: "Flitzi – der Hindernis-Ausweicher",
+  summary: "Ein zweirädriger Roboter mit Arduino Nano, der mit einem Ultraschallsensor Hindernisse erkennt und ihnen ausweicht. Das Chassis und die Halter kommen aus dem 3D-Drucker.",
+  svg: `<svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="12"><rect x="90" y="110" width="220" height="110" rx="14" fill="#4fb3ff" stroke="#1d5f99" stroke-width="3"/><rect x="60" y="150" width="30" height="70" rx="6" fill="#333"/><rect x="310" y="150" width="30" height="70" rx="6" fill="#333"/><rect x="150" y="70" width="100" height="40" rx="4" fill="#2d9d5f"/><circle cx="175" cy="90" r="14" fill="#ddd" stroke="#666"/><circle cx="225" cy="90" r="14" fill="#ddd" stroke="#666"/><rect x="160" y="140" width="80" height="30" fill="#1b7a3e"/><text x="170" y="160" fill="#fff">Arduino</text><rect x="150" y="180" width="100" height="26" fill="#f0c040"/><text x="165" y="198">4×AA Akku</text><text x="258" y="60">Ultraschall HC-SR04</text><text x="10" y="245">Getriebemotor + Rad</text><text x="250" y="245">Getriebemotor + Rad</text></svg>`,
+  parts: [
+    { name: "Arduino Nano (kompatibel)", qty: 1, price_eur: 6.5, note: "Gehirn des Roboters" },
+    { name: "L298N / MX1508 Motortreiber", qty: 1, price_eur: 2.5 },
+    { name: "TT-Getriebemotor mit Rad", qty: 2, price_eur: 3.5 },
+    { name: "HC-SR04 Ultraschallsensor", qty: 1, price_eur: 2.0 },
+    { name: "Kugelrolle (Caster)", qty: 1, price_eur: 1.5 },
+    { name: "4×AA Batteriehalter mit Schalter", qty: 1, price_eur: 2.0 },
+    { name: "Jumperkabel-Set", qty: 1, price_eur: 3.0 },
+    { name: "M3-Schrauben & Muttern Set", qty: 1, price_eur: 4.0 }
+  ],
+  tools: ["Kreuzschraubendreher", "3D-Drucker (oder Druckservice)", "USB-Kabel", "optional Lötkolben"],
+  wiring: ["Motortreiber IN1 → D5, IN2 → D6 (linker Motor)", "Motortreiber IN3 → D9, IN4 → D10 (rechter Motor)", "HC-SR04 TRIG → D2, ECHO → D3, VCC → 5V, GND → GND", "Batterie + → Motortreiber VCC und Arduino VIN, Batterie − → GND (gemeinsame Masse!)"],
+  steps: [
+    "Chassis-Platte, Sensor-Halter und Motor-Klemmen drucken (siehe 3D-Druckteile).",
+    "Die zwei TT-Motoren mit den Motor-Klemmen und M3-Schrauben unter die Chassis-Platte schrauben.",
+    "Kugelrolle vorne in die zwei Löcher an der Spitze der Platte schrauben.",
+    "Ultraschallsensor in den Sensor-Halter stecken und den Halter vorne auf die Platte schrauben.",
+    "Arduino, Motortreiber und Batteriehalter auf der Platte befestigen (Klettband oder Schrauben).",
+    "Alles laut Verkabelung verbinden. Gemeinsame Masse nicht vergessen!",
+    "Code hochladen, Räder anstecken, Schalter an – fertig."
+  ],
+  print_guide: ["Elegoo Neptune: STL in ElegooSlicer öffnen, Profil „Elegoo PLA“ wählen (210 °C / 60 °C), Teile flach aufs Bett legen, slicen, per WLAN oder USB-Stick an den Drucker.", "Alle Teile in PLA, 0.2 mm Schichthöhe, 20 % Infill.", "Chassis-Platte flach drucken – keine Stützen nötig.", "Löcher mit einem 3-mm-Bohrer nacharbeiten, falls sie zu eng sind."],
+  tips: ["Dreht sich der Roboter im Kreis? Dann die Kabel eines Motors tauschen.", "Misst der Sensor immer 0? TRIG und ECHO vertauscht?", "Schwache Batterien lassen den Arduino neu starten – frische Akkus verwenden."],
+  language: "Arduino C++", filename: "flitzi.ino",
+  code: `// Flitzi – Hindernis-Ausweicher
+// Pin-Belegung
+const int IN1 = 5, IN2 = 6;    // linker Motor
+const int IN3 = 9, IN4 = 10;   // rechter Motor
+const int TRIG = 2, ECHO = 3;  // Ultraschall
+const int SPEED = 180;         // 0..255
+const int ABSTAND_CM = 20;     // ab hier ausweichen
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
+  pinMode(TRIG, OUTPUT); pinMode(ECHO, INPUT);
+  Serial.println("Flitzi startet!");
+}
+
+long messeAbstand() {
+  digitalWrite(TRIG, LOW); delayMicroseconds(2);
+  digitalWrite(TRIG, HIGH); delayMicroseconds(10);
+  digitalWrite(TRIG, LOW);
+  long dauer = pulseIn(ECHO, HIGH, 30000);
+  return dauer == 0 ? 999 : dauer / 58;
+}
+
+void fahre(int links, int rechts) {
+  analogWrite(IN1, links > 0 ? links : 0);  analogWrite(IN2, links < 0 ? -links : 0);
+  analogWrite(IN3, rechts > 0 ? rechts : 0); analogWrite(IN4, rechts < 0 ? -rechts : 0);
+}
+
+void loop() {
+  long cm = messeAbstand();
+  Serial.print("Abstand: "); Serial.print(cm); Serial.println(" cm");
+  if (cm < ABSTAND_CM) {
+    Serial.println("Hindernis! Weiche aus...");
+    fahre(-SPEED, -SPEED); delay(300);   // kurz zurück
+    fahre(SPEED, -SPEED);  delay(400);   // nach rechts drehen
+  } else {
+    fahre(SPEED, SPEED);                 // geradeaus
+  }
+  delay(60);
+}
+`,
+  parts3d: [
+    { name: "Chassis-Platte", purpose: "Grundplatte, trägt alles. Motoren unten, Elektronik oben.", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 38, print_min: 110,
+      shapes: [
+        { type: "box", size: [130, 90, 3], at: [0, 0, 0] },
+        { type: "cyl", r: 1.6, h: 3, at: [30, 10, 0], cut: true }, { type: "cyl", r: 1.6, h: 3, at: [50, 10, 0], cut: true },
+        { type: "cyl", r: 1.6, h: 3, at: [30, 80, 0], cut: true }, { type: "cyl", r: 1.6, h: 3, at: [50, 80, 0], cut: true },
+        { type: "cyl", r: 1.6, h: 3, at: [118, 38, 0], cut: true }, { type: "cyl", r: 1.6, h: 3, at: [118, 52, 0], cut: true },
+        { type: "cyl", r: 1.6, h: 3, at: [123, 35, 0], cut: true }, { type: "cyl", r: 1.6, h: 3, at: [123, 55, 0], cut: true },
+        { type: "box", size: [30, 12, 3], at: [65, 39, 0], cut: true },
+        { type: "cyl", r: 4, h: 3, at: [85, 20, 0], cut: true }, { type: "cyl", r: 4, h: 3, at: [85, 70, 0], cut: true }
+      ] },
+    { name: "Sensor-Halter", purpose: "Hält den HC-SR04 vorne aufrecht; wird mit 2 M3-Schrauben an die Platte geschraubt. Auf Mehrfarb-Druckern mit weißem Zierstreifen.", colors: ["Blau", "Weiß"], material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 9, print_min: 35,
+      shapes: [
+        { type: "box", size: [50, 16, 3], at: [0, 0, 0] },
+        { type: "box", size: [50, 3, 26], at: [0, 13, 0] },
+        { type: "box", size: [40, 1, 2.5], at: [5, 12, 23], color: 2 },
+        { type: "cyl", r: 8.3, h: 3, at: [12, 13, 14], axis: "y", cut: true },
+        { type: "cyl", r: 8.3, h: 3, at: [38, 13, 14], axis: "y", cut: true },
+        { type: "cyl", r: 1.6, h: 3, at: [5, 6, 0], cut: true }, { type: "cyl", r: 1.6, h: 3, at: [45, 6, 0], cut: true }
+      ] },
+    { name: "Motor-Klemme", purpose: "2× drucken. Klemmt je einen TT-Motor unter die Chassis-Platte.", material: "PLA", infill: "30%", layer: "0.2 mm", supports: false, filament_g: 6, print_min: 25,
+      shapes: [
+        { type: "box", size: [30, 26, 3], at: [0, 0, 0] },
+        { type: "box", size: [30, 3, 22], at: [0, 0, 0] }, { type: "box", size: [30, 3, 22], at: [0, 23, 0] },
+        { type: "cyl", r: 1.6, h: 3, at: [5, 1.5, 11], axis: "y", cut: true },
+        { type: "cyl", r: 1.6, h: 3, at: [25, 1.5, 11], axis: "y", cut: true }
+      ] }
+  ]
+};
+$("demo").onclick = () => {
+  meshCache.clear(); sel3d = 0;
+  render(JSON.parse(JSON.stringify(DEMO)));
+  $("scenario").value = "Ein Hindernis taucht 15 cm vor dem Roboter auf";
+  status("Demo-Roboter geladen – schau dir die 3D-Teile an. Für Test-Labor und eigene Entwürfe braucht es die KI.", "ok");
+  show("t-design");
+};
+</script>
+<script>
+/* ProBot-KI: gratis, läuft komplett im Browser.
+   1) Wissensbasis: Bauteile mit Preisen, Pin-Belegungen, Code-Bausteine, 3D-Teile, Anleitungen.
+   2) Verstehen der Beschreibung: Stichwort-Erkennung (sofort) – optional verbessert durch eine
+      kleine Sprach-KI (WebLLM, läuft auf dem Gerät, einmal ca. 1 GB Download).
+   Aus beidem wird ein kompletter Entwurf im selben Format wie bei Claude gebaut. */
+
+/* ---------- Wissensbasis: Bauteile ---------- */
+const KB_PARTS = {
+  nano:      { name: "Arduino Nano (kompatibel, USB-C)", price: 6.5, note: "Gehirn des Roboters" },
+  esp32:     { name: "ESP32 DevKit V1 (WLAN + Bluetooth)", price: 7.0, note: "Gehirn mit Funk" },
+  c3:        { name: "ESP32-C3 SuperMini", price: 3.5, note: "winziges Gehirn mit WLAN/ESP-NOW" },
+  l298:      { name: "Motortreiber MX1508 / L298N mini", price: 2.5 },
+  drv8833:   { name: "Motortreiber DRV8833 (klein)", price: 2.0 },
+  tt:        { name: "TT-Getriebemotor 3–6 V mit Rad", price: 3.5 },
+  n20:       { name: "N20-Mikrogetriebemotor 6 V mit Rad (Ø 20 mm)", price: 4.0 },
+  caster:    { name: "Kugelrolle (Caster)", price: 1.5 },
+  caster_mini:{ name: "Mini-Kugelrolle Ø 10 mm", price: 1.0 },
+  hcsr04:    { name: "Ultraschallsensor HC-SR04", price: 2.0, note: "misst Abstand 2–400 cm" },
+  vl53:      { name: "Laser-Abstandssensor VL53L0X", price: 4.0, note: "winzig, misst bis 2 m" },
+  tcrt:      { name: "IR-Liniensensor TCRT5000 Modul", price: 1.0 },
+  hc05:      { name: "Bluetooth-Modul HC-05", price: 4.0, note: "für Handy-Steuerung" },
+  sg90:      { name: "Mikroservo SG90", price: 2.0 },
+  mg90:      { name: "Metallgetriebe-Servo MG90S", price: 3.5 },
+  ws2812:    { name: "LED-Ring WS2812B (8 LEDs)", price: 2.5, note: "bunte Lichter" },
+  buzzer:    { name: "Piezo-Summer (aktiv)", price: 0.5 },
+  oled:      { name: "OLED-Display 0,96\" I2C (128×64)", price: 3.5, note: "für Augen/Infos" },
+  touch:     { name: "Touch-Sensor TTP223", price: 0.5, note: "zum Streicheln" },
+  ldr:       { name: "Lichtsensor (Fotowiderstand-Modul)", price: 0.8 },
+  aa4:       { name: "4×AA Batteriehalter mit Schalter", price: 2.0 },
+  lipo18650: { name: "18650-Akku + Halter + Laderegler TP4056", price: 8.0 },
+  lipo_mini: { name: "LiPo-Akku 3,7 V 150 mAh", price: 3.0 },
+  wires:     { name: "Jumperkabel-Set", price: 3.0 },
+  screws:    { name: "M2/M3-Schrauben & Muttern Set", price: 4.0 },
+  servo_ext: { name: "Servo-Halterungen & Kabelbinder", price: 2.0 },
+  mpu6050:   { name: "Lagesensor MPU6050 (Gyro + Beschleunigung)", price: 3.0, note: "merkt Kippen und Drehen" },
+  dht22:     { name: "Temperatur- & Feuchtesensor DHT22", price: 4.0 },
+  soil:      { name: "Bodenfeuchte-Sensor kapazitiv v1.2", price: 1.5, note: "rostet nicht" },
+  pump:      { name: "Mini-Wasserpumpe 5 V + 1 m Schlauch", price: 3.5 },
+  mosfet:    { name: "MOSFET-Schaltmodul (z.B. IRF520/AO3400)", price: 1.5, note: "schaltet die Pumpe" },
+  usbpower:  { name: "USB-Netzteil 5 V / 2 A + Kabel", price: 6.0 },
+  pir:       { name: "Bewegungsmelder HC-SR501 (PIR)", price: 2.0, note: "spürt Menschen und Tiere" },
+  irrecv:    { name: "IR-Empfänger VS1838B + Fernbedienung", price: 2.5 },
+  tcs:       { name: "Farbsensor TCS34725", price: 6.0, note: "erkennt Farben" },
+  solarpanel:{ name: "Mini-Solarzelle 6 V / 1 W", price: 4.0 },
+  bumper:    { name: "Mikroschalter mit Hebel (Stoßsensor)", price: 0.5 },
+  fan:       { name: "Radiallüfter 5 V 50 mm (Saugturbine)", price: 4.0 },
+  pen:       { name: "Filzstift + Gummiband", price: 1.0 }
+};
+
+/* ---------- Wissensbasis: Bauteile erklärt ---------- */
+const KB_INFO = {
+  nano: "Arduino Nano – kleiner Mikrocontroller (16 MHz). Führt deinen Code aus, 5-V-Logik, wird über USB programmiert.",
+  esp32: "ESP32 – schneller Mikrocontroller (240 MHz, 2 Kerne) mit WLAN und Bluetooth eingebaut. 3,3-V-Logik!",
+  c3: "ESP32-C3 SuperMini – briefmarkengroßer ESP32 mit WLAN/ESP-NOW. Ideal für winzige Roboter.",
+  l298: "Motortreiber – das Board liefert zu wenig Strom für Motoren. Der Treiber verstärkt die Signale und kann die Drehrichtung umkehren (H-Brücke).",
+  drv8833: "DRV8833 – kleiner, sparsamer Motortreiber für zwei Mini-Motoren bis 1,2 A.",
+  tt: "TT-Getriebemotor – Gleichstrommotor mit Getriebe (ca. 1:48), langsam aber kräftig. Standard bei Bastel-Robotern.",
+  n20: "N20-Motor – sehr kleiner Getriebemotor aus Metall, für Mini-Roboter.",
+  caster: "Kugelrolle – drittes Rad, das sich in jede Richtung dreht, damit der Roboter mit zwei Antriebsrädern nicht umkippt.",
+  hcsr04: "HC-SR04 – misst Abstand mit Ultraschall wie eine Fledermaus: sendet ein Piepen und misst, wie lange das Echo braucht (Zeit ÷ 58 = cm).",
+  tcrt: "TCRT5000 – Infrarot-LED + Lichtsensor. Weiß reflektiert viel, Schwarz wenig – so erkennt er Linien und Ränder.",
+  hc05: "HC-05 – Bluetooth-Modul. Das Handy schickt Buchstaben (z.B. F für vorwärts), der Arduino liest sie wie über ein Kabel.",
+  sg90: "Servo – Motor, der auf einen genauen Winkel (0–180°) fährt und dort bleibt. Gesteuert mit einem Pulssignal.",
+  mg90: "MG90S – Servo mit Metallgetriebe, stärker und haltbarer als der SG90.",
+  ws2812: "WS2812B – „intelligente“ LEDs: Jede LED kann über nur EINE Datenleitung eine eigene Farbe bekommen.",
+  buzzer: "Piezo-Summer – macht Töne. Mit tone() kann man sogar Melodien spielen.",
+  oled: "OLED-Display – kleiner Bildschirm (128×64 Pixel), angeschlossen über I2C (nur 2 Datenleitungen: SDA und SCL).",
+  touch: "TTP223 – Berührungssensor. Merkt einen Finger durch dünnes Plastik hindurch.",
+  ldr: "Fotowiderstand – sein Widerstand sinkt bei Licht. Der analoge Eingang misst das als Zahl.",
+  mpu6050: "MPU6050 – misst Beschleunigung und Drehung in 3 Achsen. Damit merkt der Roboter, ob er kippt oder sich dreht.",
+  dht22: "DHT22 – misst Temperatur (±0,5 °C) und Luftfeuchtigkeit. Höchstens alle 2 Sekunden abfragen.",
+  soil: "Kapazitiver Bodenfeuchte-Sensor – misst, wie nass die Erde ist, ohne Metall in der Erde (rostet nicht).",
+  pump: "Mini-Pumpe – kleine Tauchpumpe, die Wasser durch einen Schlauch drückt.",
+  mosfet: "MOSFET – elektronischer Schalter: Ein schwaches Signal vom Board schaltet einen starken Strom (z.B. für Pumpe oder Lüfter).",
+  pir: "PIR-Bewegungsmelder – sieht Wärmestrahlung. Wenn sich etwas Warmes (Mensch, Katze) bewegt, gibt er HIGH aus.",
+  irrecv: "IR-Empfänger – empfängt die unsichtbaren Lichtblitze einer TV-Fernbedienung. Jede Taste hat einen eigenen Code.",
+  tcs: "TCS34725 – Farbsensor mit eigener LED. Misst, wie viel Rot, Grün und Blau ein Gegenstand zurückwirft.",
+  solarpanel: "Solarzelle – macht aus Licht Strom. Am meisten, wenn sie genau zur Sonne zeigt.",
+  bumper: "Mikroschalter – klickt, wenn der Roboter irgendwo anstößt. Einfachster Hindernis-Sensor.",
+  fan: "Radiallüfter – saugt Luft an und bläst sie zur Seite. Erzeugt den Sog für einen Mini-Staubsauger.",
+  aa4: "4×AA-Batterien – liefern ca. 6 V. Einfach, aber schwerer und schneller leer als Akkus.",
+  lipo18650: "18650-Akku – starker Lithium-Akku (3,7 V), wiederaufladbar mit dem TP4056-Laderegler.",
+  lipo_mini: "LiPo-Akku – leichter, flacher Lithium-Akku für Mini-Roboter. Nie tiefentladen oder beschädigen!"
+};
+
+/* ---------- Wissensbasis: Roboter-Arten ---------- */
+const KB_TYPES = {
+  ausweicher: { label: "Hindernis-Ausweicher", words: ["hindernis", "ausweich", "wand", "autonom", "selbstständig", "erkund"],
+    summary: "fährt selbstständig herum, misst mit Ultraschall den Abstand und weicht Hindernissen aus" },
+  linie: { label: "Linienfolger", words: ["linie", "line", "strich", "klebeband", "folgt"],
+    summary: "folgt einer schwarzen Linie auf dem Boden mit zwei Infrarot-Sensoren" },
+  btauto: { label: "Bluetooth-Auto", words: ["bluetooth", "handy", "fernsteuer", "steuer", "app", "ferngesteuert", "smartphone"],
+    summary: "wird mit dem Handy per Bluetooth gesteuert (vor, zurück, links, rechts)" },
+  arm: { label: "Greifarm", words: ["arm", "greif", "greifer", "heben", "pick", "kran", "zange", "sortier"],
+    summary: "ist ein Roboterarm mit drei Servos (Drehen, Heben, Greifen), der Dinge aufheben und ablegen kann" },
+  schwarm: { label: "Mini-Schwarm-Roboter", words: ["schwarm", "ameise", "kommunizier", "untereinander", "zusammen", "team", "mehrere", "gruppe", "insekt", "biene"],
+    summary: "sind winzige Roboter, die per Funk (ESP-NOW) miteinander reden: Findet einer das Ziel (helles Licht), ruft er die anderen, und alle kommen dazu" },
+  sumo: { label: "Sumo-Roboter", words: ["sumo", "kampf", "schieb", "arena", "ring", "wettkampf", "battle"],
+    summary: "sucht im Ring den Gegner, rammt ihn mit voller Kraft heraus und erkennt mit Bodensensoren den weißen Rand, damit er selbst nicht hinausfällt" },
+  labyrinth: { label: "Labyrinth-Löser", words: ["labyrinth", "irrgarten", "maze", "ausgang", "gänge", "wand folgen"],
+    summary: "findet den Weg durchs Labyrinth: Ein Ultraschallsensor auf einem Servo-Kopf schaut nach links und rechts, und der Roboter fährt immer in die freiere Richtung" },
+  laufroboter: { label: "Laufroboter (4 Beine)", words: ["lauf", "bein", "geh", "spinne", "krabbel", "vierbein", "hexapod", "läuft", "schritt", "dinosaurier", "tier mit beinen"],
+    summary: "läuft auf vier Beinen mit je einem Servo – ganz ohne Räder – und bleibt stehen, wenn etwas im Weg ist" },
+  pflanzen: { label: "Pflanzen-Gießroboter", words: ["pflanze", "gieß", "wasser", "blume", "garten", "erde", "bewässer", "topf"],
+    summary: "misst die Feuchtigkeit der Blumenerde und gießt automatisch mit einer kleinen Pumpe, wenn die Pflanze Durst hat" },
+  lichtsucher: { label: "Licht-Sucher", words: ["licht such", "lichtsuch", "sonne", "taschenlampe", "hell", "folgt dem licht", "motte", "solar"],
+    summary: "fährt mit zwei Lichtsensoren immer zur hellsten Stelle – z.B. einer Taschenlampe hinterher" },
+  rover: { label: "Mars-Rover (Gelände)", words: ["rover", "mars", "gelände", "offroad", "erkunden", "expedition", "mond", "planet", "allrad", "4wd", "panzer"],
+    summary: "ist ein robuster Geländewagen mit Allradantrieb: Er erkundet selbstständig, weicht Hindernissen aus und meldet seine Messwerte" },
+  wache: { label: "Wach-Roboter (Alarm)", words: ["alarm", "wache", "wächter", "einbrecher", "sicherheit", "bewach", "dieb", "überwach", "bewegungsmelder", "polizei"],
+    summary: "patrouilliert durchs Zimmer und schlägt mit Sirene und rotem Blinklicht Alarm, sobald sich jemand bewegt" },
+  zeichner: { label: "Mal-Roboter", words: ["mal", "zeichn", "stift", "kunst", "bild", "malen", "schreib", "turtle", "muster"],
+    summary: "fährt mit einem Stift über Papier und zeichnet Formen wie Quadrat, Stern und Spirale – ein Servo hebt und senkt den Stift" },
+  sortierer: { label: "Farb-Sortierer", words: ["sortier", "farb", "farbe", "smarties", "m&m", "lego", "steine sortieren", "bonbon", "kugeln"],
+    summary: "erkennt mit einem Farbsensor die Farbe von Süßigkeiten oder Legosteinen und lenkt sie mit einer Servo-Rutsche in den richtigen Becher" },
+  solar: { label: "Sonnen-Folger (Solar)", words: ["solar", "sonne", "sonnenfolg", "photovoltaik", "strom erzeugen", "solarpanel", "tracker"],
+    summary: "dreht seine Solarzelle mit einem Servo immer genau zur Sonne – zwei Lichtsensoren vergleichen, welche Seite heller ist" },
+  staubsauger: { label: "Mini-Staubsauger", words: ["staubsaug", "saug", "putz", "kehr", "sauber", "krümel", "dreck", "boden reinig"],
+    summary: "fährt kreuz und quer, saugt mit einem Lüfter Krümel auf und dreht um, wenn sein Stoßfänger irgendwo anstößt" },
+  haustier: { label: "Haustier-Roboter", words: ["haustier", "freund", "süß", "augen", "gefühl", "emotion", "streichel", "spielen", "begleit", "katze", "hund"],
+    summary: "ist ein kleiner Freund mit Display-Augen: Er fährt herum, freut sich, wenn man ihn streichelt, und piept fröhlich" }
+};
+
+const KB_FEATURES = {
+  leds:   { label: "bunte LEDs", words: ["led", "leucht", "bunt", "blink", "licht"] },
+  buzzer: { label: "Summer/Töne", words: ["ton", "piep", "sound", "summer", "geräusch"] },
+  musik:  { label: "Melodien", words: ["musik", "melodie", "lied", "singt", "song", "tanz"] },
+  ir:     { label: "TV-Fernbedienung", words: ["fernbedienung", "infrarot", "tv-fernbedienung", "ir-"] },
+  pir:    { label: "Bewegungsmelder", words: ["bewegungsmelder", "bewegung", "pir", "jemand kommt", "menschen erkennen"] },
+  oled:   { label: "Display-Augen", words: ["display", "augen", "bildschirm", "gesicht", "oled", "anzeige"] },
+  bt:     { label: "Bluetooth", words: ["bluetooth", "handy", "app", "fernsteuer"] },
+  us:     { label: "Abstandssensor", words: ["hindernis", "abstand", "ultraschall", "wand"] },
+  wlan:   { label: "WLAN-Steuerung (Webseite)", words: ["wlan", "wifi", "internet", "webseite", "browser", "online"] },
+  dht:    { label: "Temperatur & Luftfeuchte", words: ["temperatur", "feucht", "wetter", "klima", "warm", "kalt"] },
+  gyro:   { label: "Kipp-/Lagesensor", words: ["gyro", "kipp", "lagesensor", "neigung", "umfall", "balance", "gleichgewicht"] }
+};
+
+/* ---------- Verstehen: Stichworte ---------- */
+const NUMS = { ein: 1, eine: 1, einen: 1, zwei: 2, drei: 3, vier: 4, "fünf": 5, fuenf: 5, sechs: 6, sieben: 7, acht: 8, neun: 9, zehn: 10 };
+function kbUnderstand(text, platform) {
+  const t = " " + text.toLowerCase() + " ";
+  const score = {};
+  for (const [id, ty] of Object.entries(KB_TYPES)) score[id] = ty.words.reduce((a, w) => a + (t.includes(w) ? 1 : 0), 0);
+  // bei Gleichstand gewinnt die speziellere Art (Bluetooth ist oft nur ein Extra)
+  const prio = ["schwarm", "sortierer", "solar", "zeichner", "staubsauger", "wache", "sumo", "labyrinth", "laufroboter", "pflanzen", "lichtsucher", "arm", "haustier", "linie", "rover", "btauto", "ausweicher"];
+  let type = Object.entries(score).sort((a, b) => b[1] - a[1] || prio.indexOf(a[0]) - prio.indexOf(b[0]))[0];
+  type = type[1] > 0 ? type[0] : "ausweicher";
+  const features = Object.entries(KB_FEATURES).filter(([, f]) => f.words.some(w => t.includes(w))).map(([id]) => id);
+  let count = 1;
+  const mc = t.match(/(\d+|ein|eine|zwei|drei|vier|fünf|fuenf|sechs|sieben|acht|neun|zehn)\s+(?:kleine[n]?\s+|mini[- ]?)?(roboter|ameisen|bots?|stück)/);
+  if (mc) count = Math.min(20, +mc[1] || NUMS[mc[1]] || 1);
+  let size = null;
+  const ms = t.match(/(\d+(?:[.,]\d+)?)\s*(mm|cm|m)\b/);
+  if (ms) size = parseFloat(ms[1].replace(",", ".")) * ({ mm: 1, cm: 10, m: 1000 })[ms[2]];
+  let budget = null;
+  const mb = t.match(/(\d+(?:[.,]\d+)?)\s*(€|euro|eur)/);
+  if (mb) budget = parseFloat(mb[1].replace(",", "."));
+  const esp = /esp32/i.test(platform) || type === "schwarm" || features.includes("wlan");
+  return { type, features, count, size, budget, esp, name: null, summary: null };
+}
+
+/* ---------- Kleine Sprach-KI (optional, im Browser) ---------- */
+const PROBOT_MODEL = "Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
+let probotEngine = null, probotLoading = null;
+function probotAiSupported() { return !!navigator.gpu; }
+async function probotLoadAi(onProgress) {
+  if (probotEngine) return probotEngine;
+  if (probotLoading) return probotLoading;
+  probotLoading = (async () => {
+    const webllm = await import("https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2/+esm");
+    probotEngine = await webllm.CreateMLCEngine(PROBOT_MODEL, { initProgressCallback: p => onProgress && onProgress(p) });
+    return probotEngine;
+  })();
+  try { return await probotLoading; } catch (e) { probotLoading = null; throw e; }
+}
+async function probotAiUnderstand(text, base) {
+  const sys = `Du bist ProBot-KI, ein Robotik-Assistent. Ordne die Beschreibung genau einer Roboter-Art zu und wähle Zusatzfunktionen.
+Roboter-Arten: ${Object.entries(KB_TYPES).map(([id, t]) => `${id} = ${t.label}`).join("; ")}.
+Zusatzfunktionen: ${Object.entries(KB_FEATURES).map(([id, f]) => `${id} = ${f.label}`).join("; ")}.
+Antworte NUR mit JSON: {"type":"…","features":["…"],"count":1,"size_mm":null,"budget_eur":null,"name":"kreativer kurzer Name","summary":"1-2 Sätze auf Deutsch, was der Roboter macht"}`;
+  const res = await probotEngine.chat.completions.create({
+    messages: [{ role: "system", content: sys }, { role: "user", content: text }],
+    temperature: 0.3, max_tokens: 300, response_format: { type: "json_object" }
+  });
+  const j = JSON.parse(res.choices[0].message.content);
+  const out = { ...base };
+  if (KB_TYPES[j.type]) out.type = j.type;
+  if (Array.isArray(j.features)) out.features = [...new Set([...base.features, ...j.features.filter(f => KB_FEATURES[f])])];
+  if (j.count > 0 && j.count <= 20) out.count = Math.round(j.count);
+  if (j.size_mm > 0) out.size = j.size_mm;
+  if (j.budget_eur > 0) out.budget = j.budget_eur;
+  if (typeof j.name === "string" && j.name.length < 40) out.name = j.name;
+  if (typeof j.summary === "string" && j.summary.length < 400) out.summary = j.summary;
+  return out;
+}
+
+/* ---------- Entwurf zusammenbauen ---------- */
+function probotDesign(u) {
+  const T = u.type, F = new Set(u.features), mini = T === "schwarm" || (u.size && u.size <= 70);
+  if (T === "ausweicher" || T === "haustier") F.add("us");
+  if (T === "btauto") F.add("bt");
+  if (T === "haustier") { F.add("oled"); F.add("buzzer"); }
+  if (T === "schwarm") { ["bt", "oled", "us", "wlan", "dht", "gyro", "pir", "ir"].forEach(f => F.delete(f)); F.add("leds"); }   // winzig + Funk ist schon belegt
+  const STATIC = ["arm", "laufroboter", "pflanzen", "sortierer", "solar"];
+  if (STATIC.includes(T) || T === "zeichner") F.delete("us");
+  if (["sumo", "labyrinth", "laufroboter", "rover", "wache"].includes(T)) F.add("us");
+  if (T === "wache") { F.add("pir"); F.add("buzzer"); F.add("leds"); }
+  if (F.has("musik")) F.add("buzzer");
+  if (T === "sortierer" || T === "solar") ["bt", "ir"].forEach(f => F.delete(f));
+  if (T === "pflanzen" && !F.has("wlan")) F.add("oled");
+  const esp = u.esp || mini || F.has("wlan") || (F.has("pir") && F.has("bt")) || (T === "haustier" && F.has("ir"));
+  const mcu = T === "schwarm" ? "c3" : esp ? "esp32" : "nano";
+  const P = []; const add = (id, qty = 1) => P.push({ id, qty });
+  add(mcu);
+  const drives = !STATIC.includes(T);
+  if (drives) {
+    if (mini) { add("drv8833"); add("n20", 2); add("caster_mini"); }
+    else if (T === "rover") { add("l298"); add("tt", 4); }
+    else { add("l298"); add("tt", 2); add("caster"); }
+  }
+  if (F.has("us")) add("hcsr04");
+  if (T === "linie") add("tcrt", 2);
+  if (F.has("bt") && mcu === "nano") add("hc05");
+  if (T === "arm") { add("mg90", 2); add("sg90"); add("servo_ext"); }
+  if (T === "schwarm") add("ldr");
+  if (T === "haustier") add("touch");
+  if (T === "sumo") add("tcrt", 2);
+  if (T === "labyrinth") add("sg90");
+  if (T === "laufroboter") { add("mg90", 4); add("servo_ext"); }
+  if (T === "pflanzen") { add("soil"); add("pump"); add("mosfet"); }
+  if (T === "lichtsucher") add("ldr", 2);
+  if (F.has("dht")) add("dht22");
+  if (F.has("gyro")) add("mpu6050");
+  if (F.has("pir")) add("pir");
+  if (F.has("ir")) add("irrecv");
+  if (T === "zeichner") { add("sg90"); add("pen"); }
+  if (T === "sortierer") { add("tcs"); add("sg90", 2); }
+  if (T === "solar") { add("ldr", 2); add("mg90"); add("solarpanel"); }
+  if (T === "staubsauger") { add("bumper", 2); add("fan"); add("mosfet"); }
+  if (F.has("leds")) add("ws2812");
+  if (F.has("buzzer")) add("buzzer");
+  if (F.has("oled")) add("oled");
+  add(T === "pflanzen" || T === "sortierer" ? "usbpower" : mini ? "lipo_mini" : mcu === "nano" ? "aa4" : "lipo18650");
+  add("wires"); add("screws");
+  const n = Math.max(1, u.count || 1);
+  const parts = P.map(p => ({ name: KB_PARTS[p.id].name, qty: p.qty * (p.id === "wires" || p.id === "screws" ? 1 : n), price_eur: KB_PARTS[p.id].price, note: KB_PARTS[p.id].note }));
+
+  const pins = PINS[mcu];
+  const wiring = probotWiring(mcu, pins, T, F, drives);
+  const ty = KB_TYPES[T];
+  const name = u.name || ({ ausweicher: "Flitzi", linie: "Spurli", btauto: "Blue-Racer", arm: "Greifi", schwarm: "Ameisen-Schwarm", haustier: "Pixel", sumo: "Rammbock", labyrinth: "Theseus", laufroboter: "Krabbel", pflanzen: "Gießkanne 2000", lichtsucher: "Motte", rover: "Curiosity Jr.", wache: "Wachhund 3000", zeichner: "Picasso-Bot", sortierer: "Farbenfroh", solar: "Sonnenblume", staubsauger: "Krümelmonster" })[T];
+  const extras = [...F].filter(f => !(f === "us" && ["ausweicher", "sumo", "labyrinth", "laufroboter", "haustier", "rover", "wache"].includes(T)) && !(T === "wache" && ["pir", "buzzer", "leds"].includes(f)) && !(T === "btauto" && f === "bt")).map(f => KB_FEATURES[f].label);
+  const summary = u.summary || `${name} ${ty.summary}${extras.length ? ". Extras: " + extras.join(", ") : ""}.${n > 1 ? ` Du baust ${n} Stück davon.` : ""}`;
+  const r = {
+    name, summary, parts,
+    tools: ["Kreuzschraubendreher", "Lötkolben + Lötzinn", "Seitenschneider", "USB-Kabel", "3D-Drucker"],
+    wiring, language: "Arduino C++", filename: fileBase(name) + ".ino",
+    code: probotCode(mcu, pins, T, F, drives, name),
+    steps: probotSteps(T, F, mini, n, mcu),
+    print_guide: probotPrintGuide(),
+    tips: probotTips(T, F, mcu),
+    glossary: [...new Set(P.map(p => p.id))].filter(id => KB_INFO[id]).map(id => KB_INFO[id]),
+    parts3d: probotParts3d(T, F, mini, u.size)
+  };
+  r.svg = probotSvg(r, T, F, mini);
+  const sum = parts.reduce((a, p) => a + p.qty * p.price_eur, 0);
+  if (u.budget && sum > u.budget) r.tips.unshift(`Achtung: Die Teile kosten ca. ${Math.round(sum)} € – mehr als dein Budget von ${u.budget} €. Spartipp: Teile im Mehrfachpack (z.B. 5er-Sets) kaufen, oder Extras weglassen.`);
+  else if (u.budget) r.tips.unshift(`Dein Budget von ${u.budget} € reicht: Die Teile kosten ca. ${Math.round(sum)} €.`);
+  if (T !== "arm" && !mini && r.parts3d.length && (printer().bed[0] - 10 < 130 || printer().bed[1] - 6 < 90)) r.tips.unshift(`Dein Drucker (${printer().name}) ist klein: Die Chassis-Platte wurde auf ${Math.min(130, printer().bed[0] - 10)}×${Math.min(90, printer().bed[1] - 6)} mm verkleinert. Prüfe, ob Motoren und Elektronik noch draufpassen.`);
+  if (u.size && !mini) r.tips.unshift(`Hinweis: Mit Standard-Teilen wird der Roboter ca. 13 cm lang. Für kleiner als 7 cm braucht es Mini-Teile (N20-Motoren, ESP32-C3).`);
+  return r;
+}
+
+const PINS = {
+  nano:  { m: [5, 6, 3, 11], trig: 7, echo: 8, lineL: "A0", lineR: "A1", btRx: 2, btTx: 4, servo: [9, 10, 12], legs: [9, 10, 12, 13], head: 9, led: 12, buz: "A2", touch: "A3", ldr: "A6", ldrL: "A6", ldrR: "A7", soil: "A0", pump: 10, dht: 13, pir: 2, ir: "A3", fan: 10, pen: 9, servo2: 10, bumpL: "A0", bumpR: "A1" },
+  esp32: { m: [25, 26, 27, 14], trig: 5, echo: 18, lineL: 34, lineR: 35, servo: [13, 12, 15], legs: [13, 12, 15, 2], head: 13, led: 4, buz: 19, touch: 32, ldr: 33, ldrL: 34, ldrR: 35, soil: 36, pump: 23, dht: 16, pir: 17, ir: 39, fan: 23, pen: 13, servo2: 12, bumpL: 32, bumpR: 33 },
+  c3:    { m: [0, 1, 2, 3], led: 8, ldr: 4, buz: 10, sda: 5, scl: 6 }
+};
+function probotWiring(mcu, p, T, F, drives) {
+  const w = [];
+  if (drives) w.push(`Motortreiber: IN1 → ${p.m[0]}, IN2 → ${p.m[1]} (linker Motor), IN3 → ${p.m[2]}, IN4 → ${p.m[3]} (rechter Motor)`);
+  if (F.has("us") && mcu !== "c3") w.push(`HC-SR04: TRIG → ${p.trig}, ECHO → ${p.echo}, VCC → 5V, GND → GND${mcu === "esp32" ? " (ECHO über Spannungsteiler 1k/2k auf 3,3 V!)" : ""}`);
+  if (T === "linie") w.push(`Liniensensor links OUT → ${p.lineL}, rechts OUT → ${p.lineR}, VCC → 5V, GND → GND`);
+  if (F.has("bt") && mcu === "nano") w.push(`HC-05: TX → ${p.btRx}, RX → ${p.btTx} (über Spannungsteiler), VCC → 5V, GND → GND`);
+  if (T === "arm") w.push(`Servos: Drehen → ${p.servo[0]}, Heben → ${p.servo[1]}, Greifer → ${p.servo[2]}; Servo-Strom direkt vom Akku (5–6 V), Masse mit dem Board verbinden`);
+  if (F.has("leds")) w.push(`LED-Ring DIN → ${p.led}, 5V → 5V (bei C3: 3V3), GND → GND`);
+  if (F.has("buzzer")) w.push(`Summer + → ${p.buz}, − → GND`);
+  if (F.has("oled")) w.push(`OLED: SDA → ${mcu === "nano" ? "A4" : mcu === "c3" ? p.sda : 21}, SCL → ${mcu === "nano" ? "A5" : mcu === "c3" ? p.scl : 22}, VCC → 3,3/5 V, GND → GND`);
+  if (T === "haustier") w.push(`Touch-Sensor OUT → ${p.touch}`);
+  if (T === "sumo") w.push(`Rand-Sensoren (nach unten): links OUT → ${p.lineL}, rechts OUT → ${p.lineR}, VCC → 5V, GND → GND`);
+  if (T === "labyrinth") w.push(`Servo-Kopf (trägt den Ultraschallsensor): Signal → ${p.head}, + → 5V, − → GND`);
+  if (T === "laufroboter") w.push(`Bein-Servos: vorne links → ${p.legs[0]}, vorne rechts → ${p.legs[1]}, hinten links → ${p.legs[2]}, hinten rechts → ${p.legs[3]}; Servo-Strom direkt vom Akku, Masse verbinden`);
+  if (T === "pflanzen") w.push(`Bodenfeuchte-Sensor AOUT → ${p.soil}, VCC → ${mcu === "nano" ? "5V" : "3,3 V"}, GND → GND`, `MOSFET-Modul SIG → ${p.pump}; Pumpe an V+/V− des Moduls, Modul-Strom vom 5-V-Netzteil`);
+  if (T === "lichtsucher") w.push(`Lichtsensor links AO → ${p.ldrL}, rechts AO → ${p.ldrR}, VCC → ${mcu === "nano" ? "5V" : "3,3 V"}, GND → GND`);
+  if (T === "rover") w.push("Rover: Die zwei linken Motoren parallel an Motor-Ausgang A, die zwei rechten parallel an Ausgang B (gleiche Polung!)");
+  if (F.has("pir")) w.push(`PIR-Bewegungsmelder: OUT → ${p.pir}, VCC → 5V, GND → GND`);
+  if (F.has("ir")) w.push(`IR-Empfänger: OUT → ${p.ir}, VCC → ${mcu === "nano" ? "5V" : "3,3 V"}, GND → GND`);
+  if (T === "zeichner") w.push(`Stift-Servo: Signal → ${p.pen}, + → 5V, − → GND`);
+  if (T === "sortierer") w.push(`Farbsensor TCS34725: SDA → ${mcu === "nano" ? "A4" : 21}, SCL → ${mcu === "nano" ? "A5" : 22}, VIN → 5V, GND → GND`, `Rutschen-Servo → ${p.servo[0]}, Zuführ-Servo → ${p.servo2}; Servo-Strom vom 5-V-Netzteil`);
+  if (T === "solar") w.push(`Lichtsensor links AO → ${p.ldrL}, rechts AO → ${p.ldrR}`, `Dreh-Servo → ${p.servo[0]}`, "Solarzelle: an ein Multimeter oder eine kleine LED anschließen, um die Leistung zu sehen");
+  if (T === "staubsauger") w.push(`Stoßschalter links → ${p.bumpL}, rechts → ${p.bumpR} (anderes Bein an GND, interner Pull-up)`, `Lüfter über MOSFET: SIG → ${p.fan}, Lüfter an V+/V−`);
+  if (F.has("dht")) w.push(`DHT22: DATA → ${p.dht} (10 kΩ nach VCC, bei Modulen schon drauf), VCC → 3,3/5 V, GND → GND`);
+  if (F.has("gyro")) w.push(`MPU6050: SDA → ${mcu === "nano" ? "A4" : 21}, SCL → ${mcu === "nano" ? "A5" : 22}, VCC → 3,3/5 V, GND → GND (teilt sich I2C mit dem Display)`);
+  if (T === "schwarm") w.push(`Lichtsensor AO → ${p.ldr}; LiPo + → 5V-Pin des C3 (über Schalter), − → GND`);
+  w.push("Gemeinsame Masse: Alle GND-Leitungen (Akku, Board, Motortreiber, Sensoren) müssen verbunden sein!");
+  return w.filter(Boolean);
+}
+
+/* ---------- Code-Bausteine ---------- */
+function probotCode(mcu, p, T, F, drives, name) {
+  const L = [], esp = mcu !== "nano";
+  L.push(`// ${name} – erstellt mit ProBot (${KB_TYPES[T].label})`, `// Board: ${KB_PARTS[mcu].name}`, "");
+  if (F.has("leds")) L.push("#include <Adafruit_NeoPixel.h>   // Bibliothek: Adafruit NeoPixel");
+  if (["arm", "labyrinth", "laufroboter"].includes(T)) L.push(esp ? "#include <ESP32Servo.h>          // Bibliothek: ESP32Servo" : "#include <Servo.h>");
+  if (["zeichner", "sortierer", "solar"].includes(T) && !["arm", "labyrinth", "laufroboter"].includes(T)) L.push(esp ? "#include <ESP32Servo.h>          // Bibliothek: ESP32Servo" : "#include <Servo.h>");
+  if (T === "sortierer") L.push("#include <Adafruit_TCS34725.h>   // Bibliothek: Adafruit TCS34725");
+  if (F.has("ir")) L.push("#include <IRremote.hpp>           // Bibliothek: IRremote (v4)");
+  if (F.has("dht")) L.push("#include <DHT.h>                 // Bibliothek: DHT sensor library (Adafruit)");
+  if (F.has("gyro") && !F.has("oled")) L.push("#include <Wire.h>");
+  if (F.has("wlan")) L.push("#include <WiFi.h>", "#include <WebServer.h>");
+  if (F.has("bt") && mcu === "nano") L.push("#include <SoftwareSerial.h>");
+  if (F.has("bt") && mcu === "esp32") L.push("#include <BluetoothSerial.h>");
+  if (F.has("oled")) L.push("#include <Wire.h>", "#include <Adafruit_SSD1306.h>     // Bibliothek: Adafruit SSD1306");
+  if (T === "schwarm") L.push(...(F.has("wlan") ? [] : ["#include <WiFi.h>"]), "#include <esp_now.h>");
+  L.push("", "// ---- Pin-Belegung ----");
+  if (drives) L.push(`const int IN1 = ${p.m[0]}, IN2 = ${p.m[1]};  // linker Motor`, `const int IN3 = ${p.m[2]}, IN4 = ${p.m[3]};  // rechter Motor`, `int SPEED = ${T === "schwarm" ? 160 : 180};                 // 0..255`);
+  if (F.has("us") && T !== "schwarm") L.push(`const int TRIG = ${p.trig}, ECHO = ${p.echo};`, "const int ABSTAND_CM = 20;");
+  if (T === "linie") L.push(`const int LINIE_L = ${p.lineL}, LINIE_R = ${p.lineR};`);
+  if (T === "arm") L.push(`Servo drehen, heben, greifer;`, `const int S_DREH = ${p.servo[0]}, S_HEB = ${p.servo[1]}, S_GREIF = ${p.servo[2]};`);
+  if (F.has("leds")) L.push(`Adafruit_NeoPixel leds(8, ${p.led}, NEO_GRB + NEO_KHZ800);`);
+  if (F.has("buzzer")) L.push(`const int SUMMER = ${p.buz};`);
+  if (F.has("oled")) L.push("Adafruit_SSD1306 oled(128, 64, &Wire, -1);");
+  if (T === "haustier") L.push(`const int TOUCH = ${p.touch};`);
+  if (T === "sumo") L.push(`const int RAND_L = ${p.lineL}, RAND_R = ${p.lineR};   // Bodensensoren für den weißen Ring-Rand`);
+  if (T === "labyrinth") L.push(`Servo kopf;`, `const int S_KOPF = ${p.head};`);
+  if (T === "laufroboter") L.push("Servo bein[4];", `const int BEIN_PINS[4] = {${p.legs.join(", ")}};   // VL, VR, HL, HR`);
+  if (T === "pflanzen") L.push(`const int ERDE = ${p.soil}, PUMPE = ${p.pump};`, `const int TROCKEN = ${mcu === "nano" ? 520 : 2600};      // ab hier gießen (Wert im seriellen Monitor ablesen!)`, "const int GIESS_MS = 2000;          // so lange läuft die Pumpe", "unsigned long letztesGiessen = 0;");
+  if (T === "lichtsucher") L.push(`const int LICHT_L = ${p.ldrL}, LICHT_R = ${p.ldrR};`);
+  if (F.has("pir")) L.push(`const int PIR = ${p.pir};`, "int alarme = 0;");
+  if (F.has("ir")) L.push(`const int IR_PIN = ${p.ir};`);
+  if (T === "zeichner") L.push("Servo stift;", `const int S_STIFT = ${p.pen};`, "const int STIFT_OBEN = 90, STIFT_UNTEN = 30;", "const int MS_PRO_CM = 45;      // Fahrzeit für 1 cm – ausmessen!", "const int MS_PRO_GRAD = 6;     // Drehzeit für 1 Grad – ausmessen!", "bool fertig = false;");
+  if (T === "sortierer") L.push("Adafruit_TCS34725 farbsensor(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_4X);", "Servo rutsche, zufuehrer;", `const int S_RUTSCHE = ${p.servo[0]}, S_ZUFUEHR = ${p.servo2};`);
+  if (T === "solar") L.push("Servo dreher;", `const int S_DREH = ${p.servo[0]};`, `const int LICHT_L = ${p.ldrL}, LICHT_R = ${p.ldrR};`, "int winkel = 90;");
+  if (T === "staubsauger") L.push(`const int STOSS_L = ${p.bumpL}, STOSS_R = ${p.bumpR}, LUEFTER = ${p.fan};`);
+  if (F.has("dht")) L.push(`DHT dht(${p.dht}, DHT22);`, "unsigned long dhtZeit = 0;");
+  if (F.has("wlan")) L.push(`const char* WLAN_NAME = "${name.replace(/[^\w -]/g, "")}";   // eigenes WLAN des Roboters`, `const char* WLAN_PASS = "probot123";`, "WebServer server(80);");
+  if (T === "schwarm") L.push(`const int LICHT = ${p.ldr};`, "const int LICHT_ZIEL = 2500;      // ab diesem Wert: Ziel gefunden (ausprobieren!)", "bool zielGefunden = false; unsigned long rufZeit = 0;");
+  if (F.has("bt") && mcu === "nano") L.push(`SoftwareSerial bt(${p.btRx}, ${p.btTx});`);
+  if (F.has("bt") && mcu === "esp32") L.push("BluetoothSerial bt;");
+  L.push("");
+  if (drives) L.push(
+    "void fahre(int links, int rechts) {",
+    "  analogWrite(IN1, links > 0 ? links : 0);   analogWrite(IN2, links < 0 ? -links : 0);",
+    "  analogWrite(IN3, rechts > 0 ? rechts : 0); analogWrite(IN4, rechts < 0 ? -rechts : 0);",
+    "}", "");
+  if (F.has("us") && T !== "schwarm") L.push(
+    "long abstand() {",
+    "  digitalWrite(TRIG, LOW); delayMicroseconds(2);",
+    "  digitalWrite(TRIG, HIGH); delayMicroseconds(10); digitalWrite(TRIG, LOW);",
+    "  long d = pulseIn(ECHO, HIGH, 30000);",
+    "  return d == 0 ? 999 : d / 58;",
+    "}", "");
+  if (F.has("leds")) L.push("void farbe(int r, int g, int b) { for (int i = 0; i < 8; i++) leds.setPixelColor(i, leds.Color(r, g, b)); leds.show(); }", "");
+  if (F.has("buzzer")) L.push("void piep(int ms) { digitalWrite(SUMMER, HIGH); delay(ms); digitalWrite(SUMMER, LOW); }", "");
+  if (F.has("oled")) L.push(
+    "void augen(bool froh) {",
+    "  oled.clearDisplay();",
+    "  oled.fillRoundRect(20, 16, 32, froh ? 20 : 32, 8, WHITE);",
+    "  oled.fillRoundRect(76, 16, 32, froh ? 20 : 32, 8, WHITE);",
+    "  if (froh) { oled.fillCircle(64, 56, 10, WHITE); oled.fillRect(50, 44, 28, 12, BLACK); }",
+    "  oled.display();",
+    "}", "");
+  if (T === "arm") L.push(
+    "void langsam(Servo &s, int von, int bis) {   // sanfte Bewegung",
+    "  int schritt = von < bis ? 1 : -1;",
+    "  for (int w = von; w != bis; w += schritt) { s.write(w); delay(12); }",
+    "}", "");
+  if (T === "schwarm") L.push(
+    "uint8_t alle[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};   // an alle Roboter senden",
+    "void empfangen(const esp_now_recv_info_t *info, const uint8_t *daten, int len) {",
+    "  if (len > 0 && daten[0] == 'Z') { rufZeit = millis(); }   // ein anderer hat das Ziel gefunden",
+    "}",
+    "void rufen() { uint8_t m = 'Z'; esp_now_send(alle, &m, 1); }", "");
+  if (T === "laufroboter") L.push(
+    "// Ein Schritt = 4 Posen. Werte in Grad, 90 = Bein gerade.",
+    "const int SCHRITT[4][4] = { {60, 120, 90, 90}, {90, 90, 120, 60}, {120, 60, 90, 90}, {90, 90, 60, 120} };",
+    "void pose(const int w[4]) { for (int i = 0; i < 4; i++) bein[i].write(w[i]); delay(180); }",
+    "void laufen(int schritte) { for (int s = 0; s < schritte; s++) for (int k = 0; k < 4; k++) pose(SCHRITT[k]); }",
+    "void stehen() { int g[4] = {90, 90, 90, 90}; pose(g); }", "");
+  if (F.has("musik")) L.push(
+    "// Melodie: Frequenz (Hz) und Länge (ms) – \"Alle meine Entchen\"",
+    "const int TOENE[] = {262, 294, 330, 349, 392, 392, 440, 440, 440, 440, 392};",
+    "const int DAUER[] = {250, 250, 250, 250, 500, 500, 250, 250, 250, 250, 900};",
+    "void melodie() { for (int i = 0; i < 11; i++) { tone(SUMMER, TOENE[i], DAUER[i]); delay(DAUER[i] + 40); } noTone(SUMMER); }", "");
+  if (T === "zeichner") L.push(
+    "void stiftRunter(bool r) { stift.write(r ? STIFT_UNTEN : STIFT_OBEN); delay(250); }",
+    "void geradeaus(int cm) { fahre(SPEED, SPEED); delay(cm * MS_PRO_CM); fahre(0, 0); delay(100); }",
+    "void drehe(int grad) { fahre(SPEED, -SPEED); delay(grad * MS_PRO_GRAD); fahre(0, 0); delay(100); }",
+    "void quadrat(int cm) { for (int i = 0; i < 4; i++) { geradeaus(cm); drehe(90); } }",
+    "void stern(int cm) { for (int i = 0; i < 5; i++) { geradeaus(cm); drehe(144); } }",
+    "void spirale() { for (int i = 1; i <= 12; i++) { geradeaus(i); drehe(60); } }", "");
+  if (T === "labyrinth") L.push(
+    "long schaue(int winkel) { kopf.write(winkel); delay(300); return abstand(); }", "");
+  if (F.has("gyro")) L.push(
+    "bool umgekippt() {                   // MPU6050 direkt über I2C auslesen",
+    "  Wire.beginTransmission(0x68); Wire.write(0x3F); Wire.endTransmission(false);",
+    "  Wire.requestFrom(0x68, 2);",
+    "  int16_t z = Wire.read() << 8 | Wire.read();",
+    "  return z < 4000;                   // Z-Beschleunigung klein = liegt auf der Seite",
+    "}", "");
+  if (F.has("wlan")) {
+    const btns = drives ? "<p><a href=/vor><button>▲ Vor</button></a></p><p><a href=/links><button>◀</button></a> <a href=/stopp><button>■</button></a> <a href=/rechts><button>▶</button></a></p><p><a href=/zurueck><button>▼ Zurück</button></a></p>" : "";
+    L.push(
+      "String seite() {",
+      `  String s = "<!doctype html><meta name=viewport content='width=device-width'><style>button{font-size:28px;min-width:80px;margin:4px}</style><h1>${name.replace(/["<]/g, "")}</h1>${btns}";`,
+      ...(T === "pflanzen" ? ["  s += \"<p>Erde: \" + String(analogRead(ERDE)) + \"</p><p><a href=/giessen><button>Jetzt gießen</button></a></p>\";"] : []),
+      ...(F.has("dht") ? ["  s += \"<p>Temperatur: \" + String(dht.readTemperature(), 1) + \" °C, Feuchte: \" + String(dht.readHumidity(), 0) + \" %</p>\";"] : []),
+      "  return s;",
+      "}",
+      "void antwort() { server.send(200, \"text/html; charset=utf-8\", seite()); }", "");
+  }
+  L.push("void setup() {", "  Serial.begin(115200);");
+  if (drives) L.push("  pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT); pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);");
+  if (F.has("us") && T !== "schwarm") L.push("  pinMode(TRIG, OUTPUT); pinMode(ECHO, INPUT);");
+  if (T === "linie") L.push("  pinMode(LINIE_L, INPUT); pinMode(LINIE_R, INPUT);");
+  if (T === "arm") L.push("  drehen.attach(S_DREH); heben.attach(S_HEB); greifer.attach(S_GREIF);", "  drehen.write(90); heben.write(90); greifer.write(60);");
+  if (F.has("leds")) L.push("  leds.begin(); leds.setBrightness(40); farbe(0, 0, 80);");
+  if (F.has("buzzer")) L.push("  pinMode(SUMMER, OUTPUT); piep(80);");
+  if (F.has("oled")) L.push("  oled.begin(SSD1306_SWITCHCAPVCC, 0x3C); augen(true);");
+  if (T === "haustier") L.push("  pinMode(TOUCH, INPUT);");
+  if (F.has("bt") && mcu === "nano") L.push("  bt.begin(9600);");
+  if (F.has("bt") && mcu === "esp32") L.push(`  bt.begin("${name}");`);
+  if (T === "schwarm") L.push("  WiFi.mode(WIFI_STA);", "  esp_now_init();", "  esp_now_peer_info_t peer = {}; memcpy(peer.peer_addr, alle, 6); esp_now_add_peer(&peer);", "  esp_now_register_recv_cb(empfangen);", "  randomSeed(analogRead(LICHT));");
+  if (T === "sumo") L.push("  pinMode(RAND_L, INPUT); pinMode(RAND_R, INPUT);", "  delay(5000);                        // Wettkampf-Regel: 5 Sekunden warten");
+  if (T === "labyrinth") L.push("  kopf.attach(S_KOPF); kopf.write(90);");
+  if (T === "laufroboter") L.push("  for (int i = 0; i < 4; i++) bein[i].attach(BEIN_PINS[i]);", "  stehen();");
+  if (T === "pflanzen") L.push("  pinMode(PUMPE, OUTPUT); digitalWrite(PUMPE, LOW);");
+  if (F.has("pir")) L.push("  pinMode(PIR, INPUT);", "  delay(2000);                        // PIR braucht kurz zum Aufwärmen");
+  if (F.has("ir")) L.push("  IrReceiver.begin(IR_PIN);");
+  if (T === "zeichner") L.push("  stift.attach(S_STIFT); stiftRunter(false);");
+  if (T === "sortierer") L.push("  rutsche.attach(S_RUTSCHE); zufuehrer.attach(S_ZUFUEHR); zufuehrer.write(0);", "  if (!farbsensor.begin()) Serial.println(\"Farbsensor nicht gefunden – Kabel prüfen!\");");
+  if (T === "solar") L.push("  dreher.attach(S_DREH); dreher.write(winkel);");
+  if (T === "staubsauger") L.push("  pinMode(STOSS_L, INPUT_PULLUP); pinMode(STOSS_R, INPUT_PULLUP);", "  pinMode(LUEFTER, OUTPUT); digitalWrite(LUEFTER, HIGH);   // Saugen an");
+  if (F.has("musik")) L.push("  melodie();");
+  if (F.has("dht")) L.push("  dht.begin();");
+  if (F.has("gyro")) L.push("  Wire.begin(); Wire.beginTransmission(0x68); Wire.write(0x6B); Wire.write(0); Wire.endTransmission();   // MPU6050 aufwecken");
+  if (F.has("wlan")) L.push(
+    "  WiFi.softAP(WLAN_NAME, WLAN_PASS);   // Handy mit diesem WLAN verbinden, dann 192.168.4.1 öffnen",
+    "  server.on(\"/\", antwort);",
+    ...(drives ? ["  server.on(\"/vor\", [] { fahre(SPEED, SPEED); antwort(); });", "  server.on(\"/zurueck\", [] { fahre(-SPEED, -SPEED); antwort(); });", "  server.on(\"/links\", [] { fahre(-SPEED, SPEED); antwort(); });", "  server.on(\"/rechts\", [] { fahre(SPEED, -SPEED); antwort(); });", "  server.on(\"/stopp\", [] { fahre(0, 0); antwort(); });"] : []),
+    ...(T === "pflanzen" ? ["  server.on(\"/giessen\", [] { digitalWrite(PUMPE, HIGH); delay(GIESS_MS); digitalWrite(PUMPE, LOW); antwort(); });"] : []),
+    "  server.begin();",
+    "  Serial.println(WiFi.softAPIP());");
+  L.push(`  Serial.println("${name} ist bereit!");`, "}", "");
+  L.push("void loop() {");
+  if (F.has("wlan")) L.push("  server.handleClient();");
+  if (F.has("ir")) L.push(
+    "  if (IrReceiver.decode()) {           // Tasten der Elegoo-Fernbedienung (andere: Code im seriellen Monitor ablesen)",
+    "    int taste = IrReceiver.decodedIRData.command;",
+    "    Serial.print(\"IR-Taste: 0x\"); Serial.println(taste, HEX);",
+    "    IrReceiver.resume();",
+    ...(drives ? [
+    "    if (taste == 0x46) fahre(SPEED, SPEED);          // ▲",
+    "    else if (taste == 0x15) fahre(-SPEED, -SPEED);   // ▼",
+    "    else if (taste == 0x44) fahre(-SPEED, SPEED);    // ◀",
+    "    else if (taste == 0x43) fahre(SPEED, -SPEED);    // ▶",
+    "    else if (taste == 0x40) { fahre(0, 0); delay(3000); }   // OK = 3 s Pause"] : []),
+    ...(F.has("musik") ? ["    if (taste == 0x16) melodie();                    // * = Musik"] : []),
+    "  }");
+  if (F.has("gyro")) L.push(`  if (umgekippt()) { ${drives ? "fahre(0, 0); " : ""}${F.has("buzzer") ? "piep(200); " : ""}Serial.println("Hilfe, umgekippt!"); delay(500); return; }`);
+  if (F.has("dht")) L.push(
+    "  if (millis() - dhtZeit > 2000) {",
+    "    dhtZeit = millis();",
+    "    Serial.print(\"Temperatur: \"); Serial.print(dht.readTemperature()); Serial.print(\" C  Feuchte: \"); Serial.println(dht.readHumidity());",
+    "  }");
+  if (F.has("bt") && T !== "btauto") L.push(
+    `  if (bt.available() && bt.read() == 'S') { ${drives ? "fahre(0, 0); " : ""}while (!bt.available()) delay(10); }   // Pause per Handy: S senden, weiter mit beliebiger Taste`);
+  if (T === "wache") L.push(
+    "  if (digitalRead(PIR) == HIGH) {      // Bewegung!",
+    "    fahre(0, 0); alarme++;",
+    "    Serial.print(\"ALARM Nr. \"); Serial.println(alarme);",
+    "    for (int i = 0; i < 6; i++) { farbe(255, 0, 0); digitalWrite(SUMMER, HIGH); delay(150); farbe(0, 0, 255); digitalWrite(SUMMER, LOW); delay(150); }",
+    ...(F.has("musik") ? [] : []),
+    "    farbe(0, 0, 0);",
+    "    return;",
+    "  }",
+    "  // Patrouille: ein Stück fahren, umschauen (stehen, damit der PIR ruhig messen kann)",
+    "  if (abstand() < ABSTAND_CM) { fahre(-SPEED, SPEED); delay(400); }",
+    "  fahre(SPEED * 2 / 3, SPEED * 2 / 3); delay(800);",
+    "  fahre(0, 0); farbe(0, 20, 0); delay(1500);");
+  if (T === "zeichner") L.push(
+    "  if (fertig) return;                  // nur einmal zeichnen – Reset-Taste für ein neues Bild",
+    "  stiftRunter(true);  quadrat(10);  stiftRunter(false);",
+    "  geradeaus(15);",
+    "  stiftRunter(true);  stern(10);    stiftRunter(false);",
+    "  geradeaus(15);",
+    "  stiftRunter(true);  spirale();    stiftRunter(false);",
+    ...(F.has("buzzer") ? ["  piep(300);"] : []),
+    "  fertig = true;");
+  if (T === "sortierer") L.push(
+    "  zufuehrer.write(60); delay(400);       // ein Teil vor den Sensor schieben",
+    "  float r, g, b; farbsensor.getRGB(&r, &g, &b);",
+    "  Serial.print(\"R \"); Serial.print(r); Serial.print(\" G \"); Serial.print(g); Serial.print(\" B \"); Serial.println(b);",
+    "  int ziel;",
+    "  if (r > g && r > b)      ziel = 30;    // rot  -> Becher 1",
+    "  else if (g > r && g > b) ziel = 90;    // grün -> Becher 2",
+    "  else                     ziel = 150;   // blau/sonst -> Becher 3",
+    "  rutsche.write(ziel); delay(300);",
+    "  zufuehrer.write(120); delay(400);      // fallen lassen",
+    "  zufuehrer.write(0); delay(400);");
+  if (T === "solar") L.push(
+    "  int l = analogRead(LICHT_L), r = analogRead(LICHT_R);",
+    "  if (l - r > 30 && winkel < 170) winkel++;   // links heller -> nach links drehen",
+    "  if (r - l > 30 && winkel > 10)  winkel--;",
+    "  dreher.write(winkel);",
+    "  Serial.print(\"Winkel: \"); Serial.println(winkel);",
+    "  delay(40);");
+  if (T === "staubsauger") L.push(
+    "  bool l = digitalRead(STOSS_L) == LOW, r = digitalRead(STOSS_R) == LOW;   // gedrückt = LOW",
+    "  if (l || r) {",
+    "    fahre(-SPEED, -SPEED); delay(300);",
+    "    if (l) fahre(SPEED, -SPEED); else fahre(-SPEED, SPEED);",
+    "    delay(random(300, 800));",
+    "  }",
+    "  fahre(SPEED * 2 / 3, SPEED * 2 / 3);",
+    "  delay(10);");
+  if (T === "ausweicher" || T === "rover") L.push(
+    "  long cm = abstand();",
+    "  Serial.print(\"Abstand: \"); Serial.println(cm);",
+    "  if (cm < ABSTAND_CM) {",
+    ...(F.has("leds") ? ["    farbe(80, 0, 0);"] : []), ...(F.has("buzzer") ? ["    piep(60);"] : []),
+    "    fahre(-SPEED, -SPEED); delay(300);",
+    "    if (random(2)) fahre(SPEED, -SPEED); else fahre(-SPEED, SPEED);",
+    "    delay(350);",
+    "  } else {",
+    ...(F.has("leds") ? ["    farbe(0, 80, 0);"] : []),
+    "    fahre(SPEED, SPEED);",
+    "  }",
+    "  delay(50);");
+  if (T === "linie") L.push(
+    "  bool l = digitalRead(LINIE_L), r = digitalRead(LINIE_R);   // HIGH = schwarz (je nach Modul umgekehrt)",
+    "  if (l && r)       fahre(SPEED, SPEED);          // beide auf der Linie",
+    "  else if (l)       fahre(SPEED / 3, SPEED);      // Linie links -> nach links lenken",
+    "  else if (r)       fahre(SPEED, SPEED / 3);",
+    "  else              fahre(SPEED / 2, -SPEED / 2); // Linie verloren -> suchen",
+    ...(F.has("us") ? ["  if (abstand() < ABSTAND_CM) { fahre(0, 0); delay(200); }"] : []),
+    "  delay(5);");
+  if (T === "btauto") L.push(
+    "  // App z.B. \"Bluetooth RC Controller\": F=vor, B=zurück, L=links, R=rechts, S=stopp",
+    "  if (bt.available()) {",
+    "    char c = bt.read();",
+    "    Serial.println(c);",
+    "    if (c == 'F') fahre(SPEED, SPEED);",
+    "    else if (c == 'B') fahre(-SPEED, -SPEED);",
+    "    else if (c == 'L') fahre(-SPEED, SPEED);",
+    "    else if (c == 'R') fahre(SPEED, -SPEED);",
+    "    else if (c >= '0' && c <= '9') SPEED = 100 + (c - '0') * 15;",
+    "    else fahre(0, 0);",
+    "  }",
+    ...(F.has("us") ? ["  if (abstand() < 10) fahre(0, 0);   // Notbremse vor der Wand"] : []),
+    ...(F.has("leds") ? ["  farbe(0, 0, 80);"] : []));
+  if (T === "arm") L.push(
+    "  // Vorführung: Gegenstand links aufheben und rechts ablegen",
+    "  langsam(drehen, 90, 30);  langsam(heben, 90, 140);",
+    "  langsam(greifer, 60, 10);           // zugreifen",
+    ...(F.has("buzzer") ? ["  piep(50);"] : []),
+    "  langsam(heben, 140, 80);  langsam(drehen, 30, 150);",
+    "  langsam(heben, 80, 140);  langsam(greifer, 10, 60);   // loslassen",
+    "  langsam(heben, 140, 90);  langsam(drehen, 150, 90);",
+    "  delay(1500);");
+  if (T === "schwarm") L.push(
+    "  int licht = analogRead(LICHT);",
+    "  if (licht > LICHT_ZIEL) {                       // Ziel gefunden!",
+    "    fahre(0, 0); zielGefunden = true; farbe(0, 120, 0); rufen(); delay(300); return;",
+    "  }",
+    "  if (millis() - rufZeit < 3000) {                // ein Freund hat gerufen -> schneller suchen",
+    "    farbe(80, 60, 0); fahre(SPEED, SPEED); delay(200);",
+    "  } else {                                        // zufällig erkunden",
+    "    farbe(0, 0, 60);",
+    "    fahre(SPEED, SPEED); delay(random(300, 900));",
+    "    fahre(SPEED, -SPEED); delay(random(100, 400));",
+    "  }");
+  if (T === "haustier") L.push(
+    "  if (digitalRead(TOUCH)) {                        // gestreichelt!",
+    "    fahre(0, 0); augen(true); piep(40); delay(80); piep(40);",
+    ...(F.has("leds") ? ["    farbe(80, 0, 60);"] : []),
+    "    delay(1500); return;",
+    "  }",
+    "  long cm = abstand();",
+    "  if (cm < ABSTAND_CM) { augen(false); fahre(-SPEED, SPEED); delay(400); }",
+    "  else { augen(true); fahre(SPEED * 2 / 3, SPEED * 2 / 3); }",
+    "  delay(60);");
+  if (T === "sumo") L.push(
+    "  // Rand-Sensor: LOW = weiß (je nach Modul umgekehrt – im seriellen Monitor prüfen)",
+    "  if (digitalRead(RAND_L) == LOW || digitalRead(RAND_R) == LOW) {",
+    "    fahre(-255, -255); delay(350); fahre(255, -255); delay(300);   // zurück vom Rand",
+    "    return;",
+    "  }",
+    "  long cm = abstand();",
+    "  if (cm < 60) { fahre(255, 255); " + (F.has("leds") ? "farbe(120, 0, 0); " : "") + "}   // Gegner gesehen: Angriff!",
+    "  else fahre(SPEED, -SPEED);           // drehen und suchen",
+    "  delay(10);");
+  if (T === "labyrinth") L.push(
+    "  long vorne = schaue(90);",
+    "  if (vorne > 18) { fahre(SPEED, SPEED); delay(150); return; }",
+    "  fahre(0, 0);",
+    "  long rechts = schaue(10), links = schaue(170);",
+    "  kopf.write(90);",
+    "  Serial.print(\"links \"); Serial.print(links); Serial.print(\"  rechts \"); Serial.println(rechts);",
+    "  if (rechts > 20 && rechts >= links) { fahre(SPEED, -SPEED); delay(330); }   // rechts frei: abbiegen",
+    "  else if (links > 20) { fahre(-SPEED, SPEED); delay(330); }",
+    "  else { fahre(SPEED, -SPEED); delay(660); }                                // Sackgasse: umdrehen");
+  if (T === "laufroboter") L.push(
+    "  if (abstand() < 15) {                 // etwas im Weg",
+    "    stehen();",
+    ...(F.has("buzzer") ? ["    piep(80);"] : []),
+    "    delay(500); return;",
+    "  }",
+    "  laufen(1);");
+  if (T === "pflanzen") L.push(
+    "  int erde = analogRead(ERDE);           // hoch = trocken (kapazitiver Sensor)",
+    "  Serial.print(\"Erde: \"); Serial.println(erde);",
+    ...(F.has("oled") ? ["  oled.clearDisplay(); oled.setTextColor(WHITE); oled.setTextSize(2); oled.setCursor(0, 0);", "  oled.println(erde > TROCKEN ? \"Durst!\" : \"Alles gut\"); oled.setTextSize(1); oled.print(\"Sensor: \"); oled.println(erde); oled.display();"] : []),
+    "  if (erde > TROCKEN && millis() - letztesGiessen > 60000) {   // höchstens 1x pro Minute",
+    "    digitalWrite(PUMPE, HIGH); delay(GIESS_MS); digitalWrite(PUMPE, LOW);",
+    "    letztesGiessen = millis();",
+    ...(F.has("leds") ? ["    farbe(0, 0, 120);"] : []),
+    "  }",
+    "  delay(1000);");
+  if (T === "lichtsucher") L.push(
+    "  int l = analogRead(LICHT_L), r = analogRead(LICHT_R);   // höher = heller (je nach Modul umgekehrt)",
+    "  int diff = l - r;",
+    `  if (l + r > ${mcu === "nano" ? 1800 : 7500}) { fahre(0, 0); ${F.has("leds") ? "farbe(120, 120, 0); " : ""}return; }   // sehr hell: angekommen`,
+    "  if (diff > 40)       fahre(SPEED / 3, SPEED);   // links heller",
+    "  else if (diff < -40) fahre(SPEED, SPEED / 3);",
+    "  else                 fahre(SPEED, SPEED);",
+    "  delay(20);");
+  L.push("}");
+  return L.join("\n") + "\n";
+}
+
+/* ---------- Anleitung ---------- */
+function probotSteps(T, F, mini, n, mcu) {
+  const s = ["3D-Teile drucken (Tab „3D-Druckteile“) und Stützreste entfernen."];
+  if (T === "laufroboter") {
+    s.push("Die vier Servos in die Ecken der Körper-Platte schrauben (Achse nach unten).", "Code einmal starten: Alle Servos fahren auf 90°. Erst JETZT die Beine gerade nach unten auf die Servohörner schrauben.");
+  } else if (T === "sortierer") {
+    s.push("Farbsensor unter das Fenster der Prüfkammer schrauben (LED zeigt nach oben ins Fenster).", "Zuführ-Servo seitlich an die Kammer, Rutschen-Servo darunter; Rutsche auf das Servohorn.", "Drei Becher im Halbkreis unter die Rutsche stellen (30°, 90°, 150°).");
+  } else if (T === "solar") {
+    s.push("Servo in den Sockel schrauben, Panel-Halter auf das Servohorn.", "Solarzelle in den Halter kleben, die zwei Lichtsensoren links und rechts in die Ohren des Halters – getrennt durch die Mittelwand.");
+  } else if (T === "pflanzen") {
+    s.push("Elektronik ins Gehäuse setzen, Pumpe in ein Wasserglas oder einen Tank legen, Schlauch zum Blumentopf führen und mit dem Schlauchhalter am Topfrand festklemmen.", "Bodenfeuchte-Sensor bis zur Markierung in die Erde stecken – die Elektronik oben darf nicht nass werden.");
+  } else if (T !== "arm") {
+    s.push(mini ? "Die zwei N20-Motoren in die Aussparungen der Mini-Hülle stecken, Räder aufpressen, Mini-Kugelrolle vorne einkleben." : "Die zwei TT-Motoren mit den Motor-Klemmen unter die Chassis-Platte schrauben, Kugelrolle vorne anschrauben.");
+    s.push("Motorkabel an den Motortreiber anschrauben oder anlöten.");
+  } else {
+    s.push("Grund-Servo (Drehen) in den Sockel schrauben, Arm-Teil auf das Servohorn schrauben.", "Hebe-Servo am Arm befestigen, Greifer-Servo mit den zwei Greiffingern an die Armspitze.", "Vor dem Zusammenbau alle Servos einmal auf 90° stellen (Code einmal starten), damit die Hörner gerade sitzen.");
+  }
+  if (F.has("us")) s.push("Abstandssensor in den Sensor-Halter stecken und vorne montieren.");
+  if (T === "rover") s.push("Rover: Vier Motoren mit vier Motor-Klemmen montieren. Links zwei Motoren zusammen an Ausgang A, rechts an B.");
+  if (T === "wache") s.push("PIR-Bewegungsmelder oben in die Kuppel stecken (Linse nach außen). Am Poti „Sx“ die Empfindlichkeit, an „Tx“ die Haltezeit auf Minimum stellen.");
+  if (T === "zeichner") s.push("Stifthalter in die Mitte zwischen die Räder schrauben, Stift einsetzen und mit Gummiband nach unten ziehen. Servo hebt ihn über einen Hebel an.");
+  if (T === "staubsauger") s.push("Lüfter über das Saugloch schrauben (Ansaugseite nach unten), Stoßfänger vorne mit den zwei Mikroschaltern dahinter.");
+  if (F.has("ir")) s.push("IR-Empfänger nach vorne oder oben zeigend montieren, damit die Fernbedienung ihn sieht.");
+  if (T === "sumo") s.push("Die zwei Rand-Sensoren vorne links und rechts nach unten zeigend montieren (3–5 mm über dem Boden).", "Die Schaufel vorne anschrauben – sie hebelt den Gegner aus.");
+  if (T === "labyrinth") s.push("Servo in den Kopf-Halter schrauben, Ultraschallsensor auf das Servohorn kleben. Bei 90° muss er genau nach vorne schauen.");
+  if (T === "lichtsucher") s.push("Die zwei Lichtsensoren vorne in den Halter stecken, leicht nach außen gedreht (wie Fühler).");
+  if (T === "linie") s.push("Die zwei Liniensensoren 1–2 cm über dem Boden vorne montieren, ca. 2 cm auseinander. Empfindlichkeit am Drehregler einstellen.");
+  if (F.has("oled")) s.push("Display hinter das Sichtfenster kleben – das sind die Augen.");
+  if (F.has("leds")) s.push("LED-Ring oben aufkleben und anschließen.");
+  s.push(`${KB_PARTS[mcu].name} und Akku befestigen (Klettband oder Schrauben).`, "Alles laut „Verkabelung“ verbinden. Vor dem Einschalten nochmal + und − prüfen!",
+    "Arduino IDE installieren, Board auswählen" + (mcu !== "nano" ? " (ESP32-Boardpaket über den Boardverwalter)" : "") + ", benötigte Bibliotheken über den Bibliotheksverwalter installieren, Code hochladen.",
+    "Testen: Roboter zuerst hochheben und schauen, ob die Räder richtig herum drehen.");
+  if (n > 1) s.push(`Für alle ${n} Roboter wiederholen – der Code ist für alle gleich.`);
+  return s;
+}
+function probotPrintGuide() {
+  const p = printer();
+  if (p.resin) return [`${p.name}: STL in CHITUBOX/VoxelDance öffnen, Teile 30–45° schräg stellen, Stützen automatisch erzeugen, Schicht 0,05 mm.`, "Nach dem Druck in Isopropanol waschen und 2–4 Minuten nachhärten. Handschuhe tragen!"];
+  const L = [`${p.name}: STL in ElegooSlicer öffnen, Profil „Elegoo PLA“ (210 °C Düse / 60 °C Bett), Schicht 0,2 mm, Infill 20 %.`, "Alle Teile liegen flach – meist keine Stützen nötig.", "Zu enge Löcher mit einem 3-mm-Bohrer (bzw. 2 mm bei Mini-Teilen) nacharbeiten."];
+  if (p.colors) L.push("Mehrfarbig (CANVAS): Alle STL-Dateien eines Teils gleichzeitig laden, als ein Objekt übernehmen, jedem Teil seinen Farbslot zuweisen.");
+  return L;
+}
+function probotTips(T, F, mcu) {
+  const t = ["Dreht ein Rad falsch herum? Die zwei Kabel dieses Motors am Treiber tauschen.", "Startet das Board immer neu, wenn die Motoren anlaufen? Akku ist zu schwach – frisch laden oder einen Kondensator (470 µF) an den Motortreiber."];
+  if (T === "sumo") t.push("Mini-Sumo-Regeln: max. 10×10 cm und 500 g. Der Roboter wartet nach dem Einschalten 5 Sekunden.", "Mehr Schubkraft: Gummi-Reifen und Gewicht (z.B. Muttern) tief einbauen.");
+  if (T === "labyrinth") t.push("Fährt er schief? SPEED für den schnelleren Motor im Code etwas verringern.", "Die Drehzeit (330 ms) im Code anpassen, bis er genau 90° dreht.");
+  if (T === "laufroboter") t.push("Läuft er auf der Stelle? Die Winkel in SCHRITT[][] vergrößern (z.B. 50/130).", "MG90S-Servos brauchen zusammen bis zu 2 A – 18650-Akku verwenden, nicht 4×AA.");
+  if (T === "pflanzen") t.push("TROCKEN im Code einstellen: Sensor in trockene und in nasse Erde stecken, Werte ablesen, Mitte wählen.", "Wassertank tiefer als den Topf stellen, sonst läuft er durch den Schlauch leer.", "Elektronik und Wasser getrennt halten!");
+  if (T === "lichtsucher") t.push("Fährt er vom Licht weg? Die Sensoren links/rechts tauschen oder im Code l und r vertauschen.");
+  if (T === "rover") t.push("Rover dreht schlecht? Panzer-Lenkung braucht Grip-Unterschied – auf Teppich langsamer drehen (SPEED kleiner) oder Gummireifen nehmen.");
+  if (T === "wache") t.push("Fehlalarme? Den PIR nicht auf Heizungen oder Fenster richten und beim Fahren nicht auswerten (er misst nur im Stand).");
+  if (T === "zeichner") t.push("Quadrat nicht geschlossen? MS_PRO_GRAD anpassen, bis 4× drehen genau 360° ergibt. MS_PRO_CM mit einem Lineal einstellen.", "Glattes Papier auf dem Boden festkleben, damit es nicht verrutscht.");
+  if (T === "sortierer") t.push("Farben werden verwechselt? Werte im seriellen Monitor ablesen und die Regeln (r > g …) anpassen. Gleichmäßiges Licht hilft.", "Smarties/M&Ms passen gut, Legosteine 2×2 auch.");
+  if (T === "solar") t.push("Zappelt der Servo? Die 30 in der Bedingung größer machen (z.B. 60) – das ist die Toleranz.");
+  if (T === "staubsauger") t.push("Der Lüfter saugt nur leichte Krümel/Papierschnipsel – kein echter Staubsauger-Ersatz.", "Saugloch 2–4 mm über dem Boden ist am besten.");
+  if (F.has("ir")) t.push("Andere Fernbedienung? Taste drücken, Code im seriellen Monitor ablesen und im Code bei 0x46 usw. eintragen.");
+  if (F.has("musik")) t.push("Eigene Melodie: Frequenzen in TOENE[] ändern (C=262, D=294, E=330, F=349, G=392, A=440, H=494, c=523).");
+  if (F.has("wlan")) t.push("WLAN-Steuerung: Handy mit dem WLAN des Roboters verbinden (Passwort probot123), dann im Browser 192.168.4.1 öffnen.");
+  if (F.has("dht")) t.push("DHT22 nicht öfter als alle 2 Sekunden auslesen – sonst kommen falsche Werte.");
+  if (F.has("us")) t.push("Misst der Abstandssensor immer 0 oder 999? TRIG und ECHO vertauscht oder kein 5V.");
+  if (T === "linie") t.push("Erkennt der Liniensensor nichts? Drehregler am Modul einstellen, bis die LED genau über der Linie umschaltet.");
+  if (T === "arm") t.push("Zittern die Servos? Sie brauchen eigenen Strom (Akku), nicht vom USB-Kabel.");
+  if (T === "schwarm") t.push("LICHT_ZIEL im Code an deinen Raum anpassen: Wert im seriellen Monitor ablesen.", "Alle Roboter bekommen denselben Code – ESP-NOW braucht keinen Router.");
+  if (mcu === "nano") t.push("Nano wird nicht erkannt? CH340-Treiber installieren.");
+  return t;
+}
+
+/* ---------- 3D-Teile ---------- */
+function probotParts3d(T, F, mini, size) {
+  const P = [], c = printer().colors > 1;
+  const holes = (pts, r = 1.6, h = 3) => pts.map(([x, y]) => ({ type: "cyl", r, h, at: [x, y, 0], cut: true }));
+  if (T === "schwarm" || mini) {
+    const L = Math.max(36, Math.min(size || 48, 70)), W = Math.round(L * 0.75), H = 18;
+    P.push({ name: "Mini-Hülle", purpose: `Chassis für einen Mini-Roboter (${L}×${W} mm). N20-Motoren in die seitlichen Aussparungen, Elektronik innen.`, material: "PLA", infill: "25%", layer: "0.16 mm", supports: false, filament_g: 9, print_min: 45,
+      colors: c ? ["Schwarz", "Rot"] : undefined,
+      shapes: [
+        { type: "box", size: [L, W, H], at: [0, 0, 0] },
+        { type: "box", size: [L - 3, W - 3, H], at: [1.5, 1.5, 1.5], cut: true },
+        { type: "box", size: [12, W + 2, 11], at: [L * 0.55, -1, 1.5], cut: true },
+        { type: "cyl", r: 5.2, h: 3, at: [8, W / 2, 0], cut: true },
+        { type: "cyl", r: 3, h: 3, at: [3, W / 2, 7], axis: "x", cut: true },
+        ...(c ? [{ type: "box", size: [L - 10, 2, 1], at: [5, 1.5, H - 1], color: 2 }, { type: "box", size: [L - 10, 2, 1], at: [5, W - 3.5, H - 1], color: 2 }] : [])
+      ] });
+    P.push({ name: "Mini-Deckel", purpose: "Deckel mit Loch für Lichtsensor und LEDs, wird aufgesteckt.", material: "PLA", infill: "20%", layer: "0.16 mm", supports: false, filament_g: 4, print_min: 20,
+      shapes: [{ type: "box", size: [L, W, 1.6], at: [0, 0, 0] }, { type: "box", size: [L - 3.4, W - 3.4, 2], at: [1.7, 1.7, 1.6] }, { type: "box", size: [L - 6.4, W - 6.4, 2], at: [3.2, 3.2, 1.6], cut: true },
+        { type: "cyl", r: 3, h: 1.6, at: [L - 8, W / 2, 0], cut: true }, { type: "cyl", r: 6, h: 1.6, at: [L / 2, W / 2, 0], cut: true }] });
+    return P;
+  }
+  if (T === "laufroboter") {
+    P.push({ name: "Körper-Platte", purpose: "Rumpf mit vier Servo-Aussparungen in den Ecken.", material: "PLA", infill: "25%", layer: "0.2 mm", supports: false, filament_g: 25, print_min: 80,
+      shapes: [{ type: "box", size: [110, 70, 4], at: [0, 0, 0] }, ...[[4, 4], [83, 4], [4, 53.5], [83, 53.5]].map(([x, y]) => ({ type: "box", size: [23, 12.5, 4], at: [x, y, 0], cut: true })),
+        { type: "box", size: [40, 20, 4], at: [35, 25, 0], cut: true }, ...holes([[30, 35], [80, 35]], 1.6, 4)] });
+    P.push({ name: "Bein", purpose: "4× drucken. Wird auf das Servohorn geschraubt.", material: "PLA", infill: "40%", layer: "0.2 mm", supports: false, filament_g: 4, print_min: 18,
+      shapes: [{ type: "box", size: [55, 10, 4], at: [0, 0, 0] }, { type: "cyl", r: 6, h: 4, at: [50, 5, 0] }, ...holes([[5, 5], [13, 5]], 1, 4)] });
+    if (F.has("us")) P.push({ name: "Sensor-Halter", purpose: "Hält den HC-SR04 vorne.", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 9, print_min: 35,
+      shapes: [{ type: "box", size: [50, 16, 3], at: [0, 0, 0] }, { type: "box", size: [50, 3, 26], at: [0, 13, 0] }, { type: "cyl", r: 8.3, h: 3, at: [12, 13, 14], axis: "y", cut: true }, { type: "cyl", r: 8.3, h: 3, at: [38, 13, 14], axis: "y", cut: true }, ...holes([[5, 6], [45, 6]])] });
+    return P;
+  }
+  if (T === "sortierer") {
+    P.push({ name: "Prüfkammer", purpose: "Hier liegt das Teil vor dem Farbsensor; unten Fenster für den Sensor, seitlich Schlitz für den Zuführ-Servo.", material: "PLA", infill: "25%", layer: "0.2 mm", supports: false, filament_g: 30, print_min: 100,
+      colors: c ? ["Weiß", "Schwarz"] : undefined,
+      shapes: [{ type: "box", size: [60, 60, 40], at: [0, 0, 0] }, { type: "box", size: [30, 30, 40], at: [15, 15, 5], cut: true }, { type: "box", size: [12, 12, 5], at: [24, 24, 0], cut: true },
+        { type: "box", size: [16, 32, 10], at: [0, 14, 8], cut: true }, { type: "box", size: [16, 20, 10], at: [44, 20, 5], cut: true }, ...holes([[5, 5], [55, 5], [5, 55], [55, 55]], 1.6, 40),
+        ...(c ? [{ type: "box", size: [30, 1, 4], at: [15, 0, 30], color: 2 }] : [])] });
+    P.push({ name: "Rutsche", purpose: "Wird auf das Servohorn geschraubt und leitet die Teile in die Becher.", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 8, print_min: 30,
+      shapes: [{ type: "box", size: [80, 22, 2], at: [0, 0, 0] }, { type: "box", size: [80, 2, 8], at: [0, 0, 0] }, { type: "box", size: [80, 2, 8], at: [0, 20, 0] }, ...holes([[6, 11], [14, 11]], 1, 2)] });
+    return P;
+  }
+  if (T === "solar") {
+    P.push({ name: "Sockel", purpose: "Standfuß mit Aufnahme für den Dreh-Servo.", material: "PLA", infill: "25%", layer: "0.2 mm", supports: false, filament_g: 25, print_min: 80,
+      shapes: [{ type: "box", size: [70, 70, 4], at: [0, 0, 0] }, { type: "box", size: [32, 16, 26], at: [19, 27, 4] }, { type: "box", size: [23, 12.5, 26], at: [23.5, 28.75, 4], cut: true }, ...holes([[6, 6], [64, 6], [6, 64], [64, 64]], 2, 4)] });
+    P.push({ name: "Panel-Halter", purpose: "Hält die Solarzelle; die Mittelwand trennt die zwei Lichtsensoren (Schatten-Prinzip).", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 18, print_min: 60,
+      colors: c ? ["Schwarz", "Gelb"] : undefined,
+      shapes: [{ type: "box", size: [100, 72, 3], at: [0, 0, 0] }, { type: "box", size: [3, 72, 25], at: [48.5, 0, 0], color: c ? 2 : undefined }, { type: "cyl", r: 3, h: 3, at: [20, 36, 0], cut: true }, { type: "cyl", r: 3, h: 3, at: [80, 36, 0], cut: true }, ...holes([[46, 10], [54, 10]], 1, 3)] });
+    return P;
+  }
+  if (T === "staubsauger") {
+    const R = Math.min(70, (printer().bed[1] - 6) / 2);
+    P.push({ name: "Rund-Chassis", purpose: "Runder Körper wie ein echter Saugroboter, mit Saugloch und Radausschnitten.", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 45, print_min: 140,
+      colors: c ? ["Weiß", "Grau"] : undefined,
+      shapes: [{ type: "cyl", r: R, h: 3, at: [R, R, 0] }, { type: "box", size: [40, 12, 3], at: [R - 20, R * 0.35, 0], cut: true }, { type: "box", size: [24, 30, 3], at: [2, R - 15, 0], cut: true }, { type: "box", size: [24, 30, 3], at: [2 * R - 26, R - 15, 0], cut: true },
+        ...holes([[R - 30, R], [R + 30, R], [R, R + 40]]), ...(c ? [{ type: "box", size: [20, 4, 1], at: [R - 10, R + 50, 3], color: 2 }] : [])] });
+    P.push({ name: "Stoßfänger", purpose: "Bogen vorne, drückt bei Kontakt auf die Mikroschalter.", material: "PLA", infill: "30%", layer: "0.2 mm", supports: false, filament_g: 8, print_min: 30,
+      shapes: [{ type: "box", size: [R * 1.4, 4, 18], at: [0, 0, 0] }, { type: "box", size: [6, 10, 18], at: [R * 0.25, 4, 0] }, { type: "box", size: [6, 10, 18], at: [R * 1.15 - 6, 4, 0] }] });
+    P.push({ name: "Motor-Klemme", purpose: "2× drucken. Klemmt je einen TT-Motor unter das Chassis.", material: "PLA", infill: "30%", layer: "0.2 mm", supports: false, filament_g: 6, print_min: 25,
+      shapes: [{ type: "box", size: [30, 26, 3], at: [0, 0, 0] }, { type: "box", size: [30, 3, 22], at: [0, 0, 0] }, { type: "box", size: [30, 3, 22], at: [0, 23, 0] }, { type: "cyl", r: 1.6, h: 3, at: [5, 1.5, 11], axis: "y", cut: true }, { type: "cyl", r: 1.6, h: 3, at: [25, 1.5, 11], axis: "y", cut: true }] });
+    return P;
+  }
+  if (T === "pflanzen") {
+    P.push({ name: "Elektronik-Gehäuse", purpose: "Spritzwassergeschützte Box für Board, MOSFET und Display.", material: "PETG (oder PLA)", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 35, print_min: 120,
+      shapes: [{ type: "box", size: [90, 60, 35], at: [0, 0, 0] }, { type: "box", size: [86, 56, 35], at: [2, 2, 2], cut: true }, { type: "box", size: [25, 14, 2], at: [32, 23, 0], cut: true }, { type: "cyl", r: 4, h: 3, at: [0, 30, 10], axis: "x", cut: true }, { type: "cyl", r: 3, h: 3, at: [87, 30, 10], axis: "x", cut: true }] });
+    P.push({ name: "Schlauchhalter", purpose: "Wird an den Topfrand geklemmt und hält das Schlauchende (Ø 5–8 mm).", material: "PETG (oder PLA)", infill: "30%", layer: "0.2 mm", supports: false, filament_g: 3, print_min: 15,
+      shapes: [{ type: "box", size: [30, 12, 3], at: [0, 0, 0] }, { type: "box", size: [3, 12, 25], at: [0, 0, 0] }, { type: "box", size: [3, 12, 25], at: [9, 0, 0] }, { type: "cyl", r: 6, h: 3, at: [24, 6, 0] }, { type: "cyl", r: 3.6, h: 3, at: [24, 6, 0], cut: true }] });
+    return P;
+  }
+  if (T === "arm") {
+    const R = Math.min(45, (printer().bed[1] - 6) / 2), o = R;
+    P.push({ name: "Arm-Sockel", purpose: "Standfuß mit Aufnahme für den Dreh-Servo (MG90S).", material: "PLA", infill: "30%", layer: "0.2 mm", supports: false, filament_g: 40, print_min: 120,
+      shapes: [{ type: "cyl", r: R, h: 6, at: [o, o, 0] }, { type: "box", size: [32, 16, 26], at: [o - 16, o - 8, 6] }, { type: "box", size: [23, 12.5, 26], at: [o - 11.5, o - 6.25, 6], cut: true },
+        ...holes([[o - R + 10, o], [o + R - 10, o], [o, o - R + 10], [o, o + R - 10]], 2, 6)] });
+    P.push({ name: "Arm-Segment", purpose: "Oberarm, wird auf das Servohorn des Dreh-Servos geschraubt; trägt den Hebe-Servo.", material: "PLA", infill: "30%", layer: "0.2 mm", supports: false, filament_g: 15, print_min: 50,
+      shapes: [{ type: "box", size: [100, 18, 5], at: [0, 0, 0] }, { type: "box", size: [24, 18, 14], at: [76, 0, 0] }, { type: "box", size: [23, 12.5, 14], at: [76.5, 2.75, 0], cut: true },
+        { type: "cyl", r: 3.5, h: 5, at: [9, 9, 0], cut: true }, ...holes([[3, 9], [15, 9]], 1, 5)] });
+    P.push({ name: "Greiffinger", purpose: "2× drucken. Wird auf das Servohorn des Greifer-Servos geschraubt.", material: "PLA", infill: "40%", layer: "0.2 mm", supports: false, filament_g: 4, print_min: 18,
+      shapes: [{ type: "box", size: [50, 10, 4], at: [0, 0, 0] }, { type: "box", size: [4, 10, 12], at: [46, 0, 0] }, ...holes([[6, 5], [14, 5]], 1, 4)] });
+    return P;
+  }
+  const bed = printer().bed, L = Math.min(T === "sumo" ? 98 : 130, bed[0] - 10), W = Math.min(T === "sumo" ? 98 : 90, bed[1] - 6), sx = L / 130, sy = W / 90;
+  const sc = pts => pts.map(([x, y]) => [x * sx, y * sy]);
+  P.push({ name: "Chassis-Platte", purpose: "Grundplatte: Motoren unten, Elektronik oben.", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 38, print_min: 110,
+    shapes: [{ type: "box", size: [L, W, 3], at: [0, 0, 0] }, ...holes(sc([[30, 10], [50, 10], [30, 80], [50, 80]])), ...holes([[L - 12, W / 2 - 7], [L - 12, W / 2 + 7], [L - 7, W / 2 - 10], [L - 7, W / 2 + 10]]),
+      { type: "box", size: [30 * sx, 12, 3], at: [65 * sx, W / 2 - 6, 0], cut: true }, { type: "cyl", r: 4, h: 3, at: [85 * sx, 20 * sy, 0], cut: true }, { type: "cyl", r: 4, h: 3, at: [85 * sx, 70 * sy, 0], cut: true },
+      ...(T === "linie" ? holes([[L - 6, W / 2 - 20], [L - 6, W / 2 + 20]]) : [])] });
+  P.push({ name: "Motor-Klemme", purpose: "2× drucken. Klemmt je einen TT-Motor unter die Platte.", material: "PLA", infill: "30%", layer: "0.2 mm", supports: false, filament_g: 6, print_min: 25,
+    shapes: [{ type: "box", size: [30, 26, 3], at: [0, 0, 0] }, { type: "box", size: [30, 3, 22], at: [0, 0, 0] }, { type: "box", size: [30, 3, 22], at: [0, 23, 0] },
+      { type: "cyl", r: 1.6, h: 3, at: [5, 1.5, 11], axis: "y", cut: true }, { type: "cyl", r: 1.6, h: 3, at: [25, 1.5, 11], axis: "y", cut: true }] });
+  if (F.has("us")) P.push({ name: "Sensor-Halter", purpose: "Hält den HC-SR04 vorne aufrecht.", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 9, print_min: 35,
+    colors: c ? ["Blau", "Weiß"] : undefined,
+    shapes: [{ type: "box", size: [50, 16, 3], at: [0, 0, 0] }, { type: "box", size: [50, 3, 26], at: [0, 13, 0] }, ...(c ? [{ type: "box", size: [40, 1, 2.5], at: [5, 12, 23], color: 2 }] : []),
+      { type: "cyl", r: 8.3, h: 3, at: [12, 13, 14], axis: "y", cut: true }, { type: "cyl", r: 8.3, h: 3, at: [38, 13, 14], axis: "y", cut: true }, ...holes([[5, 6], [45, 6]])] });
+  if (T === "linie") P.push({ name: "Liniensensor-Halter", purpose: "Hält beide Liniensensoren 1–2 cm über dem Boden.", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 5, print_min: 20,
+    shapes: [{ type: "box", size: [50, 14, 3], at: [0, 0, 0] }, ...holes([[10, 7], [40, 7], [25, 7]])] });
+  if (T === "rover") P[1].purpose = "4× drucken (Allrad!). Klemmt je einen TT-Motor unter die Platte.";
+  if (T === "wache") P.push({ name: "PIR-Kuppel", purpose: "Turm für den Bewegungsmelder – so sieht er über Möbel hinweg.", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 12, print_min: 50,
+    colors: c ? ["Schwarz", "Rot"] : undefined,
+    shapes: [{ type: "cyl", r: 18, h: 40, at: [18, 18, 0] }, { type: "cyl", r: 15.5, h: 38, at: [18, 18, 2] , cut: true }, { type: "cyl", r: 12, h: 2, at: [18, 18, 0], cut: true }, ...(c ? [{ type: "cyl", r: 18.5, h: 3, at: [18, 18, 34], color: 2 }, { type: "cyl", r: 15.5, h: 3, at: [18, 18, 34], cut: true }] : [])] });
+  if (T === "zeichner") P.push({ name: "Stifthalter", purpose: "Röhre für einen Filzstift (Ø bis 11 mm) mit Halterung für den Hebe-Servo.", material: "PLA", infill: "30%", layer: "0.2 mm", supports: false, filament_g: 10, print_min: 40,
+    shapes: [{ type: "box", size: [50, 30, 3], at: [0, 0, 0] }, { type: "cyl", r: 8, h: 30, at: [12, 15, 0] }, { type: "cyl", r: 5.8, h: 30, at: [12, 15, 0], cut: true }, { type: "box", size: [23, 12.5, 3], at: [24, 8.75, 0], cut: true }, ...holes([[4, 4], [46, 4], [4, 26], [46, 26]])] });
+  if (T === "sumo") P.push({ name: "Schaufel", purpose: "Keil vorne – schiebt unter den Gegner. Mit 2 M3-Schrauben an die Platte.", material: "PLA", infill: "60%", layer: "0.2 mm", supports: false, filament_g: 14, print_min: 45,
+    shapes: [{ type: "box", size: [W, 30, 2], at: [0, 0, 0] }, { type: "box", size: [W, 4, 12], at: [0, 26, 0] }, ...[0, 1, 2, 3, 4, 5].map(i => ({ type: "box", size: [W, 30 - i * 5, 2], at: [0, i * 5, 2 + i * 1.6] })), ...holes([[W / 2 - 15, 28], [W / 2 + 15, 28]], 1.6, 14)] });
+  if (T === "labyrinth") P.push({ name: "Kopf-Halter", purpose: "Trägt den Servo-Kopf vorne auf der Platte.", material: "PLA", infill: "25%", layer: "0.2 mm", supports: false, filament_g: 7, print_min: 30,
+    shapes: [{ type: "box", size: [40, 30, 3], at: [0, 0, 0] }, { type: "box", size: [32, 16, 18], at: [4, 7, 3] }, { type: "box", size: [23, 12.5, 18], at: [8.5, 8.75, 3], cut: true }, ...holes([[3, 3], [37, 3]])] });
+  if (T === "lichtsucher") P.push({ name: "Lichtsensor-Fühler", purpose: "Hält zwei Lichtsensor-Module V-förmig vorne.", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 5, print_min: 20,
+    shapes: [{ type: "box", size: [60, 14, 3], at: [0, 0, 0] }, { type: "box", size: [3, 14, 20], at: [6, 0, 0] }, { type: "box", size: [3, 14, 20], at: [51, 0, 0] }, ...holes([[30, 7]])] });
+  if (F.has("oled")) P.push({ name: "Augen-Rahmen", purpose: "Rahmen für das OLED-Display (die Augen).", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, filament_g: 6, print_min: 25,
+    shapes: [{ type: "box", size: [34, 30, 3], at: [0, 0, 0] }, { type: "box", size: [24, 13, 3], at: [5, 9, 0], cut: true }, ...holes([[3, 3], [31, 3], [3, 27], [31, 27]], 1.1)] });
+  return P.slice(0, 5);
+}
+
+/* ---------- Zeichnung ---------- */
+function probotSvg(r, T, F, mini) {
+  const lab = (x, y, t) => `<text x="${x}" y="${y}" font-size="12" fill="#223">${t}</text>`;
+  let g = "";
+  if (T === "arm") {
+    g += `<ellipse cx="200" cy="255" rx="80" ry="16" fill="#4fb3ff" stroke="#1d5f99" stroke-width="3"/><rect x="185" y="200" width="30" height="55" fill="#2d6fb5"/>
+<rect x="190" y="110" width="20" height="100" rx="6" fill="#4fb3ff" transform="rotate(-25 200 205)"/><rect x="230" y="70" width="18" height="80" rx="6" fill="#4fb3ff" transform="rotate(50 240 140)"/>
+<path d="M300 95 l25 -10 M300 105 l25 10" stroke="#333" stroke-width="6" stroke-linecap="round"/>` + lab(230, 290, "Sockel + Dreh-Servo") + lab(300, 70, "Greifer") + lab(40, 150, "Hebe-Servo");
+  } else if (T === "laufroboter") {
+    g += `<rect x="110" y="110" width="180" height="60" rx="14" fill="#4fb3ff" stroke="#1d5f99" stroke-width="3"/>` + [[125, -1], [165, 1], [235, -1], [275, 1]].map(([x, d]) => `<path d="M${x} 165 l${d * 18} 50 l${d * -6} 45" stroke="#333" stroke-width="10" fill="none" stroke-linecap="round"/>`).join("") + `<rect x="270" y="90" width="50" height="22" rx="4" fill="#2d9d5f"/>` + lab(150, 95, "4 Servo-Beine") + lab(300, 80, "Sensor");
+  } else if (T === "sortierer") {
+    g += `<rect x="150" y="60" width="100" height="70" rx="6" fill="#4fb3ff" stroke="#1d5f99" stroke-width="3"/><circle cx="200" cy="40" r="10" fill="red"/><circle cx="222" cy="40" r="10" fill="green"/><circle cx="178" cy="40" r="10" fill="blue"/>
+<path d="M200 140 L120 220" stroke="#555" stroke-width="12" stroke-linecap="round"/>` + ["#e33", "#3a3", "#33e"].map((c, i) => `<path d="M${70 + i * 110} 230 h60 l-8 50 h-44z" fill="${c}" opacity=".8"/>`).join("") + lab(260, 100, "Farbsensor") + lab(130, 175, "Rutsche (Servo)") + lab(20, 298, "Becher");
+  } else if (T === "solar") {
+    g += `<rect x="170" y="230" width="60" height="50" fill="#2d6fb5"/><g transform="rotate(-20 200 200)"><rect x="110" y="170" width="180" height="20" fill="#333"/><rect x="115" y="120" width="170" height="50" fill="#1d3f8a" stroke="#9cf" stroke-width="2"/><rect x="198" y="100" width="4" height="70" fill="#000"/><circle cx="160" cy="112" r="6" fill="#ffd54a"/><circle cx="240" cy="112" r="6" fill="#ffd54a"/></g>
+<circle cx="340" cy="50" r="28" fill="#ffd54a"/>` + lab(240, 290, "Servo dreht") + lab(30, 100, "Solarzelle") + lab(290, 100, "Sonne");
+  } else if (T === "staubsauger") {
+    g += `<circle cx="200" cy="160" r="110" fill="#eee" stroke="#555" stroke-width="4"/><circle cx="200" cy="160" r="35" fill="#9aa"/><path d="M110 90 A110 110 0 0 1 290 90" stroke="#333" stroke-width="10" fill="none"/><rect x="170" y="215" width="60" height="14" rx="4" fill="#444"/>` + lab(160, 30, "Stoßfänger") + lab(250, 165, "Lüfter") + lab(240, 245, "Saugloch");
+  } else if (T === "pflanzen") {
+    g += `<path d="M60 180 h90 l-12 90 h-66z" fill="#b5651d"/><path d="M105 180 q-30 -60 -10 -110 M105 180 q30 -50 50 -90" stroke="#2d9d5f" stroke-width="6" fill="none"/><ellipse cx="95" cy="70" rx="18" ry="9" fill="#3cb371"/><ellipse cx="155" cy="90" rx="18" ry="9" fill="#3cb371"/>
+<rect x="120" y="150" width="8" height="70" fill="#444"/><rect x="230" y="140" width="110" height="70" rx="8" fill="#4fb3ff" stroke="#1d5f99" stroke-width="3"/><rect x="250" y="155" width="50" height="25" fill="#111"/><rect x="250" y="225" width="80" height="50" rx="6" fill="#9fd3ff" stroke="#1d5f99"/>
+<path d="M290 235 C 250 120, 160 130, 140 180" stroke="#1d5f99" stroke-width="4" fill="none"/>` + lab(240, 135, "Steuerung + Display") + lab(250, 292, "Wassertank + Pumpe") + lab(20, 290, "Feuchte-Sensor in der Erde");
+  } else {
+    const s = mini ? 0.6 : 1, cx = 200, cy = 160, w = 220 * s, h = 110 * s;
+    g += `<rect x="${cx - w / 2}" y="${cy - h / 2}" width="${w}" height="${h}" rx="${mini ? 24 : 14}" fill="${T === "schwarm" ? "#c0392b" : "#4fb3ff"}" stroke="#1d5f99" stroke-width="3"/>
+<rect x="${cx - w / 2 - 28 * s}" y="${cy - 5}" width="${28 * s}" height="${60 * s}" rx="6" fill="#333"/><rect x="${cx + w / 2}" y="${cy - 5}" width="${28 * s}" height="${60 * s}" rx="6" fill="#333"/>`;
+    if (F.has("us")) g += `<rect x="${cx - 50 * s}" y="${cy - h / 2 - 40 * s}" width="${100 * s}" height="${40 * s}" rx="4" fill="#2d9d5f"/><circle cx="${cx - 25 * s}" cy="${cy - h / 2 - 20 * s}" r="${14 * s}" fill="#ddd" stroke="#666"/><circle cx="${cx + 25 * s}" cy="${cy - h / 2 - 20 * s}" r="${14 * s}" fill="#ddd" stroke="#666"/>` + lab(cx + 60 * s, cy - h / 2 - 25 * s, "Abstandssensor");
+    if (F.has("oled")) g += `<rect x="${cx - 40}" y="${cy - 30}" width="80" height="40" rx="6" fill="#111"/><rect x="${cx - 28}" y="${cy - 22}" width="18" height="20" rx="6" fill="#fff"/><rect x="${cx + 10}" y="${cy - 22}" width="18" height="20" rx="6" fill="#fff"/>`;
+    if (F.has("leds")) for (let i = 0; i < 8; i++) g += `<circle cx="${cx - 35 * s + i * 10 * s}" cy="${cy + h / 2 - 12 * s}" r="${4 * s}" fill="hsl(${i * 45},90%,55%)"/>`;
+    if (T === "linie") g += `<rect x="${cx - 30}" y="${cy - h / 2 - 12}" width="60" height="10" fill="#222"/>` + lab(cx + 40, cy - h / 2 - 2, "Liniensensoren");
+    if (T === "rover") g += `<rect x="${cx - w / 2 - 28}" y="${cy - h / 2 - 5}" width="28" height="50" rx="6" fill="#333"/><rect x="${cx + w / 2}" y="${cy - h / 2 - 5}" width="28" height="50" rx="6" fill="#333"/>` + lab(cx - 30, cy - h / 2 - 50, "Allradantrieb");
+    if (T === "wache") g += `<rect x="${cx - 18}" y="${cy - 60}" width="36" height="45" rx="8" fill="#222"/><circle cx="${cx}" cy="${cy - 60}" r="18" fill="#fff" stroke="#999"/>` + lab(cx + 25, cy - 70, "Bewegungsmelder");
+    if (T === "zeichner") g += `<rect x="${cx - 6}" y="${cy + 10}" width="12" height="60" fill="#e33"/><path d="M40 280 h80 l40 -40 l-20 -30 l-60 40z" fill="none" stroke="#e33" stroke-width="3"/>` + lab(cx + 15, cy + 60, "Stift");
+    if (T === "sumo") g += `<path d="M${cx - w / 2} ${cy - h / 2} l20 -30 h${w - 40} l20 30z" fill="#888"/>` + lab(cx + w / 2, cy - h / 2 - 20, "Schaufel");
+    if (T === "labyrinth") g += `<circle cx="${cx}" cy="${cy - h / 2 - 50}" r="10" fill="#555"/>` + lab(cx + 60, cy - h / 2 - 50, "dreht sich (Servo)");
+    if (T === "lichtsucher") g += `<path d="M${cx - 30} ${cy - h / 2} l-25 -40 M${cx + 30} ${cy - h / 2} l25 -40" stroke="#333" stroke-width="4"/><circle cx="${cx - 55}" cy="${cy - h / 2 - 40}" r="8" fill="#ffd54a"/><circle cx="${cx + 55}" cy="${cy - h / 2 - 40}" r="8" fill="#ffd54a"/>` + lab(cx + 70, cy - h / 2 - 40, "Lichtsensoren");
+    if (T === "schwarm") g += `<circle cx="${cx}" cy="${cy - 10}" r="7" fill="#ffd54a"/>` + lab(cx + 12, cy - 30, "Lichtsensor") + `<path d="M120 70 q20 -20 40 0 M100 60 q40 -40 80 0" stroke="#888" fill="none" stroke-width="2"/>` + lab(60, 40, "Funk (ESP-NOW)");
+    g += lab(10, 290, "Rad + Motor") + lab(cx - 30, cy + h / 2 + 30, r.parts[0].name.split(" (")[0]);
+  }
+  return `<svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif"><rect width="400" height="300" fill="#f4f7fb"/>${g}<text x="10" y="20" font-size="14" font-weight="bold" fill="#223">${r.name.replace(/[<&]/g, "")}</text></svg>`;
+}
+
+</script>
+<script>
+
+const engine = () => $("engine").value;
+function updateEngine() {
+  const pb = engine() === "probot";
+  $("keycard").classList.toggle("hidden", pb || !!sampleApi);
+  $("loadai").classList.toggle("hidden", !pb || !!probotEngine || !probotAiSupported() || !!window.claude);
+  $("mode").textContent = pb ? (probotEngine ? "ProBot-KI + Sprach-KI" : "ProBot-KI") : (sampleApi ? "Claude (kein Schlüssel nötig)" : "Claude (API-Schlüssel)");
+  $("engineinfo").textContent = pb
+    ? "ProBot-KI läuft komplett auf deinem Gerät: gratis, ohne Anmeldung, Ergebnis in unter 1 Sekunde. Sie kennt " + Object.keys(KB_TYPES).length + " Roboter-Arten (" + Object.values(KB_TYPES).map(t => t.label).join(", ") + ") und " + Object.keys(KB_FEATURES).length + " Extras (" + Object.values(KB_FEATURES).map(f => f.label).join(", ") + "). " + (probotEngine ? "Die Sprach-KI ist geladen und versteht deine Beschreibung noch besser." : probotAiSupported() && !window.claude ? "Optional: Sprach-KI dazuladen, damit sie freie Beschreibungen besser versteht." : "")
+    : "Claude versteht jede Idee, braucht aber ein Claude-Konto oder einen API-Schlüssel und etwas Zeit.";
+  try { localStorage.setItem("engine", engine()); } catch {}
+}
+try { const e = localStorage.getItem("engine"); if (e) $("engine").value = e; } catch {}
+$("engine").addEventListener("change", updateEngine);
+setTimeout(updateEngine, 0); setTimeout(updateEngine, 1500);
+
+$("loadai").onclick = async () => {
+  const b = $("loadai"); b.disabled = true;
+  try {
+    await probotLoadAi(p => { b.textContent = "Lädt… " + Math.round((p.progress || 0) * 100) + " %"; });
+    status("Sprach-KI geladen! Sie bleibt im Browser gespeichert – beim nächsten Mal geht es sofort.", "ok");
+  } catch (e) { status("Sprach-KI konnte nicht geladen werden: " + e.message + " – ProBot-KI funktioniert trotzdem.", "warn"); }
+  b.disabled = false; b.textContent = "Sprach-KI dazuladen (einmalig ca. 1 GB)"; updateEngine();
+};
+
+$("go").onclick = async () => {
+  if (engine() !== "probot") return claudeGo();
+  const desc = $("desc").value.trim();
+  if (!desc) return status("Bitte beschreibe zuerst deinen Roboter.", "err");
+  const t0 = performance.now();
+  let u = kbUnderstand(desc, $("platform").value);
+  if (probotEngine) {
+    status("Die Sprach-KI liest deine Beschreibung…");
+    try { u = await probotAiUnderstand(desc, u); } catch (e) { console.warn(e); }
+  }
+  meshCache.clear(); sel3d = 0;
+  const r = probotDesign(u);
+  if (!$("want3d").checked) r.parts3d = [];
+  render(r); show("t-design");
+  status(`Fertig in ${((performance.now() - t0) / 1000).toFixed(1)} s – erkannt: ${KB_TYPES[u.type].label}${u.count > 1 ? ", " + u.count + " Stück" : ""}${u.features.length ? ", " + u.features.map(f => KB_FEATURES[f].label).join(", ") : ""}. Nicht ganz richtig? Beschreibung genauer machen oder „Claude“ wählen.`, "ok");
+};
+
+// Test-Labor und „KI ändern lassen“ brauchen eine große KI.
+const hasBigAi = () => !!sampleApi || !!$("key").value.trim();
+{ const orig = $("fix").onclick;
+  $("fix").onclick = () => hasBigAi() ? orig() : status("„KI ändern lassen“ braucht Claude (oben bei „KI“ umstellen). Den Code kannst du aber jederzeit selbst bearbeiten.", "warn"); }
+{ const orig = $("runtest").onclick;
+  $("runtest").onclick = () => hasBigAi() ? orig() : quickCheck(); }
+
+// Schnell-Check ohne große KI: prüft Code, Verkabelung, Teile und 3D-Teile mit festen Regeln.
+function quickCheck() {
+  if (!current) return;
+  const code = $("code").value, C = [], ok = (b, t) => C.push({ ok: !!b, text: t });
+  const strip = code.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/"(\\.|[^"\\])*"/g, '""');
+  ok(/void\s+setup\s*\(/.test(strip), "setup() vorhanden");
+  ok(/void\s+loop\s*\(/.test(strip), "loop() vorhanden");
+  const bal = (o, c) => (strip.split(o).length - strip.split(c).length);
+  ok(bal("{", "}") === 0, bal("{", "}") === 0 ? "Geschweifte Klammern { } passen zusammen" : `Klammern passen nicht: ${Math.abs(bal("{", "}"))} „${bal("{", "}") > 0 ? "}" : "{"}“ fehlt`);
+  ok(bal("(", ")") === 0, bal("(", ")") === 0 ? "Runde Klammern ( ) passen zusammen" : "Runde Klammern ( ) passen nicht zusammen");
+  const lines = strip.split("\n").map(l => l.trim()).filter(l => l && !/[{};,:]$/.test(l) && !/^#|^\}|^(if|else|for|while)\b|\)$|^(public|private):/.test(l));
+  ok(!lines.length, lines.length ? `Vermutlich fehlt ein Semikolon „;“ bei: ${lines[0].slice(0, 50)}` : "Keine fehlenden Semikolons gefunden");
+  const pins = new Set();
+  (current.wiring || []).join(" ").replace(/(?:→|->)\s*(A?\d+)(?![\d.,]|\s*V)/g, (_, p) => pins.add(p));
+  const miss = [...pins].filter(p => !new RegExp("\\b" + p + "\\b").test(strip));
+  ok(!miss.length, miss.length ? `Diese Pins aus der Verkabelung kommen im Code nicht vor: ${miss.join(", ")}` : pins.size ? `Alle ${pins.size} Pins aus der Verkabelung stehen im Code` : "Keine Pins in der Verkabelung angegeben");
+  const libs = { "Adafruit_NeoPixel": /ws2812|neopixel|led-ring/i, "Servo": /servo/i, "Adafruit_SSD1306": /oled|display/i, "BluetoothSerial": /esp32/i, "SoftwareSerial": /hc-05|bluetooth/i };
+  for (const [lib, re] of Object.entries(libs)) if (new RegExp("#include\\s*<" + lib).test(code)) ok((current.parts || []).some(p => re.test(p.name)), `Bibliothek ${lib}: passendes Teil ${(current.parts || []).some(p => re.test(p.name)) ? "ist in der Teileliste" : "fehlt in der Teileliste"}`);
+  if (/analogWrite/.test(strip) && /Servo\.h/.test(code) && /\b(9|10)\b/.test((current.wiring || []).join(" ")) && /nano/i.test(JSON.stringify(current.parts))) ok(false, "Achtung Nano: Die Servo-Bibliothek blockiert PWM auf Pin 9 und 10 – Motoren dort laufen nicht.");
+  const motors = (current.parts || []).filter(p => /motor/i.test(p.name) && !/treiber/i.test(p.name)).reduce((a, p) => a + (p.qty || 0), 0);
+  if (motors) ok((current.parts || []).some(p => /treiber|driver|l298|drv8833|mx1508/i.test(p.name)), "Motoren brauchen einen Motortreiber – " + ((current.parts || []).some(p => /treiber|driver|l298|drv8833|mx1508/i.test(p.name)) ? "vorhanden" : "fehlt in der Teileliste!"));
+  ok((current.parts || []).some(p => /akku|batter|lipo|18650/i.test(p.name)), "Stromversorgung (Akku/Batterie) " + ((current.parts || []).some(p => /akku|batter|lipo|18650/i.test(p.name)) ? "ist geplant" : "fehlt in der Teileliste"));
+  for (const p of current.parts3d || []) { const f = fitsBed(p); ok(f.ok, `3D-Teil „${p.name}“ (${f.size}) ${f.ok ? "passt auf" : "ist zu groß für"} ${printer().name}`); }
+  $("serial").textContent = "Der Schnell-Check simuliert keinen Ablauf. Für eine echte Simulation mit seriellem Monitor oben bei „KI“ auf Claude umstellen.";
+  $("behavior").textContent = "Geprüft wurden Code-Aufbau, Klammern, Semikolons, Pins, Bibliotheken, Teile und 3D-Größen – ohne KI, sofort.";
+  const ul = $("checks"); ul.innerHTML = "";
+  C.forEach(c => { const li = document.createElement("li"); li.className = c.ok ? "ok" : "warn"; li.textContent = (c.ok ? "✓ " : "⚠ ") + c.text; ul.appendChild(li); });
+  $("teststatus").textContent = C.filter(c => !c.ok).length ? C.filter(c => !c.ok).length + " Hinweis(e) gefunden" : "Alles in Ordnung!";
+}
+
+
+/* ---------- Recherche: Wikipedia (frei, CORS erlaubt) + Such-Links ---------- */
+async function wikiSearch(q) {
+  const u = "https://de.wikipedia.org/w/api.php?action=query&list=search&format=json&origin=*&srlimit=4&srsearch=" + encodeURIComponent(q);
+  const j = await (await fetch(u)).json();
+  const hits = j.query?.search || [];
+  return Promise.all(hits.map(async h => {
+    try {
+      const sres = await (await fetch("https://de.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(h.title.replace(/ /g, "_")))).json();
+      return { title: h.title, text: sres.extract || "", url: sres.content_urls?.desktop?.page || "https://de.wikipedia.org/wiki/" + encodeURIComponent(h.title) };
+    } catch { return { title: h.title, text: h.snippet.replace(/<[^>]+>/g, ""), url: "https://de.wikipedia.org/wiki/" + encodeURIComponent(h.title) }; }
+  }));
+}
+function webLinks(q) {
+  const L = [["YouTube-Videos", "https://www.youtube.com/results?search_query="], ["Anleitungen (Instructables)", "https://www.instructables.com/search/?q="],
+    ["Beispiel-Code (GitHub)", "https://github.com/search?type=repositories&q="], ["Preise (idealo)", "https://www.idealo.de/preisvergleich/MainSearchProductCategory.html?q="],
+    ["3D-Modelle (Printables)", "https://www.printables.com/search/models?q="], ["Google", "https://www.google.com/search?q="]];
+  const box = $("weblinks"); box.innerHTML = "";
+  L.forEach(([t, u]) => { const a = document.createElement("a"); a.href = u + encodeURIComponent(q); a.target = "_blank"; a.rel = "noopener"; a.textContent = t + " ↗"; a.className = "badge"; a.style.fontSize = "14px"; box.appendChild(a); });
+}
+async function runWeb(q) {
+  if (!q) return;
+  $("webq").value = q; webLinks(q);
+  $("webstatus").textContent = "Suche in Wikipedia…"; $("webres").innerHTML = "";
+  try {
+    const terms = q.split(/\s*[,;]\s*/).filter(Boolean).slice(0, 4);
+    const all = (await Promise.all(terms.map(wikiSearch))).flat();
+    const seen = new Set(), res = all.filter(x => !seen.has(x.title) && seen.add(x.title)).slice(0, 8);
+    $("webstatus").textContent = res.length ? res.length + " Treffer aus Wikipedia:" : "Keine Wikipedia-Treffer – probier die Links unten.";
+    res.forEach(x => {
+      const d = document.createElement("div"); d.className = "part";
+      const a = document.createElement("a"); a.href = x.url; a.target = "_blank"; a.rel = "noopener"; a.textContent = x.title + " ↗"; a.style.fontWeight = "700";
+      const t = document.createElement("div"); t.className = "muted"; t.textContent = x.text.slice(0, 400) + (x.text.length > 400 ? " …" : "");
+      d.append(a, t); $("webres").appendChild(d);
+    });
+  } catch (e) {
+    $("webstatus").textContent = window.claude
+      ? "Die Claude-Seite blockiert Internet-Abfragen aus Sicherheitsgründen. Auf der GitHub-Seite von ProBot funktioniert die Recherche – die Links unten gehen aber überall."
+      : "Keine Verbindung zu Wikipedia (" + e.message + "). Die Links unten funktionieren trotzdem.";
+  }
+}
+$("websearch").onclick = () => runWeb($("webq").value.trim());
+$("webq").addEventListener("keydown", e => { if (e.key === "Enter") runWeb($("webq").value.trim()); });
+document.querySelector('[data-t="t-web"]').addEventListener("click", () => {
+  if (!$("webq").value && current) {
+    const T = { "Mini-Schwarm": "Schwarmrobotik, ESP-NOW", "ESP-NOW": "Schwarmrobotik, ESP-NOW", "Linie": "Linienfolger", "Roboterarm": "Greifer, Servomotor", "Bluetooth": "Bluetooth, Arduino", "Display-Augen": "Sozialer Roboter, OLED" };
+    const hit = Object.keys(T).find(k => (current.summary + current.name).includes(k));
+    runWeb(hit ? T[hit] : (current.parts || []).slice(0, 2).map(p => p.name.split(" (")[0]).join(", ") || current.name);
+  }
+});
+
+/* ---------- Studio: alles manuell ---------- */
+const stView = (() => {   // zweite 3D-Ansicht nur fürs Studio (gleiche Technik wie die Vorschau)
+  const cv = $("s-view"), gl = cv.getContext("webgl");
+  if (!gl) return { set() {} };
+  let count = 0, rx = -0.9, rz = 0.6, ctr = [0, 0, 0], size = 1, drag = null;
+  const sh = (t, src) => { const x = gl.createShader(t); gl.shaderSource(x, src); gl.compileShader(x); return x; };
+  const pr = gl.createProgram();
+  gl.attachShader(pr, sh(gl.VERTEX_SHADER, "attribute vec3 p;attribute vec3 n;attribute vec3 c;uniform mat4 m;varying vec3 vn;varying vec3 vc;void main(){vc=c;vn=(m*vec4(n,0.)).xyz;gl_Position=m*vec4(p,1.);}"));
+  gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, "precision mediump float;varying vec3 vn;varying vec3 vc;void main(){float l=.35+.65*max(dot(normalize(vn),normalize(vec3(.4,.5,-.8))),0.);gl_FragColor=vec4(vc*l+.05,1.);}"));
+  gl.linkProgram(pr); gl.useProgram(pr);
+  const bp = gl.createBuffer(), bn = gl.createBuffer(), bc = gl.createBuffer();
+  const lp = gl.getAttribLocation(pr, "p"), ln = gl.getAttribLocation(pr, "n"), lc = gl.getAttribLocation(pr, "c"), lm = gl.getUniformLocation(pr, "m");
+  function draw() {
+    const w = cv.clientWidth, h = cv.clientHeight, d = devicePixelRatio || 1;
+    if (!w) return;
+    if (cv.width !== w * d) { cv.width = w * d; cv.height = h * d; }
+    gl.viewport(0, 0, cv.width, cv.height); gl.clearColor(.875, .9, .95, 1); gl.clear(16640); gl.enable(gl.DEPTH_TEST);
+    if (!count) return;
+    const cz = Math.cos(rz), sz = Math.sin(rz), cx = Math.cos(rx), sx = Math.sin(rx), s = 1.6 / size, a = h / w;
+    const R = [cz, sz * cx, sz * sx, -sz, cz * cx, cz * sx, 0, -sx, cx];
+    const t = [0, 1, 2].map(i => -(ctr[0] * R[i] + ctr[1] * R[3 + i] + ctr[2] * R[6 + i]));
+    gl.uniformMatrix4fv(lm, false, [R[0] * s * a, R[1] * s, -R[2] * s * .5, 0, R[3] * s * a, R[4] * s, -R[5] * s * .5, 0, R[6] * s * a, R[7] * s, -R[8] * s * .5, 0, t[0] * s * a, t[1] * s, -t[2] * s * .5, 1]);
+    gl.drawArrays(gl.TRIANGLES, 0, count);
+  }
+  function set(list) {
+    const total = list.reduce((a, [m]) => a + m.length, 0), pos = new Float32Array(total), col = new Float32Array(total), nrm = new Float32Array(total);
+    let o = 0; list.forEach(([m, rgb]) => { pos.set(m, o); for (let i = 0; i < m.length; i += 3) col.set(rgb, o + i); o += m.length; });
+    count = total / 3;
+    const lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+    for (let i = 0; i < total; i += 9) {
+      const u = [pos[i + 3] - pos[i], pos[i + 4] - pos[i + 1], pos[i + 5] - pos[i + 2]], v = [pos[i + 6] - pos[i], pos[i + 7] - pos[i + 1], pos[i + 8] - pos[i + 2]];
+      const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]], l = Math.hypot(...n) || 1;
+      for (let k = 0; k < 3; k++) { nrm.set(n.map(c => c / l), i + k * 3); for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], pos[i + k * 3 + a]); hi[a] = Math.max(hi[a], pos[i + k * 3 + a]); } }
+    }
+    if (count) { ctr = lo.map((c, i) => (c + hi[i]) / 2); size = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) || 1; }
+    for (const [b, data, loc] of [[bp, pos, lp], [bn, nrm, ln], [bc, col, lc]]) { gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0); }
+    draw();
+  }
+  cv.addEventListener("pointerdown", e => { drag = [e.clientX, e.clientY]; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener("pointermove", e => { if (!drag) return; rz += (e.clientX - drag[0]) * .01; rx = Math.max(-3.1, Math.min(0, rx + (e.clientY - drag[1]) * .01)); drag = [e.clientX, e.clientY]; draw(); });
+  cv.addEventListener("pointerup", () => drag = null);
+  return { set, draw };
+})();
+
+let sSel = 0, sTimer = null;
+const sNum = v => { const n = parseFloat(String(v).replace(",", ".")); return isFinite(n) ? n : 0; };
+function sProject() {
+  if (!current) { current = { name: "Mein Roboter", summary: "", parts: [], tools: [], wiring: [], steps: [], parts3d: [], code: "// Dein Code\nvoid setup() {\n}\n\nvoid loop() {\n}\n", language: "Arduino C++", filename: "roboter.ino", svg: "" }; render(current); }
+  current.parts ||= []; current.parts3d ||= []; current.wiring ||= []; current.steps ||= [];
+  return current;
+}
+function sChanged(full) {   // speichern + Hauptansicht nachziehen (gedrosselt)
+  clearTimeout(sTimer);
+  sTimer = setTimeout(() => {
+    current.code = $("code").value;
+    try { localStorage.setItem("probot-studio", JSON.stringify(slim({ ...current, svg: current.svg }))); localStorage.setItem("probot-studio-svg", current.svg || ""); } catch {}
+    const tab = document.querySelector(".tab:not(.hidden)")?.id;
+    render(current); if (tab) show(tab);
+    if (full) sFill();
+  }, 250);
+}
+function sFill() {
+  const r = sProject();
+  $("s-name").value = r.name || ""; $("s-sum").value = r.summary || "";
+  $("s-wiring").value = (r.wiring || []).join("\n"); $("s-steps").value = (r.steps || []).join("\n");
+  $("s-svg").value = r.svg || ""; $("s-svgview").innerHTML = cleanSvg(r.svg) || "<p class='muted' style='padding:12px;color:#556'>Noch keine Zeichnung – SVG-Code links eingeben.</p>";
+  sParts(); s3dList(); $("s-json").value = JSON.stringify(slim({ ...r, code: $("code").value }), null, 2);
+}
+function sParts() {
+  const tb = $("s-parts").tBodies[0]; tb.innerHTML = ""; let sum = 0;
+  current.parts.forEach((p, i) => {
+    sum += (p.qty || 0) * (p.price_eur || 0);
+    const tr = document.createElement("tr");
+    const inp = (val, w, cb, num) => { const x = document.createElement("input"); x.value = val ?? ""; x.style.width = w; if (num) x.inputMode = "decimal"; x.oninput = () => { cb(x.value); sTotal(); sChanged(); }; const td = document.createElement("td"); td.appendChild(x); return td; };
+    tr.append(inp(p.name, "100%", v => p.name = v), inp(p.qty, "56px", v => p.qty = sNum(v), 1), inp(p.price_eur, "72px", v => p.price_eur = sNum(v), 1));
+    const del = document.createElement("button"); del.className = "sec"; del.textContent = "✕"; del.onclick = () => { current.parts.splice(i, 1); sParts(); sChanged(); };
+    const td = document.createElement("td"); td.appendChild(del); tr.appendChild(td); tb.appendChild(tr);
+  });
+  sTotal();
+}
+function sTotal() { $("s-total").textContent = eur(current.parts.reduce((a, p) => a + (p.qty || 0) * (p.price_eur || 0), 0)); }
+function s3dList() {
+  const ps = current.parts3d, sel = $("s-p3d"); sel.innerHTML = "";
+  if (sSel >= ps.length) sSel = Math.max(0, ps.length - 1);
+  ps.forEach((p, i) => sel.add(new Option(p.name || "Teil " + (i + 1), i)));
+  sel.value = sSel; s3dShapes();
+}
+function s3dShapes() {
+  const box = $("s-shapes"); box.innerHTML = "";
+  const p = current.parts3d[sSel];
+  $("s-p3dname").value = p ? p.name : "";
+  if (!p) { box.innerHTML = "<p class='muted'>Noch kein 3D-Teil – „+ Neues Teil“ drücken.</p>"; stView.set([]); return; }
+  p.shapes.forEach((sh, i) => {
+    const d = document.createElement("div"); d.className = "shape" + (sh.cut ? " cut" : "");
+    const field = (label, get, set, opts) => {
+      const l = document.createElement("label"); l.textContent = label;
+      let x;
+      if (opts) { x = document.createElement("select"); opts.forEach(o => x.add(new Option(o[1], o[0]))); x.value = String(get()); x.onchange = () => { set(x.value); s3dUpdate(); if (label === "Form" || label === "Art") s3dShapes(); }; }
+      else { x = document.createElement("input"); x.value = Math.round(get() * 100) / 100; x.inputMode = "decimal"; x.oninput = () => { set(sNum(x.value)); s3dUpdate(); }; }
+      l.appendChild(x); d.appendChild(l);
+    };
+    field("Form", () => sh.type, v => { sh.type = v; if (v === "box") { sh.size ||= [10, 10, 10]; } else { sh.r ||= 5; sh.h ||= 10; } }, [["box", "Quader"], ["cyl", "Zylinder"]]);
+    field("Art", () => sh.cut ? "1" : "0", v => sh.cut = v === "1", [["0", "fest"], ["1", "Loch/Ausschnitt"]]);
+    ["x", "y", "z"].forEach((a, k) => field(a, () => (sh.at || [0, 0, 0])[k], v => { sh.at ||= [0, 0, 0]; sh.at[k] = v; }));
+    if (sh.type === "box") ["Länge", "Breite", "Höhe"].forEach((a, k) => field(a, () => sh.size[k], v => sh.size[k] = v));
+    else { field("Radius", () => sh.r, v => sh.r = v); field("Länge", () => sh.h, v => sh.h = v); field("Richtung", () => sh.axis || "z", v => sh.axis = v, [["z", "hoch"], ["x", "x"], ["y", "y"]]); }
+    if (printer().colors > 1) field("Farbe", () => sh.color || 1, v => sh.color = +v, [...Array(printer().colors)].map((_, k) => [String(k + 1), (p.colors?.[k] || "Farbe " + (k + 1))]));
+    const del = document.createElement("button"); del.className = "sec"; del.textContent = "✕"; del.title = "Form löschen";
+    del.onclick = () => { p.shapes.splice(i, 1); s3dShapes(); s3dUpdate(); };
+    d.appendChild(del); box.appendChild(d);
+  });
+  s3dUpdate(true);
+}
+function s3dUpdate(noSave) {
+  const p = current.parts3d[sSel]; if (!p) return;
+  if (printer().colors > 1 && p.shapes.some(s => (s.color || 1) > 1) && !p.colors) p.colors = ["Weiß", "Schwarz", "Rot", "Blau"].slice(0, printer().colors);
+  meshCache.clear();
+  try { stView.set(p.shapes.some(s => !s.cut) ? previewOf(p) : []); } catch (e) { console.warn(e); }
+  if (!noSave) { sel3d = sSel; sChanged(); }
+}
+function sDl(name, blob) { save(name, blob); }
+
+$("s-name").oninput = () => { current.name = $("s-name").value; sChanged(); };
+$("s-sum").oninput = () => { current.summary = $("s-sum").value; sChanged(); };
+$("s-wiring").oninput = () => { current.wiring = $("s-wiring").value.split("\n").filter(x => x.trim()); sChanged(); };
+$("s-steps").oninput = () => { current.steps = $("s-steps").value.split("\n").filter(x => x.trim()); sChanged(); };
+$("s-svg").oninput = () => { current.svg = $("s-svg").value; $("s-svgview").innerHTML = cleanSvg(current.svg) || ""; sChanged(); };
+$("s-addpart").onclick = () => { sProject().parts.push({ name: "Neues Teil", qty: 1, price_eur: 0 }); sParts(); sChanged(); };
+$("s-p3d").onchange = () => { sSel = +$("s-p3d").value; s3dShapes(); };
+$("s-p3dname").oninput = () => { const p = current.parts3d[sSel]; if (p) { p.name = $("s-p3dname").value; $("s-p3d").options[sSel].text = p.name; sChanged(); } };
+$("s-add3d").onclick = () => { sProject().parts3d.push({ name: "Neues Teil " + (current.parts3d.length + 1), purpose: "selbst konstruiert", material: "PLA", infill: "20%", layer: "0.2 mm", supports: false, shapes: [{ type: "box", size: [40, 30, 3], at: [0, 0, 0] }] }); sSel = current.parts3d.length - 1; s3dList(); sChanged(); };
+$("s-del3d").onclick = () => { if (!current?.parts3d?.length) return; current.parts3d.splice(sSel, 1); s3dList(); sChanged(); };
+const sAdd = sh => { const p = current?.parts3d?.[sSel]; if (!p) return status("Erst ein 3D-Teil anlegen („+ Neues Teil“).", "warn"); p.shapes.push(sh); s3dShapes(); s3dUpdate(); };
+$("s-addbox").onclick = () => sAdd({ type: "box", size: [10, 10, 10], at: [0, 0, 0] });
+$("s-addcyl").onclick = () => sAdd({ type: "cyl", r: 5, h: 10, at: [10, 10, 0], axis: "z" });
+$("s-addhole").onclick = () => sAdd({ type: "cyl", r: 1.6, h: 50, at: [5, 5, -1], axis: "z", cut: true });
+$("s-stl").onclick = () => { const p = current?.parts3d?.[sSel]; if (!p) return; const cs = colorsOf(p);
+  if (cs) cs.forEach((c, i) => save(fileBase(p.name) + "-farbe" + (i + 1) + ".stl", new Blob([toStl(meshOf(p, i + 1), p.name)])));
+  else save(fileBase(p.name) + ".stl", new Blob([toStl(meshOf(p), p.name)], { type: "model/stl" })); };
+$("s-scad").onclick = () => { const p = current?.parts3d?.[sSel]; if (p) save(fileBase(p.name) + ".scad", new Blob([toScad(p)], { type: "text/plain" })); };
+$("s-new").onclick = () => { current = null; meshCache.clear(); sSel = 0; sProject(); show("t-studio"); sFill(); sChanged(); };
+$("s-save").onclick = () => { const r = sProject(); save(fileBase(r.name) + ".probot.json", new Blob([JSON.stringify({ ...slim(r), svg: r.svg, code: $("code").value }, null, 2)], { type: "application/json" })); };
+$("s-open").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try { current = JSON.parse(await f.text()); meshCache.clear(); sSel = 0; render(current); show("t-studio"); sFill(); status("Projekt „" + current.name + "“ geöffnet.", "ok"); }
+  catch (err) { status("Die Datei ist kein gültiges ProBot-Projekt: " + err.message, "err"); }
+  e.target.value = "";
+};
+$("s-jsonapply").onclick = () => {
+  try { const j = JSON.parse($("s-json").value); current = { ...j, svg: j.svg ?? current?.svg }; meshCache.clear(); render(current); show("t-studio"); sFill(); status("JSON übernommen.", "ok"); }
+  catch (err) { status("Fehler im JSON: " + err.message, "err"); }
+};
+$("openstudio").onclick = () => { sProject(); render(current); show("t-studio"); sFill(); setTimeout(() => stView.draw(), 50); $("t-studio").scrollIntoView({ behavior: "smooth" }); };
+$("s-test").onclick = () => { sProject(); show("t-test"); $("scenario").focus(); };
+$("code").addEventListener("input", () => { if (current) { current.code = $("code").value; sChanged(); } });
+document.querySelector('[data-t="t-studio"]').addEventListener("click", () => { sFill(); setTimeout(() => stView.draw(), 50); });
+$("printer").addEventListener("change", () => { if (current) s3dShapes(); });
+// Letztes Studio-Projekt wiederherstellen
+try { const j = localStorage.getItem("probot-studio"); if (j && !current) { current = JSON.parse(j); current.svg = localStorage.getItem("probot-studio-svg") || ""; render(current); status("Dein letztes Projekt „" + current.name + "“ ist wieder da (Tab „🛠 Studio“).", "ok"); } } catch {}
+</script>
+</body>
+</html>

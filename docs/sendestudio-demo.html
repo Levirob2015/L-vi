@@ -1,0 +1,1258 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}body{margin:0;font:14px system-ui}img{max-width:100%}[hidden]{display:none!important}</style></head><body><title>Sendestudio Demo</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: Kopfleiste mit Ansichtswahl; darunter Studio (Seitenleiste + Arbeitsfläche) bzw. öffentliche Seite bzw. Feed.
+   Farben und Schrift folgen dem echten Sendestudio, damit die Demo zeigt, wie es wirklich aussieht. */
+:root {
+  --bg: #f4f2ee; --flaeche: #ffffff; --flaeche2: #ece8e1; --text: #1c1a17; --leise: #6d675e;
+  --linie: #ddd7cc; --akzent: #c2410c; --akzent-text: #ffffff; --rot: #dc2626; --gruen: #15803d;
+  --ki: #6d28d9; --ki-linie: #8b5cf6; --pegel-a: #16a34a; --pegel-b: #eab308; --pegel-c: #dc2626;
+  --schrift: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131210; --flaeche: #1e1c19; --flaeche2: #2a2723; --text: #f2eee7; --leise: #a39c90;
+    --linie: #36322c; --akzent: #fb923c; --akzent-text: #1a0e05; --rot: #f87171; --gruen: #4ade80;
+    --ki: #c4b5fd; --ki-linie: #a78bfa; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131210; --flaeche: #1e1c19; --flaeche2: #2a2723; --text: #f2eee7; --leise: #a39c90;
+  --linie: #36322c; --akzent: #fb923c; --akzent-text: #1a0e05; --rot: #f87171; --gruen: #4ade80;
+  --ki: #c4b5fd; --ki-linie: #a78bfa; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font: 16px/1.5 var(--schrift); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--flaeche); }
+a { color: var(--akzent); }
+h1 { font-size: 1.55rem; line-height: 1.2; margin: .1em 0 .4em; text-wrap: balance; }
+h2 { font-size: 1.08rem; margin: 1.4em 0 .5em; text-wrap: balance; }
+h3 { font-size: 1rem; margin: 1em 0 .4em; }
+p { margin: .5em 0; }
+.leise { color: var(--leise); }
+.klein { font-size: .85rem; }
+button, input, textarea, select { font: inherit; }
+:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+
+.leiste { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--flaeche); border-bottom: 1px solid var(--linie);
+  padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; }
+.marke { font-weight: 800; display: flex; align-items: center; gap: 10px; }
+.onair { font-size: .68rem; letter-spacing: .12em; padding: 3px 7px; border-radius: 4px; border: 2px solid var(--leise); color: var(--leise); }
+.onair.an { border-color: var(--rot); background: var(--rot); color: #fff; animation: puls 1.2s infinite; }
+@keyframes puls { 50% { opacity: .55; } }
+.demo-etikett { font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--leise); border: 1px dashed var(--leise); border-radius: 999px; padding: 1px 8px; }
+.ansichten { display: flex; gap: 4px; background: var(--flaeche2); padding: 4px; border-radius: 12px; }
+.ansichten button { border: 0; background: transparent; color: var(--text); padding: 6px 12px; border-radius: 9px; cursor: pointer; font-weight: 600; font-size: .92rem; }
+.ansichten button[aria-selected="true"] { background: var(--flaeche); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+
+.huelle { max-width: 1180px; margin: 0 auto; padding-block: 18px 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.hinweis { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; font-size: .9rem; color: var(--leise); margin-bottom: 16px; }
+.hinweis b { color: var(--text); }
+.raster { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 20px; }
+@media (max-width: 760px) { .raster { grid-template-columns: minmax(0, 1fr); } }
+.karte { background: var(--flaeche); border: 1px solid var(--linie); border-radius: 14px; padding: 18px; }
+.stapel { display: grid; gap: 14px; }
+
+.liste { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
+.liste button { width: 100%; text-align: left; border: 1px solid transparent; background: transparent; color: var(--text); padding: 9px 12px; border-radius: 10px; cursor: pointer; }
+.liste button:hover { background: var(--flaeche2); }
+.liste button.aktiv { background: var(--flaeche); border-color: var(--linie); }
+.liste small { display: block; color: var(--leise); }
+
+.knopf { display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; font-weight: 600; font-size: .93rem;
+  padding: 8px 14px; border-radius: 10px; border: 1px solid var(--linie); background: var(--flaeche2); color: var(--text); }
+.knopf:hover { border-color: var(--leise); }
+.knopf:disabled { opacity: .45; cursor: not-allowed; }
+.knopf.primaer { background: var(--akzent); color: var(--akzent-text); border-color: transparent; }
+.knopf.leicht { background: transparent; }
+.knopf.aufnahme { background: var(--rot); color: #fff; border-color: transparent; }
+.knopf.ki { background: transparent; color: var(--ki); border-color: var(--ki-linie); }
+.knopf.klein { padding: 4px 10px; font-size: .84rem; }
+.knopf.breit { width: 100%; }
+.knoepfe { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.formular { display: grid; gap: 12px; }
+.formular label, .feld { display: grid; gap: 4px; font-weight: 600; font-size: .88rem; }
+input, textarea, select { font-weight: 400; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--linie); background: var(--bg); color: var(--text); width: 100%; accent-color: var(--akzent); }
+textarea { resize: vertical; }
+.zwei { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 560px) { .zwei { grid-template-columns: 1fr; } }
+
+.kopf { display: flex; gap: 18px; align-items: flex-start; }
+.wachsen { flex: 1; min-width: 0; }
+@media (max-width: 560px) { .kopf { flex-direction: column; } }
+.cover { width: 112px; height: 112px; border-radius: 12px; object-fit: cover; background: var(--flaeche2); flex: none; display: block; }
+.etikett { display: inline-block; font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; border: 1px solid currentColor; border-radius: 999px; padding: 1px 9px; color: var(--akzent); }
+.etikett.online { color: var(--gruen); }
+.etikett.entwurf { color: var(--leise); }
+.chip { display: inline-flex; gap: 4px; align-items: center; font-size: .8rem; border: 1px dashed var(--leise); color: var(--leise); border-radius: 8px; padding: 1px 8px; }
+button.chip { background: transparent; cursor: pointer; }
+.chip.ki { border-color: var(--ki-linie); color: var(--ki); }
+
+.folge { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 14px; align-items: center; }
+.folge h3 { margin: .15em 0; }
+.folge .unten { grid-column: 1 / -1; }
+@media (max-width: 640px) { .folge { grid-template-columns: minmax(0, 1fr); } }
+audio { width: 100%; }
+.bytes { font-family: var(--mono); font-size: .78rem; background: var(--flaeche2); border-radius: 8px; padding: 8px 10px; overflow-x: auto; white-space: pre; margin: 6px 0 0; }
+
+.pult { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px 22px; align-items: center; background: var(--flaeche2); border-radius: 12px; padding: 16px; }
+.pult .knoepfe { grid-column: 1 / -1; }
+@media (max-width: 640px) { .pult { grid-template-columns: minmax(0, 1fr); } }
+.uhr { font-size: 2.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pegel { height: 10px; width: 220px; max-width: 100%; border-radius: 5px; background: var(--linie); overflow: hidden; margin: 6px 0; }
+.pegel div { height: 100%; width: 0; background: linear-gradient(90deg, var(--pegel-a) 60%, var(--pegel-b) 80%, var(--pegel-c)); background-size: 220px 100%; transition: width 60ms linear; }
+.regler { display: grid; gap: 6px; }
+.regler label { display: grid; grid-template-columns: 84px minmax(0, 1fr); align-items: center; font-size: .88rem; }
+.regler input { padding: 0; }
+.pads { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+.pad { border: 1px solid var(--linie); border-radius: 12px; padding: 14px 8px; background: var(--flaeche); cursor: pointer; font-weight: 700; color: var(--text); text-align: center; }
+.pad small { display: block; font-weight: 400; color: var(--leise); }
+.pad.laeuft { background: var(--akzent); color: var(--akzent-text); }
+.pad.laeuft small { color: inherit; }
+.kapitel-zeile { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 8px; margin-bottom: 6px; }
+.vorschlaege { display: flex; flex-wrap: wrap; gap: 6px; }
+.vorschlaege button { border: 1px dashed var(--ki-linie); background: transparent; color: var(--text); border-radius: 999px; padding: 3px 11px; cursor: pointer; font-size: .9rem; }
+.ki-status { font-size: .82rem; color: var(--ki); }
+
+/* Öffentliche Seite: wie site.py */
+.oeffentlich { max-width: 760px; margin: 0 auto; }
+.oeffentlich .punkt { width: 11px; height: 11px; border-radius: 50%; background: var(--akzent); display: inline-block; }
+.oeff-kopf { display: flex; align-items: center; gap: 10px; font-weight: 700; margin-bottom: 18px; }
+.oeff-sendung { display: flex; gap: 18px; align-items: flex-start; }
+@media (max-width: 560px) { .oeff-sendung { flex-direction: column; } .oeff-sendung .cover { width: 100%; height: auto; aspect-ratio: 1; max-width: 100%; } }
+.kapitel { list-style: none; padding: 0; margin: 0; }
+.kapitel li { border-top: 1px solid var(--linie); }
+.kapitel button { width: 100%; border: 0; background: transparent; color: var(--text); display: flex; gap: 14px; padding: 8px 2px; cursor: pointer; text-align: left; }
+.kapitel button:hover { color: var(--akzent); }
+.kapitel .zeit { font-variant-numeric: tabular-nums; color: var(--leise); min-width: 4.5em; }
+.live { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; color: var(--akzent); }
+.live::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: currentColor; animation: puls 1.4s infinite; }
+.programm li.laeuft { font-weight: 700; color: var(--akzent); }
+pre.feed { font-family: var(--mono); font-size: .8rem; line-height: 1.45; background: var(--flaeche); border: 1px solid var(--linie); border-radius: 12px; padding: 14px; overflow-x: auto; margin: 0; }
+
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--text); color: var(--bg); padding: 9px 16px; border-radius: 10px; font-weight: 600; z-index: 20; max-width: calc(100% - 32px); }
+/* Zeitung: wie Papier, auch im dunklen Modus */
+.zeitung{--papier:#fbf8f1;--tinte:#151310;--grau:#5d574d;--strich:#1e1b17;
+background:var(--papier);color:var(--tinte);padding:28px 30px 34px;border-radius:4px;
+box-shadow:0 1px 3px rgba(0,0,0,.18),0 10px 30px rgba(0,0,0,.08);
+font:16px/1.5 Georgia,"Times New Roman",Times,serif;text-align:left}
+.zeitung *{color:inherit}
+.zeitung .z-kopf{text-align:center;border-bottom:4px double var(--strich);padding-bottom:8px;margin-bottom:18px}
+.zeitung .z-zeile{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;
+font:600 .78rem/1.3 system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;
+color:var(--grau);border-bottom:1px solid var(--strich);padding-bottom:6px}
+.zeitung .z-name{font:900 clamp(2.1rem,7vw,4rem)/1 "Old English Text MT","UnifrakturMaguntia",
+Georgia,"Times New Roman",serif;margin:12px 0 6px;letter-spacing:.01em;overflow-wrap:anywhere}
+.zeitung .z-untertitel{font-style:italic;color:var(--grau);margin:0}
+.zeitung article{margin:0 0 18px}
+.zeitung .z-rubrik{font:700 .72rem/1.2 system-ui,sans-serif;letter-spacing:.12em;
+text-transform:uppercase;color:#9a3412;margin:0 0 4px}
+.zeitung h2{font:800 1.35rem/1.15 Georgia,"Times New Roman",serif;margin:0 0 6px;break-after:avoid}
+.zeitung .z-unterzeile{font-style:italic;margin:0 0 6px;color:var(--grau);break-after:avoid}
+.zeitung .z-autor{font:600 .78rem/1.3 system-ui,sans-serif;color:var(--grau);margin:0 0 8px}
+.zeitung .z-text p{margin:0 0 .55em;text-align:justify;hyphens:auto;-webkit-hyphens:auto}
+.zeitung .z-text p+p{text-indent:1.2em}
+.zeitung figure{margin:0 0 10px;break-inside:avoid}
+.zeitung figure img{display:block;width:100%;height:auto;border:1px solid #d6d0c4}
+.zeitung figcaption{font:.78rem/1.35 system-ui,sans-serif;color:var(--grau);margin-top:4px}
+.zeitung .z-aufmacher{border-bottom:1px solid var(--strich);padding-bottom:16px;margin-bottom:18px}
+.zeitung .z-aufmacher h2{font-size:clamp(1.7rem,4.5vw,2.6rem);line-height:1.08}
+.zeitung .z-aufmacher .z-unterzeile{font-size:1.12rem}
+.zeitung .z-aufmacher .z-text{columns:3 15em;column-gap:22px;column-rule:1px solid #cfc8bb}
+.zeitung .z-aufmacher .z-text p:first-child::first-letter{float:left;font-size:3.3em;
+line-height:.8;padding:.06em .08em 0 0;font-weight:800}
+.zeitung .z-spalten{columns:3 14em;column-gap:22px;column-rule:1px solid #cfc8bb}
+.zeitung .z-spalten article{break-inside:avoid-column;border-bottom:1px solid #cfc8bb;padding-bottom:12px}
+.zeitung .z-spalten article:last-child{border-bottom:0}
+.zeitung .z-ende{border-top:4px double var(--strich);margin-top:6px;padding-top:6px;
+font:.72rem/1.3 system-ui,sans-serif;color:var(--grau);text-align:center}
+.zeitung .z-leer{color:var(--grau);font-style:italic;text-align:center}
+.drucken-leiste{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 16px}
+.ausgaben{list-style:none;padding:0;margin:0}
+.ausgaben li{border-top:1px solid var(--linie);padding:12px 0}
+.ausgaben a{font-weight:700;font-size:1.1rem;color:var(--text);text-decoration:none}
+.ausgaben a:hover{color:var(--akzent)}
+@media (max-width:560px){.zeitung{padding:18px 14px 22px}}
+
+/* Teleprompter */
+.prompter-fenster { position: relative; height: 34vh; min-height: 200px; overflow: hidden; cursor: pointer; background: #0b0b0b; color: #f5f5f5; border-radius: 12px; }
+.prompter-fenster::after { content: ""; position: absolute; left: 0; right: 0; top: 33%; border-top: 2px dashed rgba(251,146,60,.7); pointer-events: none; }
+.prompter-text { padding: 11vh 6% 50vh; font-weight: 600; font-size: 30px; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; }
+.prompter-fenster.gespiegelt .prompter-text { transform: scaleX(-1); }
+.prompter-fenster:fullscreen { height: 100vh; border-radius: 0; }
+.prompter-fenster:fullscreen .prompter-text { padding-top: 33vh; font-size: 52px; }
+.prompter-regler { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: .9rem; }
+.prompter-regler label { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.prompter-regler input[type=range] { width: 110px; padding: 0; }
+details.sprech summary { cursor: pointer; font-weight: 700; }
+details.sprech .text { white-space: pre-line; max-height: 50vh; overflow: auto; border-left: 3px solid var(--linie); padding-left: 12px; }
+/* Zeitung */
+.zeitung-raster { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 18px; align-items: start; }
+.zeitung-raster > div:last-child { position: sticky; top: 70px; max-height: calc(100vh - 80px); overflow: auto; }
+@media (max-width: 1000px) { .zeitung-raster { grid-template-columns: minmax(0, 1fr); } .zeitung-raster > div:last-child { position: static; max-height: none; } }
+.artikel { border: 1px solid var(--linie); border-radius: 12px; padding: 12px; display: grid; gap: 8px; background: var(--bg); }
+.artikel-kopf { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.artikel label { display: grid; gap: 3px; font-weight: 600; font-size: .85rem; }
+.artikel-bild { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.artikel-bild img { width: 110px; height: 70px; object-fit: cover; border-radius: 8px; border: 1px solid var(--linie); }
+#druckbereich { display: none; }
+@page { size: A4; margin: 12mm; }
+@media print {
+  body.druckt > *:not(#druckbereich) { display: none !important; }
+  body.druckt #druckbereich { display: block; }
+  body.druckt { background: #fff; }
+  #druckbereich .zeitung { box-shadow: none; padding: 0; background: #fff; font-size: 10.5pt; }
+  #druckbereich .z-name { font-size: 40pt; }
+  #druckbereich .z-aufmacher .z-text, #druckbereich .z-spalten { columns: 3; column-gap: 6mm; }
+  #druckbereich figure img { max-height: 90mm; object-fit: cover; }
+}
+@media (prefers-reduced-motion: reduce) { .onair.an, .live::before { animation: none; } .pegel div { transition: none; } }
+</style>
+
+<header class="leiste">
+  <div class="marke"><span class="onair" id="onair">ON AIR</span> Sendestudio <span class="demo-etikett">Demo</span></div>
+  <nav class="ansichten" role="tablist" aria-label="Ansicht">
+    <button role="tab" id="tab-studio" aria-selected="true" data-ansicht="studio">Studio</button>
+    <button role="tab" id="tab-seite" aria-selected="false" data-ansicht="seite">Öffentliche Seite</button>
+    <button role="tab" id="tab-feed" aria-selected="false" data-ansicht="feed">Podcast-Feed</button>
+    <button role="tab" id="tab-zeitung" aria-selected="false" data-ansicht="zeitung">📰 Zeitung</button>
+  </nav>
+</header>
+
+<main class="huelle">
+  <div class="hinweis">
+    <span><b>Zum Ausprobieren.</b> Alles bleibt in diesem Browserfenster, neu laden setzt die Demo zurück.</span>
+    <span id="ki-hinweis">KI-Texte: Beispielantworten</span>
+    <a href="https://github.com/Levirob2015/L-vi/blob/claude/sendestudio/SENDESTUDIO.md" target="_blank" rel="noopener">Zum echten Programm ↗</a>
+  </div>
+
+  <section id="ansicht-studio" class="raster">
+    <aside>
+      <h2 style="margin-top:0">Sendungen</h2>
+      <ul class="liste" id="sendungsliste"></ul>
+      <button class="knopf primaer breit" id="neue-sendung">+ Neue Sendung</button>
+    </aside>
+    <div id="arbeit" class="stapel" style="min-width:0"></div>
+  </section>
+
+  <section id="ansicht-seite" hidden></section>
+  <section id="ansicht-feed" hidden></section>
+  <section id="ansicht-zeitung" hidden></section>
+</main>
+
+<div id="druckbereich" aria-hidden="true"></div>
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ------------------------------------------------------------ Hilfen
+  var $ = function (s, w) { return (w || document).querySelector(s); };
+  function el(tag, attrs) {
+    var e = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      var v = attrs[k];
+      if (k === "text") e.textContent = v;
+      else if (k === "class") e.className = v;
+      else if (k.slice(0, 2) === "on") e.addEventListener(k.slice(2), v);
+      else if (v !== null && v !== undefined && v !== false) e.setAttribute(k, v === true ? "" : v);
+    });
+    for (var i = 2; i < arguments.length; i++) {
+      var c = arguments[i];
+      if (c == null || c === false) continue;
+      e.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+    }
+    return e;
+  }
+  function zeit(s) {
+    s = Math.max(0, Math.floor(s || 0));
+    return Math.floor(s / 3600) + ":" + String(Math.floor(s % 3600 / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+  }
+  function zeitLesen(t) {
+    var teile = String(t).trim().split(":").map(Number);
+    if (teile.some(isNaN)) return NaN;
+    return teile.reduce(function (a, b) { return a * 60 + b; }, 0);
+  }
+  function datum(ts) { return new Date(ts).toLocaleDateString("de-DE", { day: "numeric", month: "long", year: "numeric" }); }
+  function slug(t) {
+    return (t || "folge").toLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+      .normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "folge";
+  }
+  var toastUhr;
+  function melden(t) {
+    var x = $("#toast"); x.textContent = t; x.hidden = false;
+    clearTimeout(toastUhr); toastUhr = setTimeout(function () { x.hidden = true; }, 3200);
+  }
+  var ARTEN = { podcast: "Podcast", radio: "Radio", doku: "Dokumentation" };
+  var KI_NAMEN = { text: "Text", stimme: "Stimme", bild: "Bilder", musik: "Musik", video: "Video" };
+
+  // ------------------------------------------------------------ Ton erzeugen (ohne Mikrofon)
+  var ctx = null;
+  function audio() {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === "suspended") ctx.resume();
+    return ctx;
+  }
+
+  // Eine „Stimme“ aus Formanten: klingt nach Sprechen, ohne Worte.
+  function demoStimme(ac, ziel, start, dauer, grund) {
+    var quelle = ac.createOscillator(); quelle.type = "sawtooth";
+    var pegel = ac.createGain(); pegel.gain.value = 0;
+    var formanten = [700, 1220, 2600].map(function (f, i) {
+      var b = ac.createBiquadFilter(); b.type = "bandpass"; b.frequency.value = f; b.Q.value = 9 - i * 2;
+      quelle.connect(b); b.connect(pegel); return b;
+    });
+    pegel.connect(ziel);
+    var t = start, vokale = [[730, 1090], [270, 2290], [300, 870], [530, 1840], [660, 1720]];
+    var satzEnde = start + 2.5 + Math.random() * 1.5;
+    while (t < start + dauer) {
+      if (t > satzEnde) { t += 1.5; satzEnde = t + 2.5 + Math.random() * 1.5; continue; } // Atempause nach jedem Satz
+      var silbe = 0.12 + Math.random() * 0.16;
+      var v = vokale[Math.floor(Math.random() * vokale.length)];
+      quelle.frequency.setValueAtTime(grund * (0.9 + Math.random() * 0.25), t);
+      formanten[0].frequency.setValueAtTime(v[0], t);
+      formanten[1].frequency.setValueAtTime(v[1], t);
+      var pause = Math.random() < 0.12 ? 0.35 : 0.04;
+      pegel.gain.setTargetAtTime(0.5, t, 0.02);
+      pegel.gain.setTargetAtTime(0, t + silbe, 0.03);
+      t += silbe + pause;
+    }
+    quelle.start(start); quelle.stop(start + dauer + 0.2);
+  }
+  function jingle(ac, ziel, art, start) {
+    var noten = { gong: [[196, 0, 2.2]], fanfare: [[523, 0, .18], [659, .18, .18], [784, .36, .18], [1047, .54, .6]],
+                  trenner: [[880, 0, .08], [1320, .1, .25]] }[art];
+    noten.forEach(function (n) {
+      var o = ac.createOscillator(), g = ac.createGain();
+      o.type = art === "gong" ? "sine" : "triangle"; o.frequency.value = n[0];
+      g.gain.setValueAtTime(0.0001, start + n[1]);
+      g.gain.exponentialRampToValueAtTime(0.35, start + n[1] + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + n[1] + n[2]);
+      o.connect(g); g.connect(ziel); o.start(start + n[1]); o.stop(start + n[1] + n[2] + 0.05);
+    });
+    return { gong: 2.3, fanfare: 1.2, trenner: 0.4 }[art];
+  }
+  // „Abendstimmung“: eine ruhige Akkordfläche - eigene Komposition, frei für die Demo.
+  function demoMusik(ac, ziel, start, dauer) {
+    var akkorde = [[220, 277.2, 329.6], [196, 246.9, 293.7], [174.6, 220, 261.6], [196, 246.9, 329.6]];
+    var laenge = 2.4, quellen = [];
+    for (var t = 0, i = 0; t < dauer; t += laenge, i++) {
+      akkorde[i % 4].forEach(function (f) {
+        var o = ac.createOscillator(), g = ac.createGain();
+        o.type = "triangle"; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, start + t);
+        g.gain.exponentialRampToValueAtTime(0.12, start + t + 0.6);
+        g.gain.exponentialRampToValueAtTime(0.0001, start + t + laenge + 0.4);
+        o.connect(g); g.connect(ziel); o.start(start + t); o.stop(start + t + laenge + 0.5);
+        quellen.push(o);
+      });
+    }
+    return quellen;
+  }
+  function wav(puffer) {
+    var d = puffer.getChannelData(0), rate = puffer.sampleRate, n = d.length;
+    var b = new DataView(new ArrayBuffer(44 + n * 2));
+    function s(o, t) { for (var i = 0; i < t.length; i++) b.setUint8(o + i, t.charCodeAt(i)); }
+    s(0, "RIFF"); b.setUint32(4, 36 + n * 2, true); s(8, "WAVE"); s(12, "fmt "); b.setUint32(16, 16, true);
+    b.setUint16(20, 1, true); b.setUint16(22, 1, true); b.setUint32(24, rate, true); b.setUint32(28, rate * 2, true);
+    b.setUint16(32, 2, true); b.setUint16(34, 16, true); s(36, "data"); b.setUint32(40, n * 2, true);
+    for (var i = 0; i < n; i++) b.setInt16(44 + i * 2, Math.max(-1, Math.min(1, d[i])) * 0x7fff, true);
+    return new Blob([b], { type: "audio/wav" });
+  }
+  // Fertige Beispielfolge: Jingle, Sprechen, Trenner, Sprechen
+  function beispielFolge(sekunden, grund, mitMusik) {
+    var Off = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    var ac = new Off(1, Math.ceil(sekunden * 22050), 22050);
+    if (mitMusik) { var teppich = ac.createGain(); teppich.gain.value = 0.18; teppich.connect(ac.destination); demoMusik(ac, teppich, 0, sekunden); }
+    var t = jingle(ac, ac.destination, "fanfare", 0);
+    var halb = (sekunden - t - 1) / 2;
+    demoStimme(ac, ac.destination, t + 0.2, halb, grund);
+    jingle(ac, ac.destination, "trenner", t + halb + 0.4);
+    demoStimme(ac, ac.destination, t + halb + 1, halb - 0.5, grund * 1.25);
+    return ac.startRendering().then(wav);
+  }
+
+  // ------------------------------------------------------------ Cover zeichnen
+  function cover(titel, ki) {
+    var c = document.createElement("canvas"); c.width = c.height = 600;
+    var g = c.getContext("2d"), h = 0;
+    for (var i = 0; i < titel.length; i++) h = (h * 31 + titel.charCodeAt(i)) >>> 0;
+    function zufall() { h = (h * 1664525 + 1013904223) >>> 0; return h / 4294967296; }
+    var farbe = Math.floor(zufall() * 360);
+    g.fillStyle = "hsl(" + farbe + ",45%,22%)"; g.fillRect(0, 0, 600, 600);
+    if (ki) {
+      for (var k = 0; k < 7; k++) {
+        var x = zufall() * 600, y = zufall() * 600, r = 80 + zufall() * 260;
+        var v = g.createRadialGradient(x, y, 0, x, y, r);
+        v.addColorStop(0, "hsla(" + (farbe + k * 40) % 360 + ",80%,62%,.75)"); v.addColorStop(1, "hsla(" + farbe + ",80%,50%,0)");
+        g.fillStyle = v; g.fillRect(0, 0, 600, 600);
+      }
+    } else {
+      g.strokeStyle = "hsl(" + (farbe + 30) % 360 + ",70%,62%)"; g.lineWidth = 10;
+      for (var w = 0; w < 9; w++) { g.beginPath(); g.arc(300, 330, 40 + w * 32, Math.PI * 1.15, Math.PI * 1.85); g.stroke(); }
+      g.fillStyle = "#fff"; g.font = "700 54px system-ui, sans-serif"; g.textAlign = "center";
+      g.fillText(titel.slice(0, 18), 300, 520);
+    }
+    return c.toDataURL("image/png");
+  }
+
+  // ------------------------------------------------------------ Zustand
+  var jetzt = Date.now();
+  var stand = {
+    aktiv: 1, ansicht: "studio",
+    sendungen: [
+      { id: 1, titel: "Nachtfunk", art: "radio", beschreibung: "Musik und Gespräche für die späten Stunden. Läuft rund um die Uhr.", autor: "Studio Süd", cover: null, coverKi: false },
+      { id: 2, titel: "Bienen-Podcast", art: "podcast", beschreibung: "Alles über Bienen, Imkerei und Blühwiesen – alle zwei Wochen.", autor: "Imkerverein", cover: null, coverKi: false },
+      { id: 3, titel: "Spuren im Watt", art: "doku", beschreibung: "Eine Hör-Dokumentation über das Wattenmeer: Gezeiten, Vögel und die Menschen an der Küste.", autor: "Studio Süd", cover: null, coverKi: false },
+    ],
+    folgen: [],
+    naechste: 100,
+  };
+  stand.sendungen.forEach(function (s) { s.cover = cover(s.titel, false); });
+
+  function sendung(id) { return stand.sendungen.filter(function (s) { return s.id === id; })[0]; }
+  function folgenVon(id, nurOnline) {
+    return stand.folgen.filter(function (f) { return f.sendung === id && (!nurOnline || f.online); })
+      .sort(function (a, b) { return (b.online || b.erstellt) - (a.online || a.erstellt); });
+  }
+
+  var beispiele = [
+    { sendung: 1, titel: "Mitternachtsmusik", beschreibung: "Ruhige Stücke und ein Gespräch über das Hören in der Nacht.", sek: 22, grund: 115, online: jetzt - 86400000 * 3, kapitel: [{ zeit: 0, titel: "Erkennungsmelodie" }, { zeit: 12, titel: "Gespräch" }], musik: [{ titel: "Abendstimmung", kuenstler: "Studio Süd", lizenz: "Eigene Musik", quelle: "" }], mitMusik: true },
+    { sendung: 1, titel: "Stimmen aus der Stadt", beschreibung: "Was Menschen um zwei Uhr nachts unterwegs erleben.", sek: 18, grund: 150, online: jetzt - 86400000, kapitel: [{ zeit: 0, titel: "Anfang" }, { zeit: 10, titel: "Taxifahrerin" }], ki: ["text"] },
+    { sendung: 2, titel: "Der Bienenstock im Winter", beschreibung: "Wie überwintert ein Volk? Ein Besuch beim Imker.", sek: 20, grund: 130, online: jetzt - 86400000 * 5, kapitel: [{ zeit: 0, titel: "Begrüßung" }, { zeit: 11, titel: "Die Wintertraube" }] },
+    { sendung: 2, titel: "Blühwiesen anlegen", beschreibung: "Entwurf – noch nicht veröffentlicht.", sek: 16, grund: 140, online: 0, kapitel: [] },
+    { sendung: 3, sprechtext: "Wir stehen am Deich. Hinter uns die Häuser, vor uns – nichts als Schlick, so weit das Auge reicht.\n\nVor sechs Stunden war hier noch Meer. Jetzt gehen wir hinaus, mit Anke, die seit zwanzig Jahren Wattführerin ist.\n\nUnd in ein paar Stunden kommt die Flut zurück.", titel: "Teil 1: Wenn das Wasser geht", beschreibung: "Zweimal am Tag verschwindet das Meer. Wir gehen mit einer Wattführerin hinaus und hören, was dann passiert.", sek: 24, grund: 125, online: jetzt - 86400000 * 2, kapitel: [{ zeit: 0, titel: "Am Deich" }, { zeit: 9, titel: "Draußen im Watt" }, { zeit: 17, titel: "Die Flut kommt" }], musik: [{ titel: "Abendstimmung", kuenstler: "Studio Süd", lizenz: "Eigene Musik", quelle: "" }], mitMusik: true },
+  ];
+  var bereit = Promise.all(beispiele.map(function (b, i) {
+    return beispielFolge(b.sek, b.grund, b.mitMusik).then(function (blob) {
+      stand.folgen.push({ id: i + 1, sendung: b.sendung, titel: b.titel, slug: slug(b.titel), beschreibung: b.beschreibung,
+        blob: blob, url: URL.createObjectURL(blob), mime: "audio/wav", dauer: b.sek, kapitel: b.kapitel,
+        online: b.online, erstellt: b.online || jetzt, ki: b.ki || [], musik: b.musik || [], sprechtext: b.sprechtext || "" });
+    });
+  })).catch(function () { /* Ohne Web Audio gibt es keine Beispieltöne - die Demo läuft trotzdem. */ });
+
+  // ------------------------------------------------------------ KI
+  var sample = null;
+  if (window.claude && window.claude.use) {
+    window.claude.use("sample").then(function (s) {
+      sample = s;
+      if (s) $("#ki-hinweis").textContent = "KI-Texte: echtes Claude (auf deinem Konto, fragt vorher)";
+    }).catch(function () {});
+  }
+  var BEISPIEL = {
+    shownotes: function (titel) {
+      return "In dieser Folge geht es um „" + (titel || "unser Thema") + "“. Wir schauen genauer hin, sprechen mit Menschen, die sich auskennen, und sammeln, was man selbst ausprobieren kann.\n\n– Worum es geht und warum es gerade jetzt wichtig ist\n– Ein Gespräch mit jemandem aus der Praxis\n– Drei Tipps zum Mitnehmen";
+    },
+    titel: function (titel) {
+      var t = titel || "Unser Thema";
+      return [t + ": Was wirklich zählt", "Nachgefragt: " + t, t + " in fünf Minuten", "Warum " + t + " uns alle angeht", "Hinter den Kulissen: " + t];
+    },
+    skript: function (thema) {
+      return "Hallo und herzlich willkommen! Heute geht es um " + (thema || "ein spannendes Thema") + ".\n\nVielleicht hast du dich schon einmal gefragt, wie das eigentlich zusammenhängt. Genau das schauen wir uns heute an – Schritt für Schritt.\n\nZum Schluss bekommst du noch einen Tipp, den du gleich morgen ausprobieren kannst. Danke fürs Zuhören und bis zum nächsten Mal!";
+    },
+  };
+  // Fragt Claude, wenn verfügbar; sonst eine Beispielantwort. statusEl zeigt den Stand.
+  function kiText(art, daten, statusEl, beimSchreiben) {
+    statusEl.textContent = sample ? "Claude denkt nach …" : "Beispielantwort …";
+    if (!sample) {
+      return new Promise(function (ok) {
+        setTimeout(function () {
+          statusEl.textContent = "Beispielantwort – im claude.ai-Fenster schreibt hier echtes Claude.";
+          ok(art === "titel" ? BEISPIEL.titel(daten.titel) : art === "skript" ? BEISPIEL.skript(daten.thema) : BEISPIEL.shownotes(daten.titel));
+        }, 700);
+      });
+    }
+    var material = "Sendung: " + daten.sendung + " (" + daten.art + ")\nTitel: " + (daten.titel || "-") + "\nNotizen/Thema: " + (daten.notizen || daten.thema || "-");
+    var auftrag = {
+      shownotes: "Schreib auf Deutsch Shownotes für diese Podcast-Folge: zwei, drei Sätze, worum es geht, dann die wichtigsten Punkte als Liste mit „– “ am Zeilenanfang. Erfinde keine Fakten, Namen oder Zahlen. Nur den Text, ohne Vorrede und ohne Markdown-Überschriften.",
+      skript: "Schreib auf Deutsch ein sprechfertiges Skript für eine Folge von etwa " + (daten.minuten || 2) + " Minuten (rund 140 Wörter pro Minute). Nur gesprochener Text, keine Regieanweisungen. Erfinde keine Fakten, Namen oder Zahlen. Ohne Vorrede.",
+      titel: "Schlag auf Deutsch fünf Titel für diese Folge vor: kurz, konkret, neugierig machend. Antworte nur mit einem JSON-Array aus fünf Strings.",
+    }[art];
+    var eingabe = auftrag + "\n\n" + material;
+    var antwort = art === "titel"
+      ? sample.json(eingabe, { modelTier: "quick" })
+      : sample(eingabe, { modelTier: "quick", onText: function (x) { statusEl.textContent = "Claude schreibt …"; if (beimSchreiben) beimSchreiben(x.text); } })
+          .then(function (r) { return r.text; });
+    return antwort.then(function (r) {
+      statusEl.textContent = "Von Claude geschrieben – bitte prüfen.";
+      return art === "titel" ? (Array.isArray(r) ? r : (r && r.titel) || []).slice(0, 6) : r;
+    }, function (e) {
+      statusEl.textContent = e && e.code === "not_granted" ? "Nicht erlaubt – hier eine Beispielantwort." :
+        e && e.code === "rate_limited" ? "Gerade zu viele Anfragen – hier eine Beispielantwort." : "Claude war nicht erreichbar – hier eine Beispielantwort.";
+      return art === "titel" ? BEISPIEL.titel(daten.titel) : art === "skript" ? BEISPIEL.skript(daten.thema) : BEISPIEL.shownotes(daten.titel);
+    });
+  }
+
+  // ------------------------------------------------------------ Ansichten
+  function ansicht(name) {
+    stand.ansicht = name;
+    ["studio", "seite", "feed", "zeitung"].forEach(function (n) {
+      $("#ansicht-" + n).hidden = n !== name;
+      $("#tab-" + n).setAttribute("aria-selected", String(n === name));
+    });
+    if (name === "seite") seite();
+    if (name === "feed") feed();
+    if (name === "studio") studio();
+    if (name === "zeitung") zeitungAnsicht();
+    window.scrollTo(0, 0);
+  }
+  document.querySelectorAll(".ansichten button").forEach(function (b) {
+    b.addEventListener("click", function () { ansicht(b.getAttribute("data-ansicht")); });
+  });
+
+  function arbeit(knoten) {
+    stoppeAufnahme();
+    var a = $("#arbeit"); a.textContent = ""; a.appendChild(knoten);
+  }
+
+  function seitenleiste() {
+    var ul = $("#sendungsliste"); ul.textContent = "";
+    stand.sendungen.forEach(function (s) {
+      var f = folgenVon(s.id), on = f.filter(function (x) { return x.online; }).length;
+      ul.appendChild(el("li", {}, el("button", { class: s.id === stand.aktiv ? "aktiv" : "", onclick: function () { stand.aktiv = s.id; studio(); } },
+        s.titel, el("small", { text: ARTEN[s.art] + " · " + on + " online" + (f.length > on ? ", " + (f.length - on) + " Entwurf" : "") }))));
+    });
+  }
+  $("#neue-sendung").addEventListener("click", function () { sendungsForm(); });
+
+  // ------------------------------------------------------------ Studio: Sendung
+  function studio() {
+    seitenleiste();
+    var s = sendung(stand.aktiv);
+    var kopf = el("div", { class: "karte kopf" },
+      el("img", { class: "cover", src: s.cover, alt: "Cover von " + s.titel }),
+      el("div", { class: "wachsen" },
+        el("span", { class: "etikett", text: ARTEN[s.art] }),
+        el("h1", { text: s.titel }),
+        el("p", { class: "leise", text: s.beschreibung }),
+        s.coverKi ? el("span", { class: "chip ki", text: "✨ Cover KI-generiert" }) : null,
+        el("div", { class: "knoepfe", style: "margin-top:10px" },
+          el("button", { class: "knopf primaer", text: "● Neue Folge aufnehmen", onclick: function () { aufnahme(s); } }),
+          el("button", { class: "knopf ki", text: "✨ KI-Studio", onclick: function () { kiStudio(s); } }),
+          el("button", { class: "knopf leicht", text: "Einstellungen", onclick: function () { sendungsForm(s); } }),
+          el("button", { class: "knopf leicht", text: "Ansehen ↗", onclick: function () { ansicht("seite"); } }))));
+    var liste = el("div", { class: "stapel" });
+    var folgen = folgenVon(s.id);
+    if (!folgen.length) liste.appendChild(el("p", { class: "leise", text: "Noch keine Folgen – nimm die erste auf." }));
+    folgen.forEach(function (f) { liste.appendChild(folgenKarte(s, f)); });
+    arbeit(el("div", { class: "stapel" }, kopf, el("h2", { text: "Folgen", style: "margin:.4em 0 0" }), liste));
+  }
+
+  function folgenKarte(s, f) {
+    var info = [f.online ? datum(f.online) : "angelegt " + datum(f.erstellt), zeit(f.dauer)];
+    if (f.kapitel.length) info.push(f.kapitel.length + " Kapitel");
+    var platte = el("div", { hidden: true });
+    var karte = el("div", { class: "karte folge" },
+      el("div", { style: "min-width:0" },
+        el("div", { class: "knoepfe", style: "gap:6px" },
+          el("span", { class: "etikett " + (f.online ? "online" : "entwurf"), text: f.online ? "Online" : "Entwurf" }),
+          f.ki.length ? el("span", { class: "chip ki", text: "✨ KI: " + f.ki.map(function (k) { return KI_NAMEN[k]; }).join(", ") }) : null,
+          !f.online ? el("button", { class: "chip", title: "So liegt der Entwurf auf dem Server", text: "🔒 verschlüsselt", onclick: function () { festplatte(f, platte); } }) : null),
+        el("h3", { text: f.titel }),
+        el("div", { class: "leise klein", text: info.join(" · ") })),
+      el("div", { class: "knoepfe" },
+        el("button", { class: "knopf klein leicht", text: "Bearbeiten", onclick: function () { folgeForm(s, f); } }),
+        f.online
+          ? el("button", { class: "knopf klein leicht", text: "Zurückziehen", onclick: function () { f.online = 0; melden("Offline – liegt wieder im Tresor"); studio(); } })
+          : el("button", { class: "knopf klein primaer", text: "Veröffentlichen", onclick: function () { f.online = Date.now(); melden("Ist online!"); studio(); } }),
+        el("button", { class: "knopf klein leicht", text: "Löschen", onclick: function () { loeschen(karte, f); } })),
+      el("div", { class: "unten" }, el("audio", { controls: true, preload: "metadata", src: f.url }), platte));
+    return karte;
+  }
+
+  function loeschen(karte, f) {
+    var frage = el("div", { class: "knoepfe unten", style: "align-items:center" },
+      el("span", { text: "„" + f.titel + "“ endgültig löschen?" }),
+      el("button", { class: "knopf klein", style: "color:var(--rot);border-color:var(--rot)", text: "Löschen", onclick: function () {
+        stand.folgen = stand.folgen.filter(function (x) { return x !== f; }); melden("Gelöscht"); studio(); } }),
+      el("button", { class: "knopf klein leicht", text: "Abbrechen", onclick: function () { frage.remove(); } }));
+    karte.appendChild(frage);
+  }
+
+  // Zeigt, was jemand mit Zugriff auf die Festplatte sähe: echte Verschlüsselung (AES-GCM) der Aufnahme.
+  function festplatte(f, ziel) {
+    if (!ziel.hidden) { ziel.hidden = true; return; }
+    f.blob.slice(0, 48).arrayBuffer().then(function (klar) {
+      var hex = function (b) { return Array.prototype.map.call(new Uint8Array(b), function (x) { return x.toString(16).padStart(2, "0"); }).join(" "); };
+      var lesbar = new TextDecoder("latin1").decode(klar).replace(/[^\x20-\x7e]/g, "·");
+      var anzeigen = function (geheim) {
+        ziel.textContent = "";
+        ziel.appendChild(el("p", { class: "klein leise", text: "Ohne Tresor stünde auf der Platte eine lesbare Datei:" }));
+        ziel.appendChild(el("div", { class: "bytes", text: hex(klar.slice(0, 16)) + "   " + lesbar.slice(0, 16) }));
+        ziel.appendChild(el("p", { class: "klein leise", text: "So liegt der Entwurf wirklich dort – erst beim Veröffentlichen entsteht die lesbare Datei:" }));
+        ziel.appendChild(el("div", { class: "bytes", text: geheim }));
+        ziel.hidden = false;
+      };
+      if (!window.crypto || !crypto.subtle) { anzeigen("(in diesem Browser nicht darstellbar)"); return; }
+      crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt"]).then(function (k) {
+        return crypto.subtle.encrypt({ name: "AES-GCM", iv: crypto.getRandomValues(new Uint8Array(12)) }, k, klar);
+      }).then(function (g) { anzeigen(hex(g.slice(0, 16)) + "   " + new TextDecoder("latin1").decode(g.slice(0, 16)).replace(/[^\x20-\x7e]/g, "·")); },
+        function () { anzeigen("(in diesem Browser nicht darstellbar)"); });
+    });
+  }
+
+  // ------------------------------------------------------------ Sendung anlegen / einstellen
+  function sendungsForm(s) {
+    var neu = !s;
+    var titel = el("input", { id: "s-titel", value: s ? s.titel : "", maxlength: "200", required: true });
+    var art = el("select", { id: "s-art" }, el("option", { value: "podcast", text: "Podcast – zum Abonnieren" }),
+      el("option", { value: "radio", text: "Radio – läuft rund um die Uhr" }), el("option", { value: "doku", text: "Dokumentation – Ton oder Video" }));
+    art.value = s ? s.art : "podcast";
+    var beschr = el("textarea", { id: "s-beschreibung", rows: "3", text: s ? s.beschreibung : "" });
+    var bild = el("img", { class: "cover", src: s ? s.cover : cover("Neu", false), alt: "Cover" });
+    var bildText = el("input", { id: "s-bild", placeholder: "z. B. ein altes Röhrenradio im Abendlicht" });
+    var form = el("form", { class: "formular" },
+      el("label", {}, "Titel", titel), el("label", {}, "Art", art), el("label", {}, "Beschreibung", beschr),
+      el("div", { class: "knoepfe" }, el("button", { class: "knopf primaer", type: "submit", text: "Speichern" }),
+        el("button", { class: "knopf leicht", type: "button", text: "Abbrechen", onclick: function () { studio(); } })));
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      if (!titel.value.trim()) { melden("Die Sendung braucht einen Titel"); return; }
+      if (neu) {
+        s = { id: stand.naechste++, cover: cover(titel.value, false), coverKi: false };
+        stand.sendungen.push(s);
+      }
+      s.titel = titel.value.trim(); s.art = art.value; s.beschreibung = beschr.value; s.autor = s.autor || "";
+      stand.aktiv = s.id; melden(neu ? "Sendung angelegt" : "Gespeichert"); studio();
+    });
+    var coverTeil = neu ? null : el("div", { class: "stapel" },
+      el("h2", { text: "Cover", style: "margin-bottom:0" }),
+      el("div", { class: "kopf" }, bild, el("div", { class: "wachsen formular" },
+        el("label", {}, "✨ Mit KI malen lassen – was soll darauf sein?", bildText),
+        el("div", { class: "knoepfe" }, el("button", { class: "knopf ki", type: "button", text: "✨ Cover erzeugen", onclick: function () {
+          s.cover = cover(s.titel + bildText.value, true); s.coverKi = true; bild.src = s.cover; melden("KI-Cover gespeichert");
+        } })),
+        el("p", { class: "klein leise", text: "In der Demo entsteht ein Platzhalter-Bild. Im echten Studio malt ein Bildmodell nach deiner Beschreibung." }))));
+    arbeit(el("div", { class: "karte stapel" }, el("h1", { text: neu ? "Neue Sendung" : "Einstellungen: " + s.titel }), form, coverTeil));
+    titel.focus();
+  }
+
+  // ------------------------------------------------------------ Kapitel-Editor
+  function kapitelEditor(liste) {
+    var box = el("div");
+    function malen() {
+      box.textContent = "";
+      if (!liste.length) box.appendChild(el("p", { class: "klein leise", text: "Keine Kapitel." }));
+      liste.forEach(function (k, i) {
+        box.appendChild(el("div", { class: "kapitel-zeile" },
+          el("input", { value: zeit(k.zeit), "aria-label": "Startzeit", onchange: function () { var v = zeitLesen(this.value); if (!isNaN(v)) k.zeit = v; else this.value = zeit(k.zeit); } }),
+          el("input", { value: k.titel, "aria-label": "Kapiteltitel", oninput: function () { k.titel = this.value; } }),
+          el("button", { class: "knopf klein leicht", type: "button", "aria-label": "Kapitel entfernen", text: "✕", onclick: function () { liste.splice(i, 1); malen(); } })));
+      });
+    }
+    malen();
+    return { knoten: box, neu: function (t, titel) { liste.push({ zeit: t, titel: titel || "Kapitel " + (liste.length + 1) }); malen(); },
+      liste: function () { return liste.slice().sort(function (a, b) { return a.zeit - b.zeit; }); } };
+  }
+
+  // KI-Leiste für Titel + Shownotes
+  function kiLeiste(s, titelFeld, textFeld, kiListe) {
+    var status = el("span", { class: "ki-status" });
+    var vorschlaege = el("div", { class: "vorschlaege" });
+    function daten() { return { sendung: s.titel, art: ARTEN[s.art], titel: titelFeld.value, notizen: textFeld.value }; }
+    return el("div", { class: "stapel", style: "gap:8px" },
+      el("div", { class: "knoepfe", style: "align-items:center" },
+        el("button", { class: "knopf ki klein", type: "button", text: "✨ Shownotes schreiben", onclick: function () {
+          var b = this; b.disabled = true;
+          kiText("shownotes", daten(), status, function (t) { textFeld.value = t; }).then(function (t) {
+            textFeld.value = t; if (kiListe.indexOf("text") < 0) kiListe.push("text"); b.disabled = false; });
+        } }),
+        el("button", { class: "knopf ki klein", type: "button", text: "✨ Titel vorschlagen", onclick: function () {
+          var b = this; b.disabled = true;
+          kiText("titel", daten(), status).then(function (liste) {
+            b.disabled = false; vorschlaege.textContent = "";
+            liste.forEach(function (t) { vorschlaege.appendChild(el("button", { type: "button", text: t, onclick: function () {
+              titelFeld.value = t; vorschlaege.textContent = ""; if (kiListe.indexOf("text") < 0) kiListe.push("text"); } })); });
+          });
+        } }),
+        status),
+      vorschlaege);
+  }
+
+  // ------------------------------------------------------------ Aufnahme
+  var rec = null;
+  function stoppeAufnahme() {
+    if (!rec) return;
+    try { if (rec.recorder && rec.recorder.state !== "inactive") rec.recorder.stop(); } catch (e) {}
+    (rec.streams || []).forEach(function (st) { st.getTracks().forEach(function (t) { t.stop(); }); });
+    (rec.quellen || []).concat(rec.musikQuellen || []).forEach(function (q) { try { q.stop(); } catch (e) {} });
+    cancelAnimationFrame(rec.pegelUhr); clearInterval(rec.uhrUhr);
+    $("#onair").classList.remove("an");
+    rec = null;
+  }
+
+  // Teleprompter: läuft während der Aufnahme mit, hält bei Pause an
+  function teleprompter(feld) {
+    var text = el("div", { class: "prompter-text" });
+    var fenster = el("div", { class: "prompter-fenster", title: "Antippen: anhalten / weiter" }, text);
+    var tempo = el("input", { type: "range", min: "0.2", max: "4", step: "0.1", value: "1", "aria-label": "Tempo" });
+    var spiegeln = el("input", { type: "checkbox", style: "width:auto" });
+    var lauf = el("button", { class: "knopf klein", type: "button", text: "▶ Laufen lassen" });
+    var pos = 0, laeuft = false, zuletzt = null;
+    function zeigen() { text.textContent = feld.value; box.hidden = !feld.value.trim(); }
+    function schritt(t) {
+      if (!laeuft || !fenster.isConnected) return;
+      if (zuletzt !== null) {
+        pos = Math.min(pos + (t - zuletzt) / 1000 * parseFloat(tempo.value) * 12, fenster.scrollHeight);
+        fenster.scrollTop = pos;
+      }
+      zuletzt = t; requestAnimationFrame(schritt);
+    }
+    function start() { if (laeuft || box.hidden) return; laeuft = true; zuletzt = null; lauf.textContent = "⏸ Anhalten"; requestAnimationFrame(schritt); }
+    function halt() { laeuft = false; lauf.textContent = "▶ Laufen lassen"; }
+    function umschalten() { if (laeuft) halt(); else start(); }
+    lauf.addEventListener("click", umschalten);
+    fenster.addEventListener("click", umschalten);
+    fenster.addEventListener("wheel", function (e) { e.preventDefault(); pos = Math.max(0, pos + e.deltaY); fenster.scrollTop = pos; }, { passive: false });
+    spiegeln.addEventListener("change", function () { fenster.classList.toggle("gespiegelt", this.checked); });
+    feld.addEventListener("input", zeigen);
+    var box = el("div", { class: "stapel", style: "gap:8px" }, fenster,
+      el("div", { class: "prompter-regler" }, lauf,
+        el("button", { class: "knopf klein leicht", type: "button", text: "⏮ Anfang", onclick: function () { pos = 0; fenster.scrollTop = 0; } }),
+        el("label", {}, "Tempo", tempo), el("label", {}, spiegeln, "Spiegeln"),
+        el("button", { class: "knopf klein leicht", type: "button", text: "⛶ Vollbild", onclick: function () {
+          if (fenster.requestFullscreen) fenster.requestFullscreen().catch(function () { melden("Vollbild ist in diesem Rahmen gesperrt – im echten Studio geht es."); });
+        } })));
+    zeigen();
+    return { knoten: box, start: start, halt: halt };
+  }
+
+  function aufnahme(s) {
+    var kapitel = kapitelEditor([]);
+    var sprechtext = el("textarea", { id: "a-sprechtext", rows: "4", placeholder: "Was du sagen willst …" });
+    sprechtext.value = "Hallo und herzlich willkommen bei " + s.titel + "!\n\nHeute habe ich etwas Besonderes für euch: Dieser Text läuft als Teleprompter mit, während ich aufnehme. So muss ich nichts auswendig lernen.\n\nDrückt auf Pause, und der Text hält an. Drückt auf Weiter, und er läuft weiter.\n\nNach dem Veröffentlichen steht der gesprochene Text zum Mitlesen an der Folge – und als Transkript im Podcast-Feed.\n\nViel Spaß beim Zuhören!";
+    var prompter = teleprompter(sprechtext);
+    var uhr = el("div", { class: "uhr", text: "0:00:00" });
+    var pegel = el("div");
+    var zustand = el("div", { class: "klein leise", text: "Bereit" });
+    var quelle = el("select", { id: "a-quelle" }, el("option", { value: "demo", text: "Demo-Stimme (ohne Mikrofon)" }), el("option", { value: "mikro", text: "Mikrofon" }));
+    var mikroLaut = el("input", { type: "range", min: "0", max: "2", step: "0.05", value: "1", id: "a-mikro" });
+    var jingleLaut = el("input", { type: "range", min: "0", max: "1.5", step: "0.05", value: "0.8", id: "a-jingle" });
+    var start = el("button", { class: "knopf aufnahme", text: "● Aufnahme" });
+    var pause = el("button", { class: "knopf", text: "Pause", disabled: true });
+    var stopp = el("button", { class: "knopf", text: "■ Stopp", disabled: true });
+    var marke = el("button", { class: "knopf leicht", text: "⚑ Kapitelmarke", disabled: true });
+    var pads = el("div", { class: "pads" });
+    [["fanfare", "Intro"], ["trenner", "Trenner"], ["gong", "Gong"]].forEach(function (p) {
+      var knopf = el("button", { class: "pad", type: "button" }, p[1], el("small", { text: "eingebaut" }));
+      knopf.addEventListener("click", function () {
+        if (!rec || !rec.jingleGain) { melden("Erst „Aufnahme“ drücken – dann wird der Jingle mitgeschnitten"); return; }
+        var d = jingle(rec.ac, rec.jingleGain, p[0], rec.ac.currentTime + 0.02);
+        knopf.classList.add("laeuft"); setTimeout(function () { knopf.classList.remove("laeuft"); }, d * 1000);
+      });
+      pads.appendChild(knopf);
+    });
+    var mbLaut = el("input", { type: "range", min: "0", max: "1", step: "0.05", value: "0.5", id: "a-mb-laut" });
+    var mbDuck = el("input", { type: "checkbox", id: "a-mb-duck", checked: true, style: "width:auto" });
+    var mbKnopf = el("button", { class: "knopf", type: "button", text: "▶ Musik starten" });
+    var musikAngaben = [];
+    mbKnopf.addEventListener("click", function () {
+      if (!rec || !rec.musikGain) { melden("Erst „Aufnahme“ drücken – dann läuft die Musik mit"); return; }
+      if (rec.musikQuellen) { rec.musikQuellen.forEach(function (q) { try { q.stop(); } catch (e) {} }); rec.musikQuellen = null; mbKnopf.textContent = "▶ Musik starten"; return; }
+      rec.musikQuellen = demoMusik(rec.ac, rec.musikGain, rec.ac.currentTime + 0.05, 600);
+      mbKnopf.textContent = "■ Musik stoppen";
+      if (!musikAngaben.length) { musikAngaben.push({ titel: "Abendstimmung", kuenstler: "Studio Süd", lizenz: "Eigene Musik", quelle: "" }); angabenZeigen(); }
+    });
+    var angabenListe = el("ul", { class: "klein" });
+    function angabenZeigen() {
+      angabenListe.textContent = "";
+      if (!musikAngaben.length) angabenListe.appendChild(el("li", { class: "leise", text: "Keine – sobald Musik läuft, wird sie hier eingetragen." }));
+      musikAngaben.forEach(function (m) { angabenListe.appendChild(el("li", { text: m.titel + " – " + m.kuenstler + " (" + m.lizenz + ")" })); });
+    }
+    angabenZeigen();
+    var datei = el("input", { type: "file", accept: "audio/*", id: "a-datei" });
+    var titel = el("input", { id: "a-titel", maxlength: "200" });
+    var text = el("textarea", { id: "a-text", rows: "5" });
+    var kiListe = [];
+    var abspieler = el("div");
+    var details = el("form", { class: "formular", hidden: true },
+      el("h2", { text: "Details", style: "margin-bottom:0" }), abspieler,
+      el("label", {}, "Titel der Folge", titel), el("label", {}, "Beschreibung / Shownotes", text),
+      kiLeiste(s, titel, text, kiListe),
+      el("div", { class: "feld" }, "Kapitel", kapitel.knoten),
+      el("div", { class: "feld" }, "Verwendete Musik – steht öffentlich an der Folge", angabenListe),
+      el("div", { class: "knoepfe" },
+        el("button", { class: "knopf primaer", type: "submit", "data-modus": "online", text: "Speichern & veröffentlichen" }),
+        el("button", { class: "knopf", type: "submit", "data-modus": "entwurf", text: "Als Entwurf speichern" }),
+        el("button", { class: "knopf leicht", type: "button", text: "Verwerfen", onclick: function () { studio(); } })));
+    var ergebnis = null;
+
+    function fertig(blob, dauer, name) {
+      ergebnis = { blob: blob, dauer: dauer };
+      var url = URL.createObjectURL(blob);
+      var a = el("audio", { controls: true, src: url });
+      a.addEventListener("loadedmetadata", function () { if (isFinite(a.duration) && a.duration > 0) ergebnis.dauer = a.duration; });
+      abspieler.textContent = ""; abspieler.appendChild(a);
+      if (name && !titel.value) titel.value = name.replace(/\.[^.]+$/, "");
+      details.hidden = false; titel.focus();
+    }
+    datei.addEventListener("change", function () { if (this.files[0]) fertig(this.files[0], 0, this.files[0].name); });
+
+    details.addEventListener("submit", function (e) {
+      e.preventDefault();
+      if (!titel.value.trim()) { melden("Die Folge braucht einen Titel"); titel.focus(); return; }
+      var online = e.submitter && e.submitter.getAttribute("data-modus") === "online";
+      stand.folgen.push({ id: stand.naechste++, sendung: s.id, titel: titel.value.trim(), slug: slug(titel.value), beschreibung: text.value,
+        blob: ergebnis.blob, url: URL.createObjectURL(ergebnis.blob), mime: ergebnis.blob.type || "audio/webm",
+        dauer: ergebnis.dauer || 0, kapitel: kapitel.liste(), online: online ? Date.now() : 0, erstellt: Date.now(), ki: kiListe.slice(),
+        musik: musikAngaben.slice(), sprechtext: sprechtext.value });
+      melden(online ? "Ist online! Schau auf „Öffentliche Seite“." : "Als Entwurf gespeichert – verschlüsselt");
+      studio();
+    });
+
+    start.addEventListener("click", function () {
+      starten(quelle.value).then(function () {
+        start.disabled = true; pause.disabled = false; stopp.disabled = false; marke.disabled = false; quelle.disabled = true;
+        zustand.textContent = "Aufnahme läuft"; $("#onair").classList.add("an");
+        kapitel.neu(0, "Anfang");
+        prompter.start();
+      }, function (err) {
+        stoppeAufnahme();
+        melden(quelle.value === "mikro" ? "Kein Mikrofon verfügbar – hier geht nur die Demo-Stimme oder eine Datei." : "Aufnahme geht in diesem Browser nicht – lade eine Datei hoch.");
+      });
+    });
+    pause.addEventListener("click", function () {
+      if (rec.recorder.state === "recording") { rec.recorder.pause(); rec.summe = rec.vergangen(); rec.seit = null; pause.textContent = "Weiter"; zustand.textContent = "Pausiert"; $("#onair").classList.remove("an"); prompter.halt(); }
+      else { rec.recorder.resume(); rec.seit = performance.now(); pause.textContent = "Pause"; zustand.textContent = "Aufnahme läuft"; $("#onair").classList.add("an"); prompter.start(); }
+    });
+    stopp.addEventListener("click", function () { prompter.halt(); rec.summe = rec.vergangen(); rec.seit = null; zustand.textContent = "Wird abgeschlossen …"; rec.recorder.stop(); });
+    marke.addEventListener("click", function () { var t = Math.round(rec.vergangen() * 10) / 10; kapitel.neu(t); details.hidden = false; melden("Kapitelmarke bei " + zeit(t)); });
+
+    function starten(art) {
+      stoppeAufnahme();
+      var ac = audio();
+      rec = { ac: ac, streams: [], quellen: [], chunks: [], summe: 0, seit: null };
+      var r = rec;
+      var holen = art === "mikro"
+        ? (navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? navigator.mediaDevices.getUserMedia({ audio: true }) : Promise.reject(new Error("kein Mikrofon")))
+        : Promise.resolve(null);
+      return holen.then(function (strom) {
+        if (!window.MediaRecorder) throw new Error("kein MediaRecorder");
+        var ziel = ac.createMediaStreamDestination();
+        var mikroGain = ac.createGain(), jingleGain = ac.createGain(), analyse = ac.createAnalyser();
+        analyse.fftSize = 1024; jingleGain.gain.value = parseFloat(jingleLaut.value);
+        mikroGain.connect(ziel); mikroGain.connect(analyse); jingleGain.connect(ziel); jingleGain.connect(analyse); jingleGain.connect(ac.destination);
+        if (strom) { r.streams.push(strom); ac.createMediaStreamSource(strom).connect(mikroGain); }
+        else {
+          // Demo-Stimme: läuft, solange aufgenommen wird, und ist mitzuhören
+          var hoeren = ac.createGain(); hoeren.gain.value = 0.6; mikroGain.connect(hoeren); hoeren.connect(ac.destination);
+          demoStimme(ac, mikroGain, ac.currentTime + 0.1, 600, 120 + Math.random() * 40);
+        }
+        r.jingleGain = jingleGain;
+        // Hintergrundmusik: eigener Weg, der beim Sprechen heruntergeregelt wird
+        var musikGain = ac.createGain(), duck = ac.createGain();
+        musikGain.gain.value = parseFloat(mbLaut.value);
+        musikGain.connect(duck); duck.connect(ziel); duck.connect(ac.destination); duck.connect(analyse);
+        mbLaut.oninput = function () { musikGain.gain.value = parseFloat(this.value); };
+        r.musikGain = musikGain;
+        var stimmAnalyse = ac.createAnalyser(); stimmAnalyse.fftSize = 1024; mikroGain.connect(stimmAnalyse);
+        var stimmProbe = new Float32Array(stimmAnalyse.fftSize), sprichtSeit = -10;
+        r.ducken = function () {
+          if (!r.musikQuellen || !mbDuck.checked) { duck.gain.setTargetAtTime(1, ac.currentTime, 0.3); return; }
+          stimmAnalyse.getFloatTimeDomainData(stimmProbe);
+          var sp = 0; for (var k = 0; k < stimmProbe.length; k++) sp = Math.max(sp, Math.abs(stimmProbe[k]));
+          if (sp > 0.06) sprichtSeit = ac.currentTime;
+          // Schnell herunter, langsam wieder herauf – wie ein Radio-Mischpult
+          var spricht = ac.currentTime - sprichtSeit < 0.6;
+          duck.gain.setTargetAtTime(spricht ? 0.2 : 1, ac.currentTime, spricht ? 0.05 : 0.5);
+          r.duckStand = spricht;
+        };
+        mikroLaut.oninput = function () { mikroGain.gain.value = parseFloat(this.value); };
+        jingleLaut.oninput = function () { jingleGain.gain.value = parseFloat(this.value); };
+        var typ = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4", "audio/webm"].filter(function (t) { return MediaRecorder.isTypeSupported(t); })[0];
+        r.recorder = new MediaRecorder(ziel.stream, typ ? { mimeType: typ } : undefined);
+        r.recorder.ondataavailable = function (e) { if (e.data.size) r.chunks.push(e.data); };
+        r.recorder.onstop = function () {
+          var dauer = r.vergangen();
+          var blob = new Blob(r.chunks, { type: (r.recorder.mimeType || typ || "audio/webm").split(";")[0] });
+          stoppeAufnahme();
+          start.disabled = false; pause.disabled = true; stopp.disabled = true; marke.disabled = true; quelle.disabled = false;
+          zustand.textContent = "Fertig – unten anhören und speichern";
+          fertig(blob, dauer, "");
+        };
+        r.vergangen = function () { return r.summe + (r.seit ? (performance.now() - r.seit) / 1000 : 0); };
+        r.recorder.start(1000); r.seit = performance.now();
+        r.uhrUhr = setInterval(function () { uhr.textContent = zeit(r.vergangen()); }, 250);
+        var puffer = new Float32Array(analyse.fftSize);
+        (function malen() {
+          if (r.ducken) r.ducken();
+          analyse.getFloatTimeDomainData(puffer);
+          var spitze = 0; for (var i = 0; i < puffer.length; i++) spitze = Math.max(spitze, Math.abs(puffer[i]));
+          pegel.style.width = Math.max(0, Math.min(100, (20 * Math.log10(spitze || 1e-6) + 60) / 60 * 100)) + "%";
+          r.pegelUhr = requestAnimationFrame(malen);
+        })();
+      });
+    }
+
+    arbeit(el("div", { class: "karte stapel" },
+      el("div", {}, el("a", { href: "#", text: "← zurück", onclick: function (e) { e.preventDefault(); studio(); } })),
+      el("h1", { text: "Neue Folge: " + s.titel }),
+      el("div", { class: "zwei" }, el("label", { class: "feld" }, "Tonquelle", quelle),
+        el("label", { class: "feld" }, "Oder fertige Datei hochladen", datei)),
+      el("label", { class: "feld" }, el("span", {}, "📝 Gesprochener Text ",
+        el("span", { class: "leise klein", style: "font-weight:400", text: "– läuft beim Aufnehmen als Teleprompter mit und steht später zum Mitlesen an der Folge" })), sprechtext),
+      prompter.knoten,
+      el("div", { class: "pult" },
+        el("div", {}, uhr, el("div", { class: "pegel" }, pegel), zustand),
+        el("div", { class: "regler" }, el("label", {}, "Stimme", mikroLaut), el("label", {}, "Jingles", jingleLaut)),
+        el("div", { class: "knoepfe" }, start, pause, stopp, marke)),
+      el("div", {}, el("h2", { text: "Hintergrundmusik", style: "margin-top:.2em" }),
+        el("p", { class: "klein leise", text: "Läuft leise unter der Stimme und wird automatisch leiser, sobald gesprochen wird – wie im Radio. Im echten Studio kommen die Stücke aus deiner Musikbibliothek: eigene Musik, frei lizenzierte Stücke oder KI-Musik. Songs aus Spotify gehen nicht – sie sind kopiergeschützt und nur zum privaten Hören lizenziert." }),
+        el("div", { class: "knoepfe", style: "align-items:center" },
+          el("span", { class: "chip", text: "🎵 Abendstimmung – Studio Süd (Eigene Musik)" }),
+          el("label", { for: "a-mb-laut", style: "display:grid;grid-template-columns:auto 140px;align-items:center;gap:8px;font-size:.9rem" }, "Lautstärke", mbLaut),
+          el("label", { for: "a-mb-duck", style: "display:flex;gap:6px;align-items:center;font-size:.9rem" }, mbDuck, "Automatisch leiser beim Sprechen"),
+          mbKnopf)),
+      el("div", {}, el("h2", { text: "Jingles & Einspieler", style: "margin-top:.6em" }),
+        el("p", { class: "klein leise", text: "Während der Aufnahme antippen – sie werden live in die Aufnahme gemischt. Im echten Studio lädst du eigene Dateien." }), pads),
+      details));
+  }
+
+  // ------------------------------------------------------------ Folge bearbeiten
+  function folgeForm(s, f) {
+    var titel = el("input", { id: "f-titel", value: f.titel, maxlength: "200" });
+    var text = el("textarea", { id: "f-text", rows: "6", text: f.beschreibung });
+    var sprech = el("textarea", { id: "f-sprechtext", rows: "6", text: f.sprechtext || "" });
+    var kapitel = kapitelEditor(f.kapitel.slice());
+    var kiListe = f.ki.slice();
+    var player = el("audio", { controls: true, src: f.url });
+    var kiBoxen = el("div", { class: "knoepfe" });
+    Object.keys(KI_NAMEN).forEach(function (k) {
+      var c = el("input", { type: "checkbox", value: k, id: "ki-" + k, style: "width:auto" }); c.checked = kiListe.indexOf(k) >= 0;
+      kiBoxen.appendChild(el("label", { for: "ki-" + k, style: "display:flex;gap:6px;align-items:center;font-weight:400;font-size:.92rem" }, c, KI_NAMEN[k]));
+    });
+    var form = el("form", { class: "formular" },
+      el("label", {}, "Titel", titel), el("label", {}, "Beschreibung / Shownotes", text),
+      kiLeiste(s, titel, text, kiListe),
+      el("label", {}, "📝 Gesprochener Text (zum Mitlesen)", sprech),
+      el("div", { class: "feld" }, "Kapitel", kapitel.knoten),
+      el("div", { class: "knoepfe" },
+        el("button", { class: "knopf klein leicht", type: "button", text: "+ Kapitel", onclick: function () { kapitel.neu(0); } }),
+        el("button", { class: "knopf klein leicht", type: "button", text: "⚑ Kapitel an aktueller Stelle", onclick: function () { kapitel.neu(Math.round(player.currentTime * 10) / 10); } })),
+      el("div", { class: "feld" }, el("span", {}, "KI-Anteile ", el("span", { class: "leise klein", text: "– werden öffentlich gekennzeichnet" })), kiBoxen),
+      el("div", { class: "knoepfe" }, el("button", { class: "knopf primaer", type: "submit", text: "Speichern" })));
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      // Was die KI-Knöpfe gesetzt haben, landet in den Häkchen
+      kiListe.forEach(function (k) { $("#ki-" + k, form).checked = true; });
+      f.titel = titel.value.trim() || f.titel; f.slug = slug(f.titel); f.beschreibung = text.value; f.sprechtext = sprech.value; f.kapitel = kapitel.liste();
+      f.ki = Object.keys(KI_NAMEN).filter(function (k) { return $("#ki-" + k, form).checked; });
+      melden("Gespeichert"); studio();
+    });
+    arbeit(el("div", { class: "karte stapel" },
+      el("div", {}, el("a", { href: "#", text: "← zurück", onclick: function (e) { e.preventDefault(); studio(); } })),
+      el("h1", { text: "Folge bearbeiten" }), player, form));
+  }
+
+  // ------------------------------------------------------------ KI-Studio
+  function kiStudio(s) {
+    var thema = el("textarea", { id: "k-thema", rows: "2", placeholder: "z. B. Warum Bienen im Winter zittern" });
+    var minuten = el("input", { id: "k-min", type: "number", min: "0.5", max: "10", step: "0.5", value: "1" });
+    var titel = el("input", { id: "k-titel", maxlength: "200" });
+    var skript = el("textarea", { id: "k-skript", rows: "9", placeholder: "Eigenen Text einfügen oder schreiben lassen" });
+    var status = el("span", { class: "ki-status" });
+    var vorlesen = "speechSynthesis" in window;
+    arbeit(el("div", { class: "stapel" },
+      el("div", {}, el("a", { href: "#", text: "← zurück", onclick: function (e) { e.preventDefault(); studio(); } })),
+      el("div", { class: "karte stapel" },
+        el("h1", { text: "✨ KI-Studio" }),
+        el("p", { class: "leise", text: "Im echten Studio schreibt Claude die Texte, ein Bildmodell malt Cover und Szenen, eine KI-Stimme spricht – und aus einem Thema entsteht ein ganzes Video. Alles wird erst ein verschlüsselter Entwurf und öffentlich als KI-generiert gekennzeichnet." }),
+        el("h2", { text: "Folge aus Text: Skript schreiben und vorlesen lassen" }),
+        el("div", { class: "formular" },
+          el("label", {}, "Thema", thema),
+          el("div", { class: "zwei" }, el("label", {}, "Länge (Minuten)", minuten), el("label", {}, "Titel der Folge", titel)),
+          el("div", { class: "knoepfe", style: "align-items:center" },
+            el("button", { class: "knopf ki", type: "button", text: "✨ Skript schreiben", onclick: function () {
+              if (!thema.value.trim()) { melden("Bitte ein Thema angeben"); thema.focus(); return; }
+              var b = this; b.disabled = true;
+              kiText("skript", { sendung: s.titel, art: ARTEN[s.art], thema: thema.value, minuten: minuten.value }, status, function (t) { skript.value = t; })
+                .then(function (t) { skript.value = t; b.disabled = false; if (!titel.value) titel.value = thema.value.split("\n")[0].slice(0, 80); });
+            } }), status),
+          el("label", {}, "Skript – hier kannst du alles ändern", skript),
+          el("div", { class: "knoepfe" },
+            vorlesen ? el("button", { class: "knopf", type: "button", text: "🔊 Probehören", onclick: function () {
+              speechSynthesis.cancel();
+              var u = new SpeechSynthesisUtterance(skript.value || "Hier steht noch kein Text."); u.lang = "de-DE"; speechSynthesis.speak(u);
+            } }) : null,
+            el("button", { class: "knopf primaer", type: "button", text: "Als KI-Folge anlegen", onclick: function () {
+              if (!titel.value.trim() || !skript.value.trim()) { melden("Bitte Titel und Skript angeben"); return; }
+              var sek = Math.min(40, Math.max(8, skript.value.split(/\s+/).length / 2.3));
+              beispielFolge(sek, 135).then(function (blob) {
+                stand.folgen.push({ id: stand.naechste++, sendung: s.id, titel: titel.value.trim(), slug: slug(titel.value), beschreibung: skript.value,
+                  blob: blob, url: URL.createObjectURL(blob), mime: "audio/wav", dauer: sek, kapitel: [], online: 0, erstellt: Date.now(), ki: ["text", "stimme"], musik: [] });
+                melden("KI-Folge als Entwurf angelegt"); studio();
+              });
+            } })),
+          el("p", { class: "klein leise", text: "Probehören nutzt die Stimme deines Browsers. In der Demo bekommt die neue Folge einen Platzhalter-Ton; im echten Studio spricht eine KI-Stimme dein Skript als MP3." })))));
+  }
+
+  // ------------------------------------------------------------ Öffentliche Seite
+  var ANKER = 1704067200; // wie sendestudio/radio.py
+  var radioAn = false;
+  function seite() {
+    var ziel = $("#ansicht-seite"); ziel.textContent = "";
+    var s = sendung(stand.aktiv);
+    var online = folgenVon(s.id, true);
+    var wrap = el("div", { class: "oeffentlich stapel" },
+      el("div", { class: "oeff-kopf" }, el("span", { class: "punkt" }), "Mein Sender",
+        el("span", { class: "leise klein", style: "font-weight:400", text: "· so sehen es deine Hörerinnen und Hörer" })),
+      el("div", { class: "knoepfe" }));
+    var wahl = wrap.lastChild;
+    stand.sendungen.forEach(function (x) {
+      wahl.appendChild(el("button", { class: "knopf klein" + (x.id === s.id ? " primaer" : " leicht"), text: x.titel, onclick: function () { stand.aktiv = x.id; seite(); } }));
+    });
+    wrap.appendChild(el("div", { class: "oeff-sendung" },
+      el("img", { class: "cover", src: s.cover, alt: "", style: "width:160px;height:160px" }),
+      el("div", { class: "wachsen" }, el("span", { class: "etikett", text: ARTEN[s.art] }), el("h1", { text: s.titel }),
+        s.coverKi ? el("span", { class: "chip", text: "Cover KI-generiert" }) : null,
+        el("p", { text: s.beschreibung }))));
+    if (!online.length) {
+      wrap.appendChild(el("p", { class: "leise", text: "Hier ist noch nichts veröffentlicht. Im Studio auf „Veröffentlichen“ drücken." }));
+      ziel.appendChild(wrap); return;
+    }
+    if (s.art === "radio") wrap.appendChild(radio(online));
+    wrap.appendChild(el("div", { class: "stapel", style: "gap:4px" },
+      el("h2", { text: "Abonnieren", style: "margin-bottom:0" }),
+      el("div", { class: "bytes", text: "https://dein-sender.de/s/" + slug(s.titel) + "/feed.xml" }),
+      el("p", { class: "klein leise", text: "Diese Adresse in jeder Podcast-App unter „Per URL hinzufügen“ einfügen." })));
+    wrap.appendChild(el("h2", { text: "Folgen", style: "margin-bottom:0" }));
+    online.forEach(function (f) {
+      var a = el("audio", { controls: true, preload: "metadata", src: f.url });
+      var kap = f.kapitel.length ? el("ul", { class: "kapitel" }) : null;
+      f.kapitel.forEach(function (k) {
+        kap.appendChild(el("li", {}, el("button", { onclick: function () { a.currentTime = k.zeit; a.play(); } },
+          el("span", { class: "zeit", text: zeit(k.zeit) }), el("span", { text: k.titel }))));
+      });
+      wrap.appendChild(el("article", { class: "karte stapel", style: "gap:8px" },
+        el("div", { class: "leise klein", text: datum(f.online) + " · " + zeit(f.dauer) }),
+        el("h3", { text: f.titel, style: "margin:0" }),
+        f.ki.length ? el("span", { class: "chip", style: "justify-self:start", text: "KI-generiert: " + f.ki.map(function (k) { return KI_NAMEN[k]; }).join(", ") }) : null,
+        a,
+        f.beschreibung ? el("p", { style: "white-space:pre-line", text: f.beschreibung }) : null,
+        kap,
+        f.sprechtext ? el("details", { class: "sprech" }, el("summary", { text: "Gesprochener Text" }), el("div", { class: "text", text: f.sprechtext })) : null,
+        f.musik.length ? el("div", { class: "klein" }, el("b", { text: "Musik: " }),
+          f.musik.map(function (m) { return m.titel + " – " + m.kuenstler + " (" + m.lizenz + ")"; }).join("; ")) : null));
+    });
+    ziel.appendChild(wrap);
+  }
+
+  // Radio nach der Uhr: dieselbe Rechnung wie im echten Programm
+  function radio(online) {
+    var programm = online.filter(function (f) { return f.dauer > 0; }).sort(function (a, b) { return a.online - b.online; });
+    var gesamt = programm.reduce(function (n, f) { return n + f.dauer; }, 0);
+    var player = el("audio");
+    var laeuft = el("h2", { text: "…", style: "margin:.1em 0" });
+    var danach = el("span");
+    var liste = el("ol", { class: "programm" });
+    programm.forEach(function (f) { liste.appendChild(el("li", { text: f.titel + " (" + zeit(f.dauer) + ")" })); });
+    function stelle() {
+      var pos = ((Date.now() / 1000 - ANKER) % gesamt + gesamt) % gesamt;
+      for (var i = 0; i < programm.length; i++) { if (pos < programm[i].dauer) return { i: i, offset: pos }; pos -= programm[i].dauer; }
+      return { i: 0, offset: 0 };
+    }
+    function zeigen(i) {
+      laeuft.textContent = programm[i].titel; danach.textContent = programm[(i + 1) % programm.length].titel;
+      Array.prototype.forEach.call(liste.children, function (li, j) { li.classList.toggle("laeuft", j === i); });
+    }
+    function senden() {
+      var j = stelle(), f = programm[j.i]; zeigen(j.i);
+      if (player.getAttribute("src") !== f.url) player.src = f.url;
+      var springen = function () { try { player.currentTime = j.offset; } catch (e) {} };
+      if (player.readyState >= 1) springen(); else player.addEventListener("loadedmetadata", springen, { once: true });
+      var p = player.play(); if (p && p.catch) p.catch(function () {});
+    }
+    var knopf = el("button", { class: "knopf primaer", text: radioAn ? "Ausschalten" : "Einschalten", onclick: function () {
+      radioAn = !radioAn; knopf.textContent = radioAn ? "Ausschalten" : "Einschalten"; if (radioAn) senden(); else player.pause(); } });
+    player.addEventListener("ended", function () { if (radioAn) senden(); });
+    if (gesamt > 0) zeigen(stelle().i);
+    radioAn = false;
+    return el("div", { class: "karte stapel", style: "gap:6px" },
+      el("span", { class: "live", text: "Live" }),
+      el("div", { class: "leise klein", text: "Jetzt läuft" }), laeuft,
+      el("div", { class: "leise klein" }, "Danach: ", danach),
+      el("div", {}, knopf), player,
+      el("p", { class: "klein leise", text: "Das Programm läuft nach der Uhr: Alle, die einschalten, hören dieselbe Stelle – wie bei einem echten Sender, ohne Streaming-Server." }),
+      liste);
+  }
+
+  // ------------------------------------------------------------ Feed
+  function xml(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  function feed() {
+    var ziel = $("#ansicht-feed"); ziel.textContent = "";
+    var s = sendung(stand.aktiv), basis = "https://dein-sender.de", seiteUrl = basis + "/s/" + slug(s.titel) + "/";
+    var z = ['<?xml version="1.0" encoding="UTF-8"?>',
+      '<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:psc="http://podlove.org/simple-chapters" xmlns:podcast="https://podcastindex.org/namespace/1.0">',
+      "<channel>", "  <title>" + xml(s.titel) + "</title>", "  <link>" + seiteUrl + "</link>",
+      "  <description>" + xml(s.beschreibung) + "</description>", "  <language>de</language>",
+      '  <itunes:image href="' + basis + '/medien/cover.png"/>'];
+    folgenVon(s.id, true).forEach(function (f) {
+      var b = f.beschreibung || f.titel;
+      if (f.ki.length) b += "\n\nHinweis: Diese Folge enthält KI-generierte Inhalte (" + f.ki.map(function (k) { return KI_NAMEN[k]; }).join(", ") + ").";
+      if (f.musik.length) b += "\n\nMusik: " + f.musik.map(function (m) { return m.titel + " – " + m.kuenstler + " (" + m.lizenz + ")"; }).join("; ");
+      z.push("  <item>", "    <title>" + xml(f.titel) + "</title>", "    <link>" + seiteUrl + f.slug + "/</link>",
+        "    <pubDate>" + new Date(f.online).toUTCString() + "</pubDate>", "    <description>" + xml(b) + "</description>",
+        '    <enclosure url="' + basis + "/medien/" + f.slug + '.mp3" length="' + (f.blob ? f.blob.size : 0) + '" type="audio/mpeg"/>',
+        "    <itunes:duration>" + zeit(f.dauer).padStart(8, "0") + "</itunes:duration>");
+      if (f.kapitel.length) {
+        z.push('    <psc:chapters version="1.2">');
+        f.kapitel.forEach(function (k) { z.push('      <psc:chapter start="' + zeit(k.zeit).padStart(8, "0") + '" title="' + xml(k.titel) + '"/>'); });
+        z.push("    </psc:chapters>");
+      }
+      if (f.sprechtext) z.push('    <podcast:transcript url="' + seiteUrl + f.slug + '/text.txt" type="text/plain" language="de"/>');
+      z.push("  </item>");
+    });
+    z.push("</channel>", "</rss>");
+    ziel.appendChild(el("div", { class: "stapel" },
+      el("div", {}, el("h1", { text: "Podcast-Feed: " + s.titel }),
+        el("p", { class: "leise", text: "Diese Datei lesen Apple Podcasts, Spotify und alle anderen Apps. Das Studio schreibt sie bei jeder Veröffentlichung neu – nur veröffentlichte Folgen stehen drin, mit Kapiteln und KI-Hinweis." })),
+      el("pre", { class: "feed", text: z.join("\n") })));
+  }
+
+  // ------------------------------------------------------------ Zeitung
+  function landschaft() {
+    var c = document.createElement("canvas"); c.width = 800; c.height = 450;
+    var g = c.getContext("2d");
+    var himmel = g.createLinearGradient(0, 0, 0, 320); himmel.addColorStop(0, "#78aaea"); himmel.addColorStop(1, "#dce9d8");
+    g.fillStyle = himmel; g.fillRect(0, 0, 800, 450);
+    g.fillStyle = "#ffd666"; g.beginPath(); g.arc(600, 120, 55, 0, 7); g.fill();
+    g.fillStyle = "#3f8f3a"; g.beginPath(); g.moveTo(0, 450);
+    for (var x = 0; x <= 800; x += 10) g.lineTo(x, 300 + 40 * Math.sin(x / 90) + 20 * Math.sin(x / 33));
+    g.lineTo(800, 450); g.fill();
+    g.strokeStyle = "#5a96d2"; g.lineWidth = 26; g.beginPath();
+    for (x = 0; x <= 800; x += 10) g[x ? "lineTo" : "moveTo"](x, 385 + 22 * Math.sin(x / 120));
+    g.stroke();
+    g.strokeStyle = "#7b5b3a"; g.lineWidth = 8; g.beginPath(); g.moveTo(330, 372); g.quadraticCurveTo(400, 330, 470, 372); g.stroke();
+    return c.toDataURL("image/jpeg", 0.85);
+  }
+  function heute() { return new Date().toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); }
+  var zeitung = {
+    name: "Der Talbote", untertitel: "Unabhängige Nachrichten aus dem Tal", nummer: "Nr. 1", datum: heute(), online: 0,
+    artikel: [
+      { rubrik: "Lokales", ueberschrift: "Die neue Brücke kommt", unterzeile: "Ab Montag wird gebaut – was das für den Verkehr bedeutet", autor: "Levi",
+        text: "Die alte Holzbrücke über den Talbach hat ausgedient. Nach mehr als achtzig Jahren wird sie durch eine neue Brücke aus Stahl und Beton ersetzt, die auch Lastwagen tragen kann.\n\nDie Bauarbeiten beginnen am Montag und sollen bis zum Sommer dauern. In dieser Zeit fährt der Bus eine Umleitung über die Mühlenstraße.\n\nDer Bürgermeister nennt die Brücke „das wichtigste Bauprojekt seit Jahren“. Die Anwohner freuen sich – und hoffen, dass es leise zugeht.",
+        bild: null, bildtext: "So soll das Tal mit der neuen Brücke aussehen." },
+      { rubrik: "Wetter", ueberschrift: "Sonne satt am Wochenende", unterzeile: "", autor: "", text: "Die Meteorologen sind sich einig: Am Samstag und Sonntag wird es sonnig und warm.\n\nAb Montag ziehen dann wieder Wolken auf.", bild: null, bildtext: "" },
+      { rubrik: "Sport", ueberschrift: "Der FC Tal gewinnt 3:1", unterzeile: "", autor: "", text: "Ein spannendes Spiel am Sonntag: Nach einem frühen Rückstand drehte die Mannschaft die Partie in der zweiten Halbzeit.\n\nDas nächste Heimspiel ist in zwei Wochen.", bild: null, bildtext: "" },
+      { rubrik: "Kultur", ueberschrift: "Lesenacht in der Bücherei", unterzeile: "", autor: "", text: "Am Freitag bleibt die Bücherei bis Mitternacht offen. Es gibt Kakao, Taschenlampen und Geschichten für alle ab acht Jahren.", bild: null, bildtext: "" },
+    ],
+  };
+
+  // Dieselbe Gestaltung wie sendestudio/zeitung.py
+  function zeitungSetzen(z) {
+    function absaetze(t) {
+      return el("div", { class: "z-text" }, ...String(t || "").split(/\n\s*\n/).filter(function (x) { return x.trim(); })
+        .map(function (x) { return el("p", { text: x.trim() }); }));
+    }
+    function artikel(a, aufmacher) {
+      return el("article", aufmacher ? { class: "z-aufmacher" } : {},
+        a.rubrik ? el("p", { class: "z-rubrik", text: a.rubrik }) : null,
+        a.ueberschrift ? el("h2", { text: a.ueberschrift }) : null,
+        a.unterzeile ? el("p", { class: "z-unterzeile", text: a.unterzeile }) : null,
+        a.autor ? el("p", { class: "z-autor", text: "Von " + a.autor }) : null,
+        a.bild ? el("figure", {}, el("img", { src: a.bild, alt: a.bildtext || "" }), a.bildtext ? el("figcaption", { text: a.bildtext }) : null) : null,
+        a.text ? absaetze(a.text) : null);
+    }
+    var zeile = [z.nummer, z.datum].filter(Boolean);
+    var rumpf = !z.artikel.length ? [el("p", { class: "z-leer", text: "Noch keine Artikel – links „Artikel hinzufügen“." })]
+      : [artikel(z.artikel[0], true)].concat(z.artikel.length > 1 ? [el("div", { class: "z-spalten" }, ...z.artikel.slice(1).map(function (a) { return artikel(a, false); }))] : []);
+    return el("div", { class: "zeitung" },
+      el("header", { class: "z-kopf" },
+        el("div", { class: "z-zeile" }, el("span", { text: zeile[0] || "" }), el("span", { text: zeile[1] || "" })),
+        el("div", { class: "z-name", text: z.name || "Die Zeitung" }),
+        z.untertitel ? el("p", { class: "z-untertitel", text: z.untertitel }) : null),
+      ...rumpf,
+      el("div", { class: "z-ende", text: [z.name || "Die Zeitung"].concat(zeile).join(" · ") }));
+  }
+
+  function zeitungAnsicht() {
+    var ziel = $("#ansicht-zeitung"); ziel.textContent = "";
+    if (zeitung.artikel[0].bild === null) zeitung.artikel[0].bild = landschaft();
+    zeitung.artikel.forEach(function (a) { if (a.bild === null) a.bild = ""; });
+    var vorschau = el("div");
+    var stand_ = el("span", { class: "etikett" });
+    var adresse = el("p", { class: "klein" });
+    function neu() {
+      vorschau.textContent = ""; vorschau.appendChild(zeitungSetzen(zeitung));
+      stand_.textContent = zeitung.online ? "Online" : "Entwurf";
+      stand_.className = "etikett " + (zeitung.online ? "online" : "entwurf");
+      veroeff.textContent = zeitung.online ? "Zurückziehen" : "Veröffentlichen";
+      adresse.textContent = zeitung.online ? "Online unter https://dein-sender.de/zeitung/" + slug(zeitung.name + " " + zeitung.nummer) + "/ – mit Drucken-Knopf für alle Leser." : "";
+    }
+    function feld(obj, k, titel, mehrzeilig, attrs) {
+      var e = el(mehrzeilig ? "textarea" : "input", Object.assign({ "aria-label": titel }, attrs || {}));
+      e.value = obj[k] || "";
+      e.addEventListener("input", function () { obj[k] = e.value; neu(); });
+      return el("label", {}, titel, e);
+    }
+    var liste = el("div", { class: "stapel", style: "gap:10px" });
+    function malen() {
+      liste.textContent = "";
+      zeitung.artikel.forEach(function (a, i) {
+        var bildBereich = el("div", { class: "artikel-bild" });
+        (function bildMalen() {
+          bildBereich.textContent = "";
+          if (a.bild) bildBereich.appendChild(el("img", { src: a.bild, alt: "" }));
+          var eingabe = el("input", { type: "file", accept: "image/*", hidden: true });
+          eingabe.addEventListener("change", function () {
+            var d = this.files[0]; if (!d) return;
+            var r = new FileReader();
+            r.onload = function () { a.bild = r.result; bildMalen(); neu(); };
+            r.readAsDataURL(d);
+          });
+          bildBereich.appendChild(el("label", { class: "knopf klein", style: "display:inline-flex" }, a.bild ? "Anderes Bild" : "🖼 Bild einfügen", eingabe));
+          if (a.bild) bildBereich.appendChild(el("button", { class: "knopf klein leicht", type: "button", text: "Bild entfernen", onclick: function () { a.bild = ""; bildMalen(); neu(); } }));
+        })();
+        function tauschen(j) { var x = zeitung.artikel[i]; zeitung.artikel[i] = zeitung.artikel[j]; zeitung.artikel[j] = x; malen(); neu(); }
+        liste.appendChild(el("div", { class: "artikel" },
+          el("div", { class: "artikel-kopf" }, el("b", { text: i === 0 ? "Aufmacher" : "Artikel " + (i + 1) }),
+            el("div", { class: "knoepfe" },
+              el("button", { class: "knopf klein leicht", type: "button", text: "↑", "aria-label": "Nach oben", disabled: i === 0, onclick: function () { tauschen(i - 1); } }),
+              el("button", { class: "knopf klein leicht", type: "button", text: "↓", "aria-label": "Nach unten", disabled: i === zeitung.artikel.length - 1, onclick: function () { tauschen(i + 1); } }),
+              el("button", { class: "knopf klein", style: "color:var(--rot);border-color:var(--rot)", type: "button", text: "✕", "aria-label": "Artikel löschen", onclick: function () { zeitung.artikel.splice(i, 1); malen(); neu(); } }))),
+          el("div", { class: "zwei" }, feld(a, "rubrik", "Rubrik"), feld(a, "autor", "Geschrieben von")),
+          feld(a, "ueberschrift", "Überschrift"), feld(a, "unterzeile", "Unterzeile"),
+          feld(a, "text", "Text (Absätze mit Leerzeile trennen)", true, { rows: "6" }),
+          bildBereich, feld(a, "bildtext", "Bildunterschrift")));
+      });
+    }
+    var veroeff = el("button", { class: "knopf", type: "button", onclick: function () {
+      zeitung.online = zeitung.online ? 0 : Date.now(); neu();
+      melden(zeitung.online ? "Die Zeitung ist online!" : "Offline – liegt wieder verschlüsselt im Tresor");
+    } });
+    var drucken = el("button", { class: "knopf primaer", type: "button", text: "🖨 Drucken", onclick: function () {
+      var bereich = $("#druckbereich"); bereich.textContent = ""; bereich.appendChild(zeitungSetzen(zeitung));
+      document.body.classList.add("druckt");
+      try { window.print(); } catch (e) {}
+      setTimeout(function () { document.body.classList.remove("druckt"); }, 500);
+    } });
+    malen();
+    ziel.appendChild(el("div", { class: "stapel" },
+      el("div", {}, el("h1", { text: "📰 Zeitung" }),
+        el("p", { class: "leise", text: "Artikel schreiben, Bilder einfügen – das Studio setzt alles wie eine echte Zeitung. Der erste Artikel ist der Aufmacher. Rechts siehst du sofort, wie sie gedruckt aussieht." })),
+      el("div", { class: "zeitung-raster" },
+        el("div", { class: "karte stapel" },
+          el("div", { class: "knoepfe", style: "align-items:center" }, el("b", { text: "Ausgabe" }), stand_),
+          feld(zeitung, "name", "Name der Zeitung"), feld(zeitung, "untertitel", "Untertitel"),
+          el("div", { class: "zwei" }, feld(zeitung, "nummer", "Nummer"), feld(zeitung, "datum", "Datum")),
+          el("h2", { text: "Artikel", style: "margin:.3em 0 0" }), liste,
+          el("button", { class: "knopf leicht", type: "button", text: "+ Artikel hinzufügen", onclick: function () {
+            zeitung.artikel.push({ rubrik: "", ueberschrift: "Neuer Artikel", unterzeile: "", autor: "", text: "", bild: "", bildtext: "" }); malen(); neu();
+          } }),
+          el("div", { class: "knoepfe" }, drucken, veroeff), adresse,
+          el("p", { class: "klein leise", text: "Im Druckfenster kannst du auch „Als PDF speichern“ wählen. Öffnet sich hier keins, sperrt der Rahmen dieser Demo das Drucken – im echten Programm und auf deiner Website öffnet der Knopf das Druckfenster." })),
+        el("div", {}, el("h2", { text: "Vorschau – so wird sie gedruckt", style: "margin-top:0" }), vorschau))));
+    neu();
+  }
+
+  // ------------------------------------------------------------ Start
+  arbeit(el("div", { class: "karte" }, el("p", { class: "leise", text: "Beispielsendungen werden vorbereitet …" })));
+  seitenleiste();
+  bereit.then(function () { if (stand.ansicht === "studio") studio(); });
+})();
+</script>
+</body></html>

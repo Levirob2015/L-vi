@@ -1,40 +1,56 @@
-# Sendestudio als Dienst - damit Studio und oeffentliche Seite dauerhaft laufen.
+# Sendestudio als Dienst - die ganze Website (Sendungen, Studio,
+# Roboter-Designer, Hack-Schutz-Leitstand) laeuft dauerhaft und startet nach
+# einem Neustart des Servers von selbst.
 #
+# Am einfachsten richtet deploy/install.sh alles ein (Pakete, Benutzer,
+# Einstellungen, dieser Dienst, HTTPS mit Caddy). Von Hand:
+#
+#   sudo useradd --system --home-dir /var/lib/sendestudio --shell /usr/sbin/nologin sendestudio
 #   sudo python3 -m venv /opt/sendestudio
-#   sudo /opt/sendestudio/bin/pip install "git+https://github.com/Levirob2015/L-vi"
-#   sudo mkdir -p /var/lib/sendestudio && cd /var/lib/sendestudio
-#   sudo /opt/sendestudio/bin/sendestudio init --titel "Mein Sender" --basis-url https://radio.example.de
+#   sudo /opt/sendestudio/bin/pip install "/pfad/zu/L-vi[ki]"
+#   sudo mkdir -p /var/lib/sendestudio
+#   sudo /opt/sendestudio/bin/sendestudio -c /var/lib/sendestudio/sendestudio.json init --basis-url https://radio.example.de
+#   sudo chown -R sendestudio:sendestudio /var/lib/sendestudio
 #   sudo cp deploy/sendestudio.service /etc/systemd/system/
-#   sudo systemctl daemon-reload
-#   sudo systemctl enable --now sendestudio
+#   sudo systemctl daemon-reload && sudo systemctl enable --now sendestudio
 #
 # Der Dienst lauscht nur auf 127.0.0.1:8790. Davor gehoert ein Webserver
-# mit HTTPS (z.B. Caddy, siehe SENDESTUDIO.md) - ohne HTTPS erlaubt kein
-# Browser die Aufnahme ueber Mikrofon oder Kamera.
+# mit HTTPS (deploy/Caddyfile) - ohne HTTPS erlaubt kein Browser die
+# Aufnahme ueber Mikrofon oder Kamera.
 
 [Unit]
-Description=Sendestudio - Podcasts, Radio und Dokumentationen
+Description=Sendestudio - Website mit Studio, Roboter-Designer und Leitstand
 Documentation=https://github.com/Levirob2015/L-vi/blob/main/SENDESTUDIO.md
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=exec
+User=sendestudio
+Group=sendestudio
 WorkingDirectory=/var/lib/sendestudio
 ExecStart=/opt/sendestudio/bin/sendestudio --config /var/lib/sendestudio/sendestudio.json serve
+# API-Schluessel fuer die KI (freiwillig). Die Datei ist nur fuer root lesbar;
+# systemd liest sie, bevor es die Rechte abgibt.
+EnvironmentFile=-/etc/sendestudio/umgebung
 Restart=on-failure
 RestartSec=5s
 
-DynamicUser=yes
 StateDirectory=sendestudio
+StateDirectoryMode=0700
+UMask=0077
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 PrivateDevices=yes
 ProtectKernelTunables=yes
+ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 
 [Install]
 WantedBy=multi-user.target

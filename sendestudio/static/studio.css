@@ -169,3 +169,60 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 .auftrag b { display: block; }
 .auftrag.fehler { border-left-color: var(--rot); }
 .auftrag.fertig { border-left-color: var(--gruen); }
+
+/* Musik */
+.musikbett { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 10px 16px; align-items: center; }
+.musikbett .knopf { justify-self: start; }
+@media (max-width: 640px) { .musikbett { grid-template-columns: minmax(0, 1fr); } }
+.regler-zeile { display: grid !important; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: center; font-size: .9rem; }
+.regler-zeile input { padding: 0; }
+.musik-zeile { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, .8fr) minmax(0, 1fr) auto; gap: 6px; margin-bottom: 6px; }
+@media (max-width: 760px) { .musik-zeile { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.hinweis-karte { border-left: 4px solid var(--akzent); }
+.hinweis-karte p { margin: .4em 0 0; }
+.stueck { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 14px; align-items: center; }
+.stueck audio { grid-column: 1 / -1; }
+.pad select { font-size: .78rem; padding: 3px 4px; }
+#knopf-musik { margin-top: 8px; }
+
+/* Gesprochener Text und Teleprompter */
+.sprechtext-block { margin: 0 0 18px; }
+.sprechtext-block summary { cursor: pointer; font-weight: 700; margin-bottom: 6px; }
+.sprechtext-block textarea { margin-top: 6px; }
+.prompter { margin: 0 0 14px; }
+.prompter-fenster { position: relative; height: 42vh; min-height: 220px; overflow: hidden; cursor: pointer;
+  background: #0b0b0b; color: #f5f5f5; border-radius: 12px; }
+.prompter-fenster::after { content: ""; position: absolute; left: 0; right: 0; top: 33%; height: 0;
+  border-top: 2px dashed rgba(251, 146, 60, .7); pointer-events: none; }
+.prompter-text { padding: 14vh 6% 60vh; font-weight: 600; line-height: 1.35; white-space: pre-wrap;
+  overflow-wrap: anywhere; will-change: transform; }
+.prompter-fenster.gespiegelt .prompter-text { transform: scaleX(-1); }
+.prompter-fenster:fullscreen { height: 100vh; border-radius: 0; }
+.prompter-fenster:fullscreen .prompter-text { padding-top: 33vh; }
+.prompter-regler { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-top: 10px; }
+.prompter-regler label { display: flex; align-items: center; gap: 6px; font-size: .9rem; font-weight: 600; }
+.prompter-regler input[type=range] { width: 120px; padding: 0; }
+
+/* Zeitung */
+.ausgabe { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+.ausgabe h3 { margin: .2em 0; }
+.zeitung-raster { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 20px; align-items: start; }
+.zeitung-vorschau { position: sticky; top: 76px; max-height: calc(100vh - 90px); overflow: auto; }
+.zeitung-vorschau h2 { margin-top: 0; }
+@media (max-width: 1100px) { .zeitung-raster { grid-template-columns: 1fr; } .zeitung-vorschau { position: static; max-height: none; } }
+.zeitung-titel { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.zeitung-titel h1 { margin-bottom: 0; }
+.artikel-liste { display: grid; gap: 12px; }
+.artikel { border: 1px solid var(--linie); border-radius: 12px; padding: 14px; display: grid; gap: 10px; background: var(--bg); }
+.artikel-kopf { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.artikel-kopf b { font-size: .95rem; }
+.artikel-kopf .knoepfe { margin: 0; }
+.artikel label { display: grid; gap: 4px; font-weight: 600; font-size: .85rem; }
+.artikel-bild { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.artikel-bild img { width: 120px; height: 80px; object-fit: cover; border-radius: 8px; border: 1px solid var(--linie); }
+#druckbereich { display: none; }
+@media print {
+  body.druckt > *:not(#druckbereich) { display: none !important; }
+  body.druckt #druckbereich { display: block; }
+  body.druckt { background: #fff; }
+}

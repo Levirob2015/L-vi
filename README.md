@@ -12,9 +12,15 @@ Kommandozeile.
 
 ![Dashboard](docs/dashboard.png)
 
+> **Die ganze Website auf einem eigenen Server:** Sendungen, Studio,
+> ProBot Roboter-Designer und der Hack-Schutz-Leitstand unter einer Adresse,
+> mit HTTPS und einem Befehl eingerichtet – siehe [WEBSITE.md](WEBSITE.md).
+>
 > **Neu im Repository: [Sendestudio](SENDESTUDIO.md)** – Podcasts, Radio
-> und Dokumentationen im Browser aufnehmen, mit KI-Werkzeugen (Texte,
-> Bilder, KI-Stimme, Videos) ergänzen und direkt ins Netz stellen.
+> und Dokumentationen im Browser aufnehmen (mit Teleprompter für den
+> gesprochenen Text), mit Hintergrundmusik und KI-Werkzeugen (Texte, Bilder,
+> KI-Stimme, Musik, Videos) ergänzen, eine Zeitung schreiben und per Knopf
+> drucken – und alles direkt ins Netz stellen.
 > Entwürfe liegen verschlüsselt, der Studio-Login ist mit LoginShield geschützt.
 
 ### Klickbare Vorschau

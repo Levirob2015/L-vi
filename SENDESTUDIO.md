@@ -6,6 +6,15 @@ ffmpeg ist optional und macht die Aufnahmen podcast-tauglich.
 
 ![Studio bei der Aufnahme](docs/sendestudio.png)
 
+### Klickbare Demo
+
+[`docs/sendestudio-demo.html`](docs/sendestudio-demo.html) – eine einzelne Datei,
+herunterladen und im Browser öffnen, ohne Installation. Sie zeigt Aufnahme mit
+Hintergrundmusik, Jingles und Kapitelmarken, eine Beispiel-Dokumentation, KI-Knöpfe, verschlüsselte Entwürfe, die öffentliche
+Seite mit Live-Radio und den Podcast-Feed. Alles bleibt im Browser; die
+KI-Antworten sind dort Beispiele. Über GitHub Pages erscheint sie unter
+`https://levirob2015.github.io/L-vi/sendestudio.html`.
+
 ## Was es kann
 
 **Aufnehmen**
@@ -13,6 +22,11 @@ ffmpeg ist optional und macht die Aufnahmen podcast-tauglich.
 - Pegelanzeige, Lautstärkeregler, Pause, Uhr
 - **Jingle-Pads**: sechs Tasten für Jingles, Intros und Einspieler, die live in die Aufnahme gemischt werden
 - **Kapitelmarken** per Knopfdruck während der Aufnahme
+- **Gesprochener Text** mit **Teleprompter**: Text vorher aufschreiben – beim
+  Aufnehmen läuft er groß mit (Tempo, Schriftgröße, Spiegeln, Vollbild) und
+  hält bei Pause an. Nach dem Veröffentlichen steht er zum Mitlesen an der
+  Folge, als `text.txt` und als Transkript im Podcast-Feed
+- **Hintergrundmusik**, die automatisch leiser wird, sobald gesprochen wird – wie im Radio
 - Oder eine fertige Datei hochladen (MP3, M4A, MP4, WebM, Ogg, WAV)
 
 **Verwalten**
@@ -21,9 +35,28 @@ ffmpeg ist optional und macht die Aufnahmen podcast-tauglich.
 - Entwürfe, die niemand sieht, bis du sie veröffentlichst – und die bis dahin
   **nur verschlüsselt** auf dem Server liegen (siehe [Sicherheit](#sicherheit))
 
+**Zeitung**
+- Ausgaben mit Name, Untertitel, Nummer und Datum; Artikel mit Rubrik,
+  Überschrift, Unterzeile, Autor, Text, Bild und Bildunterschrift
+- Das Studio setzt sie **wie eine gedruckte Zeitung**: großer Zeitungskopf,
+  der erste Artikel als Aufmacher, die übrigen in Spalten – mit Vorschau
+  neben dem Editor, gespeichert wird automatisch
+- **🖨 Drucken** per Knopfdruck auf A4 (oder „Als PDF speichern“) – im Studio
+  und auf der Website
+- **Veröffentlichen** unter `/zeitung/`; bis dahin liegt die Ausgabe samt
+  Bildern verschlüsselt
+
+**Musik**
+- **Musikbibliothek** mit Titel, Künstler, Lizenz und Quelle jedes Stücks
+- Hintergrundmusik schon bei der Aufnahme – oder nachträglich **unter eine fertige Folge legen** (mit automatischem Leiserwerden beim Sprechen)
+- Jingle-Tasten direkt aus der Bibliothek belegen
+- **Musik-Angaben** erscheinen öffentlich an der Folge und im Feed (verlangen viele freie Lizenzen)
+- **KI-Musik** nach Beschreibung (optional, ElevenLabs)
+
 **Mit KI erstellen** (optional, siehe [KI-Werkzeuge](#ki-werkzeuge))
 - **Texte:** Shownotes, Titelvorschläge, Kapitel, Sendungsbeschreibung, Social-Media-Post, ganze Sprechskripte
-- **Aus der Aufnahme:** abschreiben lassen → Shownotes, Kapitel mit Zeitmarken und Titelvorschläge
+- **Gesprochener Text:** aus Stichpunkten einen Sprechtext schreiben lassen
+- **Aus der Aufnahme:** abschreiben lassen → gesprochener Text, Shownotes, Kapitel mit Zeitmarken und Titelvorschläge
 - **Bilder:** Cover per Beschreibung malen lassen
 - **KI-Stimme:** Text oder Skript als fertige Folge vorlesen lassen
 - **Videos:** aus einem Thema ein ganzes Erklär-/Doku-Video (Szenen mit KI-Bildern und KI-Stimme), oder aus einer Aufnahme + Cover ein Video für YouTube & Co.
@@ -65,6 +98,10 @@ Im Studio:
 Die Folge ist sofort auf der öffentlichen Seite und im Feed.
 
 ## Wirklich ins Netz
+
+> **Am einfachsten:** [WEBSITE.md](WEBSITE.md) – ein Befehl richtet die ganze
+> Website (Sendungen, Studio, Roboter-Designer, Hack-Schutz-Leitstand) mit
+> HTTPS auf einem eigenen Server ein. Die Wege unten sind die Einzelteile.
 
 ### Weg 1: Das Studio läuft auf einem Server
 
@@ -178,6 +215,48 @@ mindestens 1400 × 1400 Pixeln.
 Die Datei wird nur für ihren Besitzer lesbar angelegt (sie enthält ggf. das
 FTP-Passwort).
 
+## Musik
+
+### Welche Musik darf ich verwenden?
+
+Nur Musik, an der du die Rechte hast:
+
+- **selbst gemacht** – gehört dir;
+- **frei lizenziert** – z. B. CC0 (gemeinfrei) oder CC BY (dann Urheber nennen). Quellen: Pixabay Music, Free Music Archive, YouTube Audio Library. Die Lizenz jedes einzelnen Stücks prüfen;
+- **gekauft mit Lizenz** für Podcasts/Streaming („GEMA-frei“);
+- **KI-Musik** – die Nutzungsrechte regeln die Bedingungen des Anbieters bzw. deines Tarifs.
+
+**Songs aus Spotify, Apple Music oder YouTube gehen nicht.** Sie sind
+kopiergeschützt und lassen sich nicht in eigene Aufnahmen übernehmen, und
+das Abo erlaubt nur privates Hören. Wer bekannte Songs in einem öffentlichen
+Podcast oder Webradio spielt, braucht in Deutschland Lizenzen von GEMA (und
+für Webradio zusätzlich GVL) – sonst drohen Abmahnungen, und Plattformen
+nehmen solche Folgen oft wieder herunter.
+
+### So geht's
+
+- **🎵 Musikbibliothek** (links in der Seitenleiste): Stück hochladen und
+  Titel, Künstler, Lizenz und Quelle eintragen. Stücke der Bibliothek liegen
+  verschlüsselt im Tresor – öffentlich wird nur, was in einer
+  veröffentlichten Folge zu hören ist.
+- **Bei der Aufnahme**: unter „Hintergrundmusik“ ein Stück wählen,
+  „Musik starten“. Mit „Automatisch leiser beim Sprechen“ regelt das Studio
+  die Musik herunter, sobald du sprichst, und in Pausen wieder hoch. Die
+  Jingle-Tasten lassen sich ebenfalls aus der Bibliothek belegen.
+- **Nachträglich**: Folge bearbeiten → „🎵 Musik unterlegen“. Die Musik läuft
+  in Schleife unter der ganzen Aufnahme, blendet am Anfang ein und am Ende
+  aus, und wird beim Sprechen leiser (Sidechain-Kompression, etwa −12 dB).
+  Es entsteht ein neuer Entwurf, das Original bleibt. Braucht ffmpeg.
+- **Musik-Angaben**: Jedes eingesetzte Stück aus der Bibliothek wird
+  automatisch unter „Verwendete Musik“ eingetragen; eigene Angaben lassen
+  sich ergänzen. Öffentlich steht dann an der Folge „Musik: Titel – Künstler
+  (Lizenz)“ mit Link zur Quelle, und dasselbe im Feed.
+- **✨ KI-Musik** (in der Musikbibliothek): beschreiben, wie es klingen soll,
+  Länge wählen (3 Sekunden bis 10 Minuten), auf Wunsch nur instrumental. Das
+  Stück landet in der Bibliothek und wird bei Verwendung als
+  „KI-generiert: Musik“ gekennzeichnet. Braucht einen ElevenLabs-Schlüssel
+  (`ELEVENLABS_API_KEY`).
+
 ## KI-Werkzeuge
 
 Im Studio erscheinen die KI-Knöpfe (✨), sobald die Zugänge eingerichtet
@@ -187,6 +266,7 @@ sind. Sie sind ganz freiwillig: Ohne Schlüssel läuft das Studio wie bisher.
 |---|---|---|
 | Texte (Shownotes, Titel, Kapitel, Skripte …) | Claude von Anthropic | `ANTHROPIC_API_KEY` und `pip install "sendestudio[ki]"` (Python 3.10+) |
 | Bilder, KI-Stimme, Transkription | OpenAI (oder kompatibel) | `OPENAI_API_KEY` |
+| Musik | ElevenLabs („Eleven Music“) | `ELEVENLABS_API_KEY` |
 | Videos | wird im Studio aus KI-Bildern und KI-Stimme geschnitten | zusätzlich ffmpeg |
 
 Die Schlüssel am besten als Umgebungsvariablen setzen, z. B. in der
@@ -196,6 +276,7 @@ systemd-Unit:
 [Service]
 Environment=ANTHROPIC_API_KEY=sk-ant-…
 Environment=OPENAI_API_KEY=sk-…
+Environment=ELEVENLABS_API_KEY=…
 ```
 
 Alternativ in `sendestudio.json` unter `"ki"` (die Datei ist nur für den
@@ -211,6 +292,9 @@ Besitzer lesbar):
   "stimme_modell": "gpt-4o-mini-tts",
   "stimme": "coral",
   "transkript_modell": "whisper-1",
+  "elevenlabs_schluessel": "",
+  "musik_url": "https://api.elevenlabs.io/v1",
+  "musik_modell": "",
   "tageslimit": 50
 }
 ```
@@ -234,7 +318,7 @@ kannst derweil weiterarbeiten.
 
 **Kennzeichnung:** Seit August 2026 verlangt die EU-KI-Verordnung (Art. 50),
 dass KI-erzeugte Inhalte als solche erkennbar sind. Das Studio setzt die
-Angaben „KI-Anteile: Text / Stimme / Bilder / Video“ automatisch, wenn du ein
+Angaben „KI-Anteile: Text / Stimme / Bilder / Musik / Video“ automatisch, wenn du ein
 KI-Werkzeug benutzt. Du kannst sie in jeder Folge anpassen. Öffentlich
 erscheint dann „KI-generiert: …“ an der Folge und ein Hinweis im Feed.
 Verantwortlich für das Veröffentlichte bleibst du – also bitte prüfen, was
@@ -246,7 +330,7 @@ die KI geschrieben hat, besonders Fakten und Namen.
   17 Aufrufe (1× Planung, je Szene 1× Bild und 1× Stimme). Mit
   `"tageslimit": 0` ist die KI ganz aus.
 - **Was du einem KI-Werkzeug gibst, verlässt deinen Server** und geht an
-  Anthropic bzw. OpenAI – bei „Aus der Aufnahme“ die ganze Aufnahme. Das
+  Anthropic, OpenAI bzw. ElevenLabs – bei „Aus der Aufnahme“ die ganze Aufnahme. Das
   passiert nur auf Knopfdruck, nie automatisch. Für streng vertrauliche
   Entwürfe die KI-Knöpfe einfach nicht benutzen.
 - Bei Claude ist der eingebaute Ausweichweg der API eingeschaltet: Lehnt
@@ -266,7 +350,8 @@ dagegen mit jedem Bild- und Sprachdienst.
 
 Alles, was noch nicht öffentlich ist, liegt **nur verschlüsselt** auf dem
 Server: die Aufnahmen von Entwürfen und zurückgezogenen Folgen, deren Titel,
-Beschreibungen und Kapitel sowie das Cover einer Sendung, solange sie noch
+Beschreibungen, Kapitel und gesprochener Text, unveröffentlichte
+Zeitungsausgaben mit ihren Bildern sowie das Cover einer Sendung, solange sie noch
 keine veröffentlichte Folge hat. Auch die Dateinamen sind zufällig und
 verraten nichts über den Inhalt.
 
@@ -295,8 +380,10 @@ mit SHAKE-256 als Schlüsselstrom, Integrität mit HMAC-SHA256 je 1-MiB-Block
 (Encrypt-then-MAC, mit Blocknummer und Ende-Kennzeichen).
 
 Was der Tresor **nicht** abdeckt, ehrlich gesagt:
-- Name und Beschreibung einer **Sendung** (nicht der Folgen) stehen im
-  Klartext in der Datenbank – die Datenbank ist nur für den Besitzer lesbar.
+- Name und Beschreibung einer **Sendung** (nicht der Folgen) sowie Titel und
+  Künstler der Stücke in der Musikbibliothek stehen im Klartext in der
+  Datenbank – die Datenbank ist nur für den Besitzer lesbar. Die
+  Musikdateien selbst liegen verschlüsselt.
 - Während eine Aufnahme hochgeladen und umgewandelt wird, liegt sie für
   diesen Moment unverschlüsselt im Datenordner. Gelöschte Daten können auf
   SSDs physisch noch eine Weile vorhanden sein.

@@ -218,12 +218,12 @@ def mp3_dauer_schaetzen(pfad: str) -> float:
 
 
 def bild_speichern(quelle: str, zielordner: str, basisname: str) -> str:
-    """Prueft ein Cover-Bild und legt es ab. Gibt den Dateinamen zurueck."""
+    """Prueft ein Bild (Cover, Zeitung) und legt es ab. Gibt den Dateinamen zurueck."""
     with open(quelle, "rb") as f:
         erkannt = erkennen(f.read(64))
     if erkannt is None or erkannt[1] != "bild":
         _weg(quelle)
-        raise ValueError("Cover bitte als JPG, PNG oder WebP")
+        raise ValueError("Bilder bitte als JPG, PNG oder WebP")
     ziel = os.path.join(zielordner, basisname + erkannt[0])
     os.replace(quelle, ziel)
     return os.path.basename(ziel)
@@ -362,3 +362,39 @@ def video_aus_szenen(szenen: list, ziel: str, *, breite: int = 1920, hoehe: int 
     finally:
         for s in stuecke + [liste]:
             _weg(s)
+
+
+def musik_unterlegen(sprache: str, musik: str, ziel: str, *, lautstaerke: float = 0.3,
+                     ducking: bool = True) -> None:
+    """Legt Musik unter eine Aufnahme - wie im Radio.
+
+    Die Musik laeuft in Schleife so lange wie die Aufnahme, blendet am
+    Anfang ein und am Ende aus. Mit ``ducking`` wird sie automatisch
+    leiser, sobald gesprochen wird, und kommt in Pausen wieder hoch.
+    Ist die Aufnahme ein Video, bleibt das Bild unveraendert.
+    """
+    info = pruefen(sprache)
+    dauer = info.get("dauer") or 0.0
+    if dauer <= 0:
+        raise ValueError("Die Aufnahme hat keine messbare Länge")
+    lautstaerke = min(1.0, max(0.02, float(lautstaerke)))
+    aus = max(0.0, dauer - 2.5)
+    stereo = "aformat=sample_rates=44100:channel_layouts=stereo"
+    musik_kette = (f"[1:a]{stereo},volume={lautstaerke:.3f},afade=t=in:st=0:d=1.5,"
+                   f"afade=t=out:st={aus:.2f}:d=2.5")
+    if ducking:
+        # Die Sprache steuert einen Kompressor auf der Musik (Sidechain):
+        # sobald jemand spricht, geht die Musik deutlich herunter.
+        filter_ = (f"[0:a]{stereo},asplit=2[s][steuer];{musik_kette}[m];"
+                   "[m][steuer]sidechaincompress=threshold=0.02:ratio=12:attack=20:release=700[unter];"
+                   "[s][unter]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]")
+    else:
+        filter_ = (f"[0:a]{stereo}[s];{musik_kette}[m];"
+                   "[s][m]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]")
+    if info.get("video"):
+        ausgabe = ["-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
+                   "-movflags", "+faststart"]
+    else:
+        ausgabe = ["-map", "[a]", "-c:a", "libmp3lame", "-b:a", "160k"]
+    _ffmpeg(["-i", sprache, "-stream_loop", "-1", "-i", musik, "-filter_complex", filter_,
+             "-t", f"{dauer:.3f}"] + ausgabe + [ziel])

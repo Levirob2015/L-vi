@@ -679,7 +679,9 @@ input, select { font:inherit; font-size:13px; padding:5px 9px; border-radius:6px
   function api(path, options) {
     options = options || {};
     options.headers = Object.assign({"X-Auth-Token": TOKEN}, options.headers || {});
-    return fetch(path, options).then(function (response) {
+    // Relativ zur Seite: So laeuft das Dashboard auch unter einem Unterpfad
+    // (z.B. /leitstand/ hinter dem Sendestudio), direkt aufgerufen wie bisher.
+    return fetch(path.replace(/^[/]/, ""), options).then(function (response) {
       if (response.status === 401) { throw new Error("Nicht autorisiert - Token pruefen."); }
       if (!response.ok) { throw new Error("HTTP " + response.status); }
       return response.json();

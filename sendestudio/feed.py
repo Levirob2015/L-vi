@@ -6,7 +6,7 @@ from email.utils import formatdate
 from typing import Any, Dict, List
 from xml.sax.saxutils import escape, quoteattr
 
-from .store import ARTEN, ki_text
+from .store import ARTEN, ki_text, musik_text
 
 #: Kategorie fuer Apple Podcasts, falls keine angegeben ist.
 STANDARD_KATEGORIE = {"podcast": "Society & Culture", "radio": "Music", "doku": "Documentary"}
@@ -36,7 +36,8 @@ def feed(sendung: Dict[str, Any], folgen: List[Dict[str, Any]], basis_url: str) 
     t.append('<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" '
              'xmlns:atom="http://www.w3.org/2005/Atom" '
              'xmlns:content="http://purl.org/rss/1.0/modules/content/" '
-             'xmlns:psc="http://podlove.org/simple-chapters">')
+             'xmlns:psc="http://podlove.org/simple-chapters" '
+             'xmlns:podcast="https://podcastindex.org/namespace/1.0">')
     t.append("<channel>")
     t.append(f"<title>{escape(sendung['titel'])}</title>")
     t.append(f"<link>{escape(seite)}</link>")
@@ -71,6 +72,8 @@ def feed(sendung: Dict[str, Any], folgen: List[Dict[str, Any]], basis_url: str) 
             # Kennzeichnung KI-generierter Inhalte (EU-KI-Verordnung, Art. 50) -
             # auch in Podcast-Apps, die nur den Feed sehen.
             beschreibung += f"\n\nHinweis: Diese Folge enthält KI-generierte Inhalte ({ki_text(f['ki'])})."
+        if f.get("musik"):
+            beschreibung += "\n\nMusik: " + "; ".join(musik_text(f["musik"]))
         t.append(f"<description>{escape(beschreibung)}</description>")
         t.append(f"<enclosure url={quoteattr(url)} length=\"{int(f['groesse'])}\" "
                  f"type={quoteattr(f['mime'])}/>")
@@ -83,6 +86,9 @@ def feed(sendung: Dict[str, Any], folgen: List[Dict[str, Any]], basis_url: str) 
                 t.append(f"<psc:chapter start=\"{kapitel_zeit(k['zeit'])}\" "
                          f"title={quoteattr(k['titel'])}/>")
             t.append("</psc:chapters>")
+        if f.get("sprechtext", "").strip():
+            t.append(f'<podcast:transcript url={quoteattr(link + "text.txt")} type="text/plain" '
+                     f'language={quoteattr(sendung["sprache"])}/>')
         t.append("</item>")
     t.append("</channel>")
     t.append("</rss>")

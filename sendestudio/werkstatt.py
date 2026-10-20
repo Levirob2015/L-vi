@@ -27,7 +27,8 @@ from .store import ARTEN
 
 log = logging.getLogger("sendestudio.ki")
 
-ARTEN_AUFTRAG = ("text", "aus_aufnahme", "cover", "stimme", "video_aufnahme", "video_ki")
+ARTEN_AUFTRAG = ("text", "aus_aufnahme", "cover", "stimme", "video_aufnahme", "video_ki",
+                 "musik_ki", "musikbett")
 _MAX_WARTEND = 4
 _MAX_GEMERKT = 50
 
@@ -178,11 +179,13 @@ class Werkstatt:
             _weg(tmp)
 
     def _neue_folge(self, sendung_id: int, titel: str, beschreibung: str, quelle: str,
-                    ki: List[str], kapitel: Optional[list] = None) -> Dict[str, Any]:
+                    ki: List[str], kapitel: Optional[list] = None,
+                    musik: Optional[list] = None, sprechtext: str = "") -> Dict[str, Any]:
         """Legt aus einer erzeugten Datei einen Entwurf an (und schliesst ihn weg)."""
         st = self.studio.store
         folge = st.folge_anlegen(sendung_id, titel[:200], beschreibung=beschreibung,
-                                 kapitel=kapitel or [], ki=ki)
+                                 kapitel=kapitel or [], ki=ki, musik=musik or [],
+                                 sprechtext=sprechtext)
         try:
             info = media.aufbereiten(quelle, self.studio.cfg.medienordner,
                                      f"m-{secrets.token_hex(10)}")
@@ -304,7 +307,7 @@ class Werkstatt:
         schritt("Folge wird angelegt …")
         ki = ["stimme"] + (["text"] if daten.get("text_ki") else [])
         folge = self._neue_folge(s["id"], self._text(daten, "titel", "einen Titel", 200),
-                                 str(daten.get("beschreibung") or ""), ton, ki)
+                                 str(daten.get("beschreibung") or ""), ton, ki, sprechtext=text)
         return {"folge": folge}
 
     # ------------------------------------------------------------------
@@ -332,7 +335,7 @@ class Werkstatt:
             raise
         ki = sorted(set(f["ki"]) | {"video"} | ({"bild"} if s["cover_ki"] else set()))
         folge = self._neue_folge(s["id"], f"{f['titel']} (Video)", f["beschreibung"], ziel,
-                                 ki, f["kapitel"])
+                                 ki, f["kapitel"], f["musik"], f["sprechtext"])
         return {"folge": folge}
 
     # ------------------------------------------------------------------
@@ -381,7 +384,91 @@ class Werkstatt:
         # Der gesprochene Text als Beschreibung - zugleich ein Transkript.
         text = "\n\n".join(sz["sprechtext"].strip() for sz in szenen)
         folge = self._neue_folge(s["id"], str(plan.get("titel") or daten["thema"])[:200], text,
-                                 ziel, ["text", "stimme", "bild", "video"])
+                                 ziel, ["text", "stimme", "bild", "video"], sprechtext=text)
+        return {"folge": folge}
+
+    # ------------------------------------------------------------------
+    # 7. KI-Musik -> Musikbibliothek
+    # ------------------------------------------------------------------
+    def _pruefen_musik_ki(self, daten: Dict[str, Any]) -> None:
+        self._faehig("musik")
+        self._text(daten, "beschreibung", "eine Beschreibung der Musik", 4000)
+        self._sekunden(daten)
+
+    @staticmethod
+    def _sekunden(daten: Dict[str, Any]) -> float:
+        try:
+            sek = float(daten.get("sekunden") or 30)
+        except (TypeError, ValueError):
+            raise KiFehler("Die Länge bitte in Sekunden angeben", 400)
+        if not 3 <= sek <= 600:
+            raise KiFehler("Länge zwischen 3 Sekunden und 10 Minuten", 400)
+        return sek
+
+    def _auftrag_musik_ki(self, daten: Dict[str, Any], schritt: Any) -> Dict[str, Any]:
+        beschreibung = self._text(daten, "beschreibung", "eine Beschreibung der Musik", 4000)
+        schritt("Musik wird komponiert …")
+        ton = self.ki.musik(beschreibung, self._sekunden(daten),
+                            instrumental=daten.get("instrumental", True) is not False)
+        tmp = self._arbeitsdatei(".mp3")
+        with open(tmp, "wb") as f:
+            f.write(ton)
+        info = media.aufbereiten(tmp, self.studio.cfg.medienordner, f"musik-{secrets.token_hex(10)}")
+        titel = str(daten.get("titel") or "").strip() or beschreibung.split("\n")[0][:60]
+        eintrag = self.studio.store.musik_anlegen(
+            titel, kuenstler="KI (ElevenLabs)", lizenz="KI-generiert", datei=info["datei"],
+            mime=info["mime"], dauer=info["dauer"], ki=True)
+        self.studio.abgleichen()
+        return {"musik": eintrag}
+
+    # ------------------------------------------------------------------
+    # 8. Musik unter eine Folge legen -> neuer Entwurf
+    # ------------------------------------------------------------------
+    def _pruefen_musikbett(self, daten: Dict[str, Any]) -> None:
+        if not media.ffmpeg_verfuegbar():
+            raise KiFehler("Zum Unterlegen von Musik wird ffmpeg gebraucht", 501)
+        self._folge(daten)
+        self._musik(daten)
+        self._lautstaerke(daten)
+
+    def _musik(self, daten: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            m = self.studio.store.musik(int(daten.get("musik_id")))
+        except (TypeError, ValueError):
+            m = None
+        if m is None or not m["datei"]:
+            raise KiFehler("Musikstück nicht gefunden", 404)
+        return m
+
+    @staticmethod
+    def _lautstaerke(daten: Dict[str, Any]) -> float:
+        try:
+            l = float(daten.get("lautstaerke", 0.3))
+        except (TypeError, ValueError):
+            raise KiFehler("Lautstärke bitte als Zahl zwischen 0,05 und 1", 400)
+        if not 0.05 <= l <= 1:
+            raise KiFehler("Lautstärke bitte zwischen 0,05 und 1", 400)
+        return l
+
+    def _auftrag_musikbett(self, daten: Dict[str, Any], schritt: Any) -> Dict[str, Any]:
+        f = self._folge(daten)
+        m = self._musik(daten)
+        schritt("Musik wird unterlegt …")
+        endung = ".mp4" if f["mime"].startswith("video/") else ".mp3"
+        ziel = self._arbeitsdatei(endung)
+        try:
+            with self._klartext(f["datei"]) as sprache, self._klartext(m["datei"]) as musik:
+                media.musik_unterlegen(sprache, musik, ziel, lautstaerke=self._lautstaerke(daten),
+                                       ducking=daten.get("ducking", True) is not False)
+        except BaseException:
+            _weg(ziel)
+            raise
+        angabe = {"titel": m["titel"], "kuenstler": m["kuenstler"], "lizenz": m["lizenz"],
+                  "quelle": m["quelle"]}
+        musik = f["musik"] + ([angabe] if angabe not in f["musik"] else [])
+        ki = sorted(set(f["ki"]) | ({"musik"} if m["ki"] else set()))
+        folge = self._neue_folge(f["sendung_id"], f"{f['titel']} (mit Musik)", f["beschreibung"],
+                                 ziel, ki, f["kapitel"], musik, f["sprechtext"])
         return {"folge": folge}
 
 
