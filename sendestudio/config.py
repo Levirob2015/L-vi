@@ -62,6 +62,11 @@ class Config:
     #: gibt es keinen Feed - Podcast-Apps brauchen absolute Adressen.
     basis_url: str = ""
     seitentitel: str = "Mein Sender"
+    #: Ein Satz unter dem Namen auf der Startseite.
+    untertitel: str = "Podcasts, Radio und Dokumentationen – dazu ein Roboter-Designer."
+    #: Die ganze Website: Startseite, Sendungen, Roboter-Designer, Studio und
+    #: Hack-Schutz-Leitstand unter einer Adresse. Aus = nur Sendungen.
+    website: bool = True
     passwort_hash: str = ""
     #: Schluessel fuer den Login-Schutz (LoginShield).
     geheimnis: str = ""

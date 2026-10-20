@@ -38,6 +38,7 @@ from .tresor import ENDUNG, Tresor, TresorFehler
 from .version import __version__
 from .ki import KiFehler
 from .werkstatt import Werkstatt
+from . import website
 
 log = logging.getLogger("sendestudio")
 
@@ -53,6 +54,11 @@ _BLOCK = 256 * 1024
 CSP_OEFFENTLICH = ("default-src 'self'; img-src 'self' data:; media-src 'self'; "
                    "script-src 'self'; style-src 'self'; base-uri 'none'; "
                    "form-action 'none'; frame-ancestors 'none'")
+#: Der LoginShield-Leitstand bringt sein Skript inline mit - es ist unser
+#: eigenes und setzt Inhalte nur als Text (kein innerHTML).
+CSP_LEITSTAND = ("default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
+                 "connect-src 'self'; img-src 'self' data:; manifest-src 'self'; base-uri 'none'; "
+                 "form-action 'none'; frame-ancestors 'none'")
 CSP_STUDIO = ("default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob: mediastream:; "
               "script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; "
               "form-action 'none'; frame-ancestors 'none'")
@@ -90,6 +96,12 @@ class Studio:
             guard = self._loginshield()
         self.guard = guard
         self.werkstatt = Werkstatt(self)
+        self.leitstand = None
+        if cfg.website and guard is not None:
+            try:
+                self.leitstand = website.Leitstand(guard)
+            except Exception:  # pragma: no cover - der Rest der Website laeuft trotzdem
+                log.exception("Leitstand konnte nicht starten")
 
     def _loginshield(self) -> Any:
         try:
@@ -104,6 +116,8 @@ class Studio:
         return Guard(schutz)
 
     def close(self) -> None:
+        if self.leitstand is not None:
+            self.leitstand.stop()
         self.werkstatt.schliessen()
         self.tresor.sperren()
         if self.guard is not None:
@@ -264,12 +278,14 @@ def handler_fuer(studio: Studio):
                     raise ApiFehler(400, "Transfer-Encoding wird nicht unterstützt")
                 if methode == "GET" and self.headers.get("Content-Length", "0") != "0":
                     self.close_connection = True  # ungelesener Koerper
-                if pfad.startswith("/api/") or pfad.startswith("/studio"):
+                if pfad.startswith(("/api/", "/studio", "/leitstand")):
                     # Das Studio gibt es fuer fremde Netze gar nicht.
                     if not studio.studio_erlaubt(self._ip()):
                         raise ApiFehler(404, "Nicht gefunden")
                 if pfad.startswith("/api/"):
                     self._api(methode, pfad[5:].strip("/").split("/"))
+                elif pfad == "/leitstand" or pfad.startswith("/leitstand/"):
+                    self._leitstand(methode, pfad, teile.query)
                 elif methode != "GET":
                     raise ApiFehler(405, "Methode nicht erlaubt")
                 elif pfad in ("/studio", "/studio/"):
@@ -443,6 +459,8 @@ def handler_fuer(studio: Studio):
                     "tresor": studio.tresor.offen,
                     "leerlauf_minuten": studio.cfg.leerlauf_minuten,
                     "ki": studio.werkstatt.status(),
+                    "website": {"aktiv": studio.cfg.website, "leitstand": studio.leitstand is not None,
+                                "roboter": studio.cfg.website and website.roboter_seite() is not None},
                 })
             if studio.guard is not None:
                 e = studio.guard.check(self._ip(), route="/api", count_request=False)
@@ -696,6 +714,42 @@ def handler_fuer(studio: Studio):
                 raise ApiFehler(502, f"FTP-Fehler: {f}")
             self._json(dict(export, **ergebnis))
 
+        # -- Leitstand (Hack-Schutz) ---------------------------------
+        def _leitstand(self, methode: str, pfad: str, query: str) -> None:
+            if studio.leitstand is None:
+                raise ApiFehler(404, "Nicht gefunden")
+            if not self._angemeldet():
+                if methode == "GET" and pfad in ("/leitstand", "/leitstand/"):
+                    return self._senden(
+                        401, ("<!doctype html><meta charset=utf-8><title>Leitstand</title>"
+                              "<p style='font:16px system-ui;margin:2em'>Der Leitstand ist nur für "
+                              "angemeldete Nutzer. <a href='/studio'>Im Studio anmelden</a>, dann "
+                              "über „Leitstand“ oben wieder hierher.</p>").encode(),
+                        "text/html; charset=utf-8", csp=CSP_LEITSTAND)
+                raise ApiFehler(401, "Bitte anmelden")
+            if pfad == "/leitstand":
+                return self._umleiten("/leitstand/")
+            koerper = None
+            if methode == "POST":
+                # Gegen CSRF: Die Leitstand-Seite schickt diesen Kopf immer mit,
+                # ein fremdes Formular kann ihn nicht setzen.
+                if "X-Auth-Token" not in self.headers:
+                    raise ApiFehler(403, "Anfrage ohne Leitstand-Kennung")
+                laenge = int(self.headers.get("Content-Length") or 0)
+                if laenge > 64 * 1024:
+                    raise ApiFehler(413, "Anfrage zu groß")
+                koerper = self.rfile.read(laenge)
+            elif methode not in ("GET",):
+                raise ApiFehler(405, "Methode nicht erlaubt")
+            unter = pfad[len("/leitstand"):] + (f"?{query}" if query else "")
+            status, typ, inhalt = studio.leitstand.weiterreichen(
+                "HEAD" if self._nur_kopf else methode, unter, koerper,
+                self.headers.get("Content-Type"))
+            if unter in ("/", "/index.html") and typ.startswith("text/html"):
+                inhalt = website.mit_rueckweg(inhalt)
+            self._senden(status, inhalt, typ or "application/octet-stream",
+                         {"Cache-Control": "no-store"}, CSP_LEITSTAND)
+
         # -- Oeffentliche Seite ---------------------------------------
         def _oeffentlich(self, pfad: str) -> None:
             cfg = studio.cfg
@@ -703,7 +757,26 @@ def handler_fuer(studio: Studio):
             titel = cfg.seitentitel
             html_typ = "text/html; charset=utf-8"
             seite_kopf = {"Cache-Control": "no-cache"}
-            if pfad in ("/", "/index.html"):
+            nav = website.NAVIGATION if cfg.website else None
+            if cfg.website:
+                if pfad in ("/", "/index.html"):
+                    return self._senden(200, website.portal(
+                        titel, cfg.untertitel, publish.oeffentlich(st),
+                        roboter=website.roboter_seite() is not None,
+                        leitstand=studio.leitstand is not None).encode(), html_typ, seite_kopf)
+                if pfad == "/sendungen":
+                    return self._umleiten("/sendungen/")
+                if pfad in ("/sendungen/", "/sendungen/index.html"):
+                    return self._senden(200, site.startseite(publish.oeffentlich(st), titel, tiefe=1,
+                                                             nav=nav).encode(), html_typ, seite_kopf)
+                if pfad in ("/roboter", "/roboter/"):
+                    seite = website.roboter_seite()
+                    if seite is None:
+                        raise ApiFehler(404, "Nicht gefunden")
+                    if pfad == "/roboter":
+                        return self._umleiten("/roboter/")
+                    return self._senden(200, seite, html_typ, seite_kopf, website.CSP_ROBOTER)
+            elif pfad in ("/", "/index.html"):
                 return self._senden(200, site.startseite(publish.oeffentlich(st), titel).encode(),
                                     html_typ, seite_kopf)
             if pfad == "/stil.css":
@@ -725,7 +798,7 @@ def handler_fuer(studio: Studio):
                 return self._umleiten(pfad + "/")
             if rest in ("/", "/index.html"):
                 return self._senden(200, site.sendung_seite(
-                    s, folgen, titel, studio.basis_url(self.headers.get("Host", ""))).encode(),
+                    s, folgen, titel, studio.basis_url(self.headers.get("Host", "")), nav=nav).encode(),
                     html_typ, seite_kopf)
             if rest == "/feed.xml":
                 basis = studio.basis_url(self.headers.get("Host", ""))
@@ -734,7 +807,7 @@ def handler_fuer(studio: Studio):
             if rest in ("/radio", "/radio/") and s["art"] == "radio" and radio.programm(folgen):
                 if rest == "/radio":
                     return self._umleiten(pfad + "/")
-                return self._senden(200, site.radio_seite(s, folgen, titel).encode(),
+                return self._senden(200, site.radio_seite(s, folgen, titel, nav=nav).encode(),
                                     html_typ, seite_kopf)
             m2 = re.fullmatch(r"/([a-z0-9-]+)(/?)(index\.html)?", rest)
             if m2:
@@ -743,7 +816,7 @@ def handler_fuer(studio: Studio):
                     if not m2.group(2):
                         return self._umleiten(pfad + "/")
                     return self._senden(200, site.folge_seite(
-                        s, f, titel, studio.basis_url(self.headers.get("Host", ""))).encode(),
+                        s, f, titel, studio.basis_url(self.headers.get("Host", "")), nav=nav).encode(),
                         html_typ, seite_kopf)
             raise ApiFehler(404, "Nicht gefunden")
 

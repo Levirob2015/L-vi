@@ -99,3 +99,39 @@ jobs:
           loginshield doctor --json > /dev/null
           sendestudio --version
           cd "$(mktemp -d)" && sendestudio init --titel CI > /dev/null && sendestudio export
+
+  installation:
+    # Das Installationsskript fuer den eigenen Server - ohne apt und systemd,
+    # aber mit allem anderen: Programm, Einstellungen, Rechte, Update-Lauf.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Erste Einrichtung
+        run: |
+          ziel="$(mktemp -d)"
+          echo "ZIEL=$ziel" >> "$GITHUB_ENV"
+          bash deploy/install.sh --ohne-dienste --praefix "$ziel" --domain radio.example.test --titel CI | tee ausgabe.txt
+          grep -q "Studio-Passwort: " ausgabe.txt
+          test "$(stat -c %a "$ziel/var/lib/sendestudio/sendestudio.json")" = 600
+          test "$(stat -c %a "$ziel/etc/sendestudio/umgebung")" = 600
+      - name: Zweiter Lauf aktualisiert nur
+        run: |
+          bash deploy/install.sh --ohne-dienste --praefix "$ZIEL" --domain radio.example.test | tee ausgabe.txt
+          grep -q "Vorhandene Einrichtung gefunden" ausgabe.txt
+          if grep -q "Studio-Passwort: " ausgabe.txt; then echo "Passwort neu erzeugt?!"; exit 1; fi
+      - name: Die installierte Website startet
+        run: |
+          cd "$ZIEL/var/lib/sendestudio"
+          "$ZIEL/opt/sendestudio/bin/sendestudio" -c sendestudio.json serve &
+          sleep 3
+          curl -sf http://127.0.0.1:8790/ | grep -q "Roboter-Designer"
+          curl -sf http://127.0.0.1:8790/roboter/ | grep -q "ProBot"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8790/leitstand/)" = 401
+      - name: Caddy-Einstellungen gueltig
+        run: |
+          curl -sL "https://github.com/caddyserver/caddy/releases/download/v2.6.2/caddy_2.6.2_linux_amd64.tar.gz" | tar xz caddy
+          sed -e "s/radio.example.de/radio.example.test/g" deploy/Caddyfile > Caddyfile.test
+          ./caddy validate --config Caddyfile.test --adapter caddyfile

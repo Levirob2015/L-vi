@@ -157,6 +157,8 @@
       $("#login").hidden = true;
       $("#app").hidden = false;
       $("#tresor-anzeige").hidden = !s.tresor;
+      $("#link-leitstand").hidden = !(s.website && s.website.leitstand);
+      $("#link-roboter").hidden = !(s.website && s.website.roboter);
       letzteAktivitaet = Date.now();
       return ladeSendungen().then(function () {
         if (zustand.sendungen.length) zeigeSendung(zustand.aktiv || zustand.sendungen[0].id);

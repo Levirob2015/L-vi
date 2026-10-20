@@ -83,6 +83,10 @@ Die Folge ist sofort auf der öffentlichen Seite und im Feed.
 
 ## Wirklich ins Netz
 
+> **Am einfachsten:** [WEBSITE.md](WEBSITE.md) – ein Befehl richtet die ganze
+> Website (Sendungen, Studio, Roboter-Designer, Hack-Schutz-Leitstand) mit
+> HTTPS auf einem eigenen Server ein. Die Wege unten sind die Einzelteile.
+
 ### Weg 1: Das Studio läuft auf einem Server
 
 Dann ist alles, was du veröffentlichst, sofort online. Auf einem Server
