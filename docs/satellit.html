@@ -89,6 +89,15 @@ button,input,select{font:inherit;color:inherit}
 .note{margin:0;font-size:11.5px;color:var(--muted)}
 .ai{background:var(--accent-soft);border:1px solid var(--accent);border-radius:var(--r);padding:12px!important;margin-top:0!important}
 .ai textarea{width:100%;border:1px solid var(--line);background:var(--raise);border-radius:6px;padding:8px 9px;resize:vertical;font:inherit;line-height:1.4;min-height:64px}
+.nutz-item{display:grid;gap:4px}
+.tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:0 0 4px 22px}
+.tiers label{position:relative;cursor:pointer}
+.tiers input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.tiers span{display:grid;gap:1px;border:1px solid var(--line);border-radius:6px;padding:5px 6px;background:var(--raise);text-align:center;font-size:11.5px;line-height:1.2}
+.tiers b{font-weight:600} .tiers small{color:var(--muted);font-size:10.5px} .tiers em{font-style:normal;font:10.5px var(--f-mono);color:var(--muted)}
+.tiers label:has(input:checked) span{border-color:var(--accent);background:var(--accent-soft)}
+.tiers label:has(input:focus-visible) span{outline:2px solid var(--accent)}
+.tier-info{grid-column:1/-1;margin:0;font-size:11.5px;color:var(--muted)}
 .imp-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px}
 .imp-row input{border:1px solid var(--line);background:var(--raise);border-radius:6px;padding:7px 9px;min-width:0}
 .imp-chips{display:flex;flex-wrap:wrap;gap:4px}
@@ -411,6 +420,26 @@ const LEBEN = {
 };
 const RTG = {name:"Radionuklidbatterie (RTG)", sub:"Strom aus dem Zerfall von Plutonium – wie bei Voyager, funktioniert ohne Sonne · nur über Raumfahrtagenturen erhältlich", c:[2.5,0.5,0,20000000], s:[45,20,0,60000000], watt:{c:50,s:400}};
 const SWING = {name:"Swing-by an Planeten", sub:"holt Schwung im Vorbeiflug an Planeten – so kam Voyager so weit · spart Treibstoff, dauert länger"};
+/* Drei Stufen je Nutzlast: Preis 1 : 2 : 4, besser = schwerer, stromhungriger, mehr Daten, genauer auszurichten */
+const TIER = {
+  1: {name:"Stufe 1", q:"einfach",   cost:0.5, mass:0.7, power:0.7, vol:0.8, data:0.5, point:1.5, size:0.8},
+  2: {name:"Stufe 2", q:"gut",       cost:1,   mass:1,   power:1,   vol:1,   data:1,   point:1,   size:1},
+  3: {name:"Stufe 3", q:"super gut", cost:2,   mass:1.4, power:1.4, vol:1.3, data:2,   point:0.5, size:1.25}
+};
+const TIERINFO = {
+  cam: ["ca. 50 m pro Pixel", "ca. 25 m pro Pixel", "ca. 10 m pro Pixel"],
+  multi: ["10 m, 4 Farbkanäle", "5 m, 8 Farbkanäle", "2,5 m, 12 Farbkanäle"],
+  hyper: ["50 Farbkanäle", "200 Farbkanäle", "400 Farbkanäle"],
+  iot: ["ca. 1.000 Geräte", "ca. 10.000 Geräte", "ca. 100.000 Geräte"],
+  sci: ["einfacher Teilchenzähler", "misst auch die Energie", "Teilchenteleskop mit Richtung"],
+  teleskop: ["5-cm-Spiegel: helle Sterne und Planeten", "9-cm-Spiegel: Sternhaufen und Galaxien", "15-cm-Spiegel: ferne Galaxien und Exoplaneten"],
+  labor: ["2 Experimente", "6 Experimente", "12 Experimente mit Kamera und Mikroskop"],
+  planetenlabor: ["1 Messgerät", "3 Messgeräte", "5 Messgeräte"],
+  lander: ["hält 1 Tag durch", "hält 1 Woche durch", "hält 3 Monate durch"],
+  relay: ["4 Kanäle", "16 Kanäle", "48 Kanäle"],
+  rueckkehr: ["bringt 0,5 kg Proben zurück", "bringt 2 kg Proben zurück", "bringt 5 kg Proben zurück"]
+};
+const tierOf = (c, x) => TIERINFO[x] ? (TIER[c["stufe_" + x]] ? +c["stufe_" + x] : 2) : 2;
 const HEIZ = {name:"Akkuheizung mit Thermostat", c:[0.04,0.02,1,1500], s:[1,1,40,25000]};
 const BAUWEISE = {
   bastler: {name:"Bastler", sub:"Hobby-Elektronik wie ESP32, LoRa-Modul, einfache Solarzellen", f:0.02, test:0.05, em:0.5},
@@ -645,7 +674,8 @@ function compute(c){
   if (c.sonne && c.sonne !== "none") add("antrieb", sonne.name, tup(sonne), {key:"sonne"});
   if (c.segel) add("antrieb", SEGEL.name, tup(SEGEL), {key:"segel"});
   const nutzKeys = Object.keys(NUTZ).filter(x => c["nutz_" + x]);
-  nutzKeys.forEach(x => add("nutz", NUTZ[x].name, tup(NUTZ[x]), {key:"nutz_" + x}));
+  nutzKeys.forEach(x => { const st = tierOf(c, x), T = TIER[st], v = tup(NUTZ[x]);
+    add("nutz", NUTZ[x].name + (TIERINFO[x] ? " – " + T.name + ": " + TIERINFO[x][st - 1] : ""), [v[0]*T.mass, v[1]*T.vol, v[2]*T.power, v[3]*T.cost], {key:"nutz_" + x}); });
   add("waerme", "Oberfläche: " + HAUT[c.haut].name, tup(HAUT[c.haut]), {internal:false});
   const heizW = c.heizung ? tup(HEIZ)[2]*((B.au || 1) > 1.2 ? 3 : 1) : 0;
   if (c.heizung) add("waerme", HEIZ.name, [tup(HEIZ)[0], tup(HEIZ)[1], 0, tup(HEIZ)[3]], {key:"heiz"});
@@ -744,14 +774,14 @@ function compute(c){
     if (rr > best){ best = rr; bestKey = x; }
   });
   const downGB = best*contact*0.6/8/1e9;
-  const needGB = nutzKeys.reduce((s,x) => s + NUTZ[x].data[kr], 0)*(deep ? 0.1 : 1) + (B.interstellar ? 0.00002 : deep ? 0.0001 : 0.0005);
+  const needGB = nutzKeys.reduce((s,x) => s + NUTZ[x].data[kr]*TIER[tierOf(c, x)].data, 0)*(deep ? 0.1 : 1) + (B.interstellar ? 0.00002 : deep ? 0.0001 : 0.0005);
   const needMinDay = best > 0 ? needGB*8e9/(best*0.6)/60 + 10 : 0;
   const bookedMin = Math.max(deep ? 15 : 0, Math.min(contact/60, needMinDay*(B.interstellar ? 0.3 : 1.3)));
 
   /* Ausrichtung */
   const acc = c.stern ? (c.lage === "rw" ? 0.05 : c.lage === "mtq" ? 5 : 45) : LAGE[c.lage].acc;
   const needs = [];
-  nutzKeys.forEach(x => needs.push({name:NUTZ[x].name, p:NUTZ[x].point}));
+  nutzKeys.forEach(x => needs.push({name:NUTZ[x].name + (TIERINFO[x] ? " (" + TIER[tierOf(c, x)].name + ")" : ""), p:Math.min(180, NUTZ[x].point*TIER[tierOf(c, x)].point)}));
   funkKeys.forEach(x => needs.push({name:FUNK[x].name, p:FUNK[x].point}));
   const needAcc = needs.reduce((m,n) => Math.min(m, n.p), 180);
   const tooCoarse = needs.filter(n => n.p < acc);
@@ -812,7 +842,7 @@ function compute(c){
     "kann " + degStr(acc) + " · braucht " + (needAcc >= 180 ? "–" : degStr(needAcc)),
     tooCoarse.length ? tooCoarse.map(n => n.name + " muss auf " + degStr(n.p) + " genau zeigen").join(", ") + ". Die Lageregelung schafft nur " + degStr(acc) + "." :
       needAcc >= 180 ? "Kein Bauteil muss genau ausgerichtet werden." : "Die Lageregelung hält " + degStr(acc) + ", gebraucht werden " + degStr(needAcc) + ".",
-    tooCoarse.length ? (c.lage !== "rw" ? "Reaktionsräder einbauen" + (needAcc < 0.5 ? " und einen Sternsensor ergänzen." : ".") : "Einen Sternsensor ergänzen.") : acc*2 > needAcc && needAcc < 180 ? "Knapp – ein Sternsensor gibt Reserve." : "");
+    tooCoarse.length ? (c.lage !== "rw" ? "Reaktionsräder einbauen" + (needAcc < 0.5 ? " und einen Sternsensor ergänzen." : ".") : "Einen Sternsensor ergänzen.") : acc*2 > needAcc && needAcc < 180 ? (c.stern ? (c.lage === "rw" ? "Knapp – eine niedrigere Nutzlast-Stufe braucht weniger Genauigkeit." : "Knapp – Reaktionsräder sind genauer, brauchen aber mehr Platz und Strom.") : "Knapp – ein Sternsensor gibt Reserve.") : "");
 
   const thermFail = tCold < 0 || tHotF > 45 || tCold < -20 || (lab && (tCold < 10 || tHotF > 35));
   const thermWarn = tCold < 5 || tHot > 40 || (lab && (tCold < 15 || tHotF > 30));
@@ -978,6 +1008,13 @@ function optRadio(key, obj, hintKey){
   return '<div class="opts" role="radiogroup">' + Object.entries(obj).map(([v,o]) =>
     '<label class="opt"><input type="radio" name="' + key + '" value="' + v + '" id="f-' + key + '-' + v + '"><span><span class="opt-name">' + esc(o.name) + '</span><span class="opt-sub">' + esc(o.sub) + '</span></span><span class="opt-hint" data-hint="' + (hintKey || key) + ':' + v + '"></span></label>').join("") + '</div>';
 }
+function nutzChecks(){
+  return '<div class="opts">' + Object.entries(NUTZ).map(([v,o]) =>
+    '<div class="nutz-item"><label class="opt"><input type="checkbox" name="nutz_' + v + '" id="f-nutz_' + v + '"><span><span class="opt-name">' + esc(o.name) + '</span><span class="opt-sub">' + esc(o.sub) + '</span></span><span class="opt-hint" data-hint="nutz_' + v + '"></span></label>' +
+    (TIERINFO[v] ? '<div class="tiers" data-tiers="' + v + '" role="radiogroup" aria-label="Stufe für ' + esc(o.name) + '">' + [1,2,3].map(n =>
+      '<label><input type="radio" name="stufe_' + v + '" value="' + n + '" id="f-stufe_' + v + '-' + n + '"><span><b>' + TIER[n].name + '</b><small>' + TIER[n].q + '</small><em data-tierprice="' + v + ':' + n + '"></em></span></label>').join("") +
+      '<p class="tier-info" data-tierinfo="' + v + '"></p></div>' : '') + '</div>').join("") + '</div>';
+}
 function optChecks(prefix, obj){
   return '<div class="opts">' + Object.entries(obj).map(([v,o]) =>
     '<label class="opt"><input type="checkbox" name="' + prefix + v + '" id="f-' + prefix + v + '"><span><span class="opt-name">' + esc(o.name) + '</span><span class="opt-sub">' + esc(o.sub) + '</span></span><span class="opt-hint" data-hint="' + prefix + v + '"></span></label>').join("") + '</div>';
@@ -1038,7 +1075,7 @@ form.innerHTML =
     '<div class="field"><span class="lbl">Antrieb</span>' + optRadio("antrieb", ANTRIEB) + '</div>' + check1("segel", SEGEL) + check1("swingby", SWING) +
     '<div class="field"><span class="lbl">Sonnensegel</span>' + optRadio("sonne", SONNE) + '</div>' +
   '</div>' +
-  '<div class="sec" data-group="sat"><h2>Nutzlast</h2>' + optChecks("nutz_", NUTZ) + '</div>' +
+  '<div class="sec" data-group="sat"><h2>Nutzlast</h2>' + nutzChecks() + '</div>' +
   '<div class="sec" data-group="sat"><h2>Bordcomputer & Wärme</h2>' + optRadio("obc", OBC) +
     '<div class="field"><span class="lbl">Oberfläche</span>' + optRadio("haut", HAUT) + '</div>' + check1("heizung", {name:HEIZ.name, sub:"hält den Akku im Erdschatten über 5 °C"}) +
   '</div>';
@@ -1064,6 +1101,7 @@ function readForm(){
   c.maxkg = Math.max(0, Number(String(el.maxkg.value).replace(",", ".")) || 0);
   c.manuell = JSON.parse(JSON.stringify(MANUAL));
   c.kosten = KOSTEN;
+  Object.keys(TIERINFO).forEach(k => { const x = form.querySelector('input[name="stufe_' + k + '"]:checked'); c["stufe_" + k] = x ? Number(x.value) : 2; });
   return c;
 }
 function batteryRange(fmt){
@@ -1080,6 +1118,7 @@ function writeForm(c){
   RADIOS.forEach(k => { const x = form.querySelector('input[name="' + k + '"][value="' + c[k] + '"]'); if (x) x.checked = true; });
   ["hoehe","jahre","segmente","batterie", ...STNUMS].forEach(k => el[k].value = c[k]);
   BOOLS.forEach(k => el[k].checked = !!c[k]);
+  Object.keys(TIERINFO).forEach(k => { const x = form.querySelector('input[name="stufe_' + k + '"][value="' + (c["stufe_" + k] || 2) + '"]'); if (x) x.checked = true; });
   el.budget.value = c.budget > 0 ? c.budget : "";
   el.maxkg.value = c.maxkg > 0 ? c.maxkg : "";
 }
@@ -1102,6 +1141,14 @@ function refreshHints(c, R){
     const t = tupleFor(key, v, R.k);
     if (!t){ n.textContent = ""; return; }
     n.innerHTML = t[3] === 0 ? "" : (t[0] >= 0.005 ? kg(t[0]).replace(" kg","&nbsp;kg") + "<br>" : "") + eur(t[3]*R.BW.f).replace(" €","&nbsp;€");
+  });
+  Object.keys(TIERINFO).forEach(k => {
+    const box = form.querySelector('[data-tiers="' + k + '"]'); if (!box) return;
+    box.hidden = !c["nutz_" + k];
+    const t = R.station ? null : tupOf(NUTZ[k], R.k), st = tierOf(c, k);
+    box.querySelectorAll("[data-tierprice]").forEach(n => { const lv = +n.dataset.tierprice.split(":")[1]; n.textContent = t ? eur(t[3]*TIER[lv].cost*R.BW.f) : ""; });
+    box.querySelector("[data-tierinfo]").textContent = TIERINFO[k][st - 1] + " · " + (st === 1 ? "leichter und sparsamer" : st === 3 ? "schwerer, braucht mehr Strom und genauere Ausrichtung" : "ausgewogen");
+    const hint = form.querySelector('[data-hint="nutz_' + k + '"]'); if (hint && t) hint.innerHTML = kg(t[0]*TIER[st].mass).replace(" kg","&nbsp;kg") + "<br>" + eur(t[3]*TIER[st].cost*R.BW.f).replace(" €","&nbsp;€");
   });
   const o = id => document.getElementById("o-" + id);
   o("hoehe").textContent = nf0.format(c.hoehe) + " km";
@@ -1567,9 +1614,10 @@ function buildSat(c){
     if (extra){ const b = box(r*2.4, r*2.4, 0.08, m.dark); b.position.z = 0.04; gg.add(b); }
     return gg;
   };
-  if (c.nutz_cam) front.push({k:"cam", l:NUTZ.cam.name, o:lens(0.2*sc, 0.16*sc), s:0.5*sc});
-  if (c.nutz_multi) front.push({k:"multi", l:NUTZ.multi.name, o:lens(0.34*sc, 0.4*sc, true), s:0.85*sc});
-  if (c.nutz_hyper) front.push({k:"hyper", l:NUTZ.hyper.name, o:lens(0.42*sc, 0.75*sc, true), s:1.05*sc});
+  const ts = x => TIER[tierOf(c, x)].size;
+  if (c.nutz_cam) front.push({k:"cam", l:NUTZ.cam.name, o:lens(0.2*sc*ts("cam"), 0.16*sc*ts("cam")), s:0.5*sc*ts("cam")});
+  if (c.nutz_multi) front.push({k:"multi", l:NUTZ.multi.name, o:lens(0.34*sc*ts("multi"), 0.4*sc*ts("multi"), true), s:0.85*sc*ts("multi")});
+  if (c.nutz_hyper) front.push({k:"hyper", l:NUTZ.hyper.name, o:lens(0.42*sc*ts("hyper"), 0.75*sc*ts("hyper"), true), s:1.05*sc*ts("hyper")});
   if (c.nutz_iot){
     class Helix extends THREE.Curve{ getPoint(t, tg){ tg = tg || new THREE.Vector3(); const a = t*Math.PI*2*6; return tg.set(0.1*sc*Math.cos(a), 0.1*sc*Math.sin(a), t*0.55*sc); } }
     const gg = grp(); gg.add(mesh(new THREE.TubeGeometry(new Helix(), 120, 0.012*sc, 6), m.copper));
@@ -1640,7 +1688,8 @@ function buildSat(c){
     const mir = cyl(r*0.8, r*0.8, 0.02, m.glass, 40); mir.position.y = 0.06; gg.add(mir);
     const shade = box(r*2.1, L*0.45, 0.02, m.white); shade.position.set(0, L*0.95, -r*1.02); gg.add(shade);
     const ring = mesh(new THREE.TorusGeometry(r*1.01, r*0.05, 10, 40), m.alu); ring.rotation.x = Math.PI/2; ring.position.y = L; gg.add(ring);
-    gg.position.set(0, H/2, 0); P("teleskop", NUTZ.teleskop.name, gg); topUsed = L*1.2;
+    const tsc = TIER[tierOf(c, "teleskop")].size; gg.scale.set(tsc, tsc, tsc);
+    gg.position.set(0, H/2, 0); P("teleskop", NUTZ.teleskop.name + " (" + TIER[tierOf(c, "teleskop")].name + ")", gg); topUsed = L*1.2*tsc;
   }
   if (c.nutz_planetenlabor){
     const gg = grp(), L = cube ? Math.max(1.5, H*0.7) : 6;
@@ -2222,7 +2271,8 @@ function parseWishes(text){
     crew: cm ? Math.min(12, Number(cm[1])) : 4, labor: has(/labor|forsch|experiment|wissenschaft/), kuppel: has(/kuppel|aussicht|fenster|blick/), gruen: has(/gewächshaus|pflanzen|gemüse|selbstversorg/),
     verstanden: "Eine Raumstation" + (bahn === "mond" ? " in der Umlaufbahn um den Mond" : " in der Erdumlaufbahn") + " für " + (cm ? Number(cm[1]) : 4) + " Personen" + (has(/labor|forsch|experiment/) ? ", mit Labor" : "") + (has(/kuppel|aussicht|fenster/) ? " und Aussichtskuppel" : "") + ".",
     realismus: "Eine Raumstation kostet Milliarden – so etwas bauen Raumfahrtagenturen oder große Firmen, kein Hobbyteam."};
-  return {titel:"", nutzlast:nutz, funk, bahn, sonne, familie, jahre: yr ? Number(yr[1]) : null, budget, maxkg, bauweise,
+  const stufe = has(/stufe ?3|super ?gut|beste|hochauflösend|profi-?qualität|sehr gut/) ? 3 : has(/stufe ?1|einfach(e|er|es)? (kamera|teleskop|version)|billige (kamera|version)|schlecht/) ? 1 : null;
+  return {titel:"", nutzlast:nutz, funk, bahn, sonne, familie, stufe, jahre: yr ? Number(yr[1]) : null, budget, maxkg, bauweise,
     verstanden: ({interstellar:"Dein Satellit verlässt wie Voyager das Sonnensystem", mond:"Dein Satellit fliegt zum Mond", mars:"Dein Satellit fliegt zum Mars", venus:"Dein Satellit fliegt zur Venus", jupiter:"Dein Satellit fliegt zum Jupiter", tief:"Dein Satellit reist zu einem Asteroiden"}[bahn] || "") + (sonne ? (bahn ? " – mit einem Sonnensegel" : "Dein Satellit fliegt mit einem Sonnensegel") : "") + (bahn || sonne ? ". " : "") +
       (nutz.length ? "An Bord: " + what + "." : (bahn || sonne ? "Er sendet Funksignale und Messwerte." : "Ein einfacher Satellit, der Funksignale sendet und Messwerte überträgt.")),
     realismus: lander && bahn === "jupiter" ? "Auf dem Jupiter kann man nicht landen – er ist ein Gasriese ohne festen Boden. Das Planetenlabor kann ihn aber aus der Umlaufbahn erforschen." : (nutz.includes("relay") || bahn === "geo") ? "Ein Kommunikationssatellit in hoher Bahn kostet Millionen. Für ein Hobbyprojekt ist ein Amateurfunk-Relais in niedriger Bahn realistischer." : null};
@@ -2235,6 +2285,7 @@ function cleanWishes(w, fallback){
   if (w.familie === "c" || w.familie === "p") o.familie = w.familie;
   o.bahn = BAHNEN[w.bahn] ? w.bahn : null;
   o.jahre = Number(w.jahre) >= 1 ? Math.min(50, Math.round(Number(w.jahre))) : null;
+  if ([1,2,3].includes(Number(w.stufe))) o.stufe = Number(w.stufe);
   if (w.station === true){ o.station = true; o.crew = Number(w.crew) >= 0 ? Math.min(12, Math.round(Number(w.crew))) : (o.crew || 4); }
   o.budget = Number(w.budget) > 0 ? Number(w.budget) : o.budget;
   o.maxkg = Number(w.maxkg) > 0 ? Number(w.maxkg) : o.maxkg;
@@ -2335,6 +2386,7 @@ function designFor(w, format, bauweise, start){
     rtg:far, swingby:!!(w.bahn && BAHNEN[w.bahn] && BAHNEN[w.bahn].swing && (BAHNEN[w.bahn].au || 1) > 3), funk_hga:!!(w.bahn && BAHNEN[w.bahn] && BAHNEN[w.bahn].interstellar)};
   if (c.bahn === "interstellar"){ c.jahre = Math.max(w.jahre || 0, 40); c.obc = "rad"; c.lage = "rw"; c.koerper = false; }
   NUTZ_KEYS.forEach(x => c["nutz_" + x] = nutz.has(x));
+  if (w.stufe) Object.keys(TIERINFO).forEach(x => c["stufe_" + x] = w.stufe);
   const log = [];
   let R_ = compute(c);
   for (let i = 0; i < 40; i++){
@@ -2407,6 +2459,7 @@ function aiPrompt(text, budget, maxkg){
     ' "familie": "c" (wenn ausdrücklich ein CubeSat gewünscht ist) | "p" (PocketQube) | null,\n' +
     ' "station": true | false (true, wenn eine Raumstation für Menschen gewünscht ist),\n' +
     ' "crew": Zahl 0-12 oder null (Anzahl Personen auf der Station),\n' +
+    ' "stufe": 1 | 2 | 3 | null  (Qualität der Nutzlast: 1 einfach und billig, 2 gut, 3 super gut und teuer; null wenn nichts gesagt),\n' +
     ' "bauweise": "bastler" | "selbst" | "bausatz" | "kauf" | null  (bastler = Hobby-Elektronik wie ESP32 und LoRa für sehr kleine Budgets),\n' +
     ' "verstanden": "1-2 einfache Sätze auf Deutsch in Du-Form: was der Satellit tun soll",\n' +
     ' "realismus": null oder "1 Satz, falls der Wunsch mit Hobby-Budget kaum machbar ist, und was stattdessen ginge"}\n\n' +
@@ -2541,6 +2594,7 @@ function movesFor(c, opts){
   ["lora","uhf","s","x","hga"].forEach(f => put(x => x["funk_" + f] = !x["funk_" + f]));
   if (["leo","sso","dd"].includes(c.bahn)){ if (c.hoehe > 350) put(x => x.hoehe -= 50); if (c.hoehe < 800) put(x => x.hoehe += 50); }
   if (opts.foerder && c.start !== "foerder") put(x => x.start = "foerder");
+  if ((opts.goals || []).some(g => ["kosten","masse"].includes(g))) Object.keys(TIERINFO).forEach(k => { if (c["nutz_" + k] && tierOf(c, k) > 1) put(x => x["stufe_" + k] = tierOf(c, k) - 1); });
   // Bauform wechseln (mit anschließender Reparatur)
   Object.keys(FORMATE).forEach(f => {
     if (f === "ST" || f === c.format) return;
@@ -2552,7 +2606,11 @@ function movesFor(c, opts){
 }
 function improveSearch(c0, goals, opts){
   let c = clone(c0); const log = [];
-  let Rc = goals.includes("fehler") || opts.fix ? fixLoop(c, log) : compute(c);
+  let Rc = compute(c);
+  if (goals.includes("fehler") || opts.fix){
+    const cf = clone(c), lf = [], Rf = fixLoop(cf, lf);
+    if (quality(Rf) < quality(Rc)){ c = cf; Rc = Rf; log.push(...lf); }
+  }
   const R0 = compute(c0);
   const objGoals = goals.filter(g => GOALS[g].score);
   const norm = {}; objGoals.forEach(g => norm[g] = Math.abs(GOALS[g].score(R0)) || 1);
@@ -2584,13 +2642,14 @@ function describeChanges(a, b){
   Object.keys(FIELD_DICT).forEach(f => { if (a[f] !== b[f] && b[f] != null) out.push(FIELD_LABEL[f] + ": " + (FIELD_DICT[f][a[f]] || {name:a[f]}).name + " → " + (FIELD_DICT[f][b[f]] || {name:b[f]}).name); });
   Object.entries(BOOL_LABEL).forEach(([f,l]) => { if (!!a[f] !== !!b[f]) out.push((b[f] ? "+ " : "– ") + l); });
   const unit = {hoehe:" km", jahre:" J.", batterie:" Wh"};
+  Object.keys(TIERINFO).forEach(k => { if (b["nutz_" + k] && a["nutz_" + k] && tierOf(a, k) !== tierOf(b, k)) out.push(NUTZ[k].name + ": Stufe " + tierOf(a, k) + " → " + tierOf(b, k) + " (" + TIERINFO[k][tierOf(b, k) - 1] + ")"); });
   ["hoehe","jahre","fluegel","segmente","batterie","crew","fluege"].forEach(f => { if (a[f] !== b[f] && b[f] != null && !(f === "hoehe" && BAHNEN[b.bahn].h) && !((f === "segmente") && !b.fluegel) && !(b.format === "ST" && ["fluegel","segmente","batterie"].includes(f))) out.push(FIELD_LABEL[f] + ": " + a[f] + " → " + b[f] + (unit[f] || "")); });
   if (b.format === "ST") Object.entries(MODULE).forEach(([k,m]) => { if ((a["m_" + k] || 0) !== (b["m_" + k] || 0) && a.format === "ST") out.push(m.name + ": " + (a["m_" + k] || 0) + " → " + (b["m_" + k] || 0)); });
   return out;
 }
 const ALLOWED = {
   radio: {format:Object.keys(FORMATE), bahn:Object.keys(BAHNEN), boden:Object.keys(BODEN), lage:Object.keys(LAGE), antrieb:Object.keys(ANTRIEB), obc:Object.keys(OBC), haut:Object.keys(HAUT), bauweise:Object.keys(BAUWEISE), sonne:Object.keys(SONNE), start:["kauf","foerder"], leben:Object.keys(LEBEN)},
-  num: {hoehe:[300,1200], jahre:[1,50], fluegel:[0,4], segmente:[1,3], batterie:[2,5000], crew:[0,12], fluege:[0,12], ...Object.fromEntries(Object.keys(MODULE).map(k => ["m_" + k, [0,6]]))},
+  num: {...Object.fromEntries(Object.keys(TIERINFO).map(k => ["stufe_" + k, [1,3]])), hoehe:[300,1200], jahre:[1,50], fluegel:[0,4], segmente:[1,3], batterie:[2,5000], crew:[0,12], fluege:[0,12], ...Object.fromEntries(Object.keys(MODULE).map(k => ["m_" + k, [0,6]]))},
   bool: Object.keys(BOOL_LABEL)
 };
 function applyChange(c, f, v){
@@ -2612,6 +2671,11 @@ function keywordImprove(text, c){
     if (/kuppel|aussicht/.test(t)) add("m_kuppel", 1);
   }
   if (c.format === "ST" && /(labor|kuppel|gewächshaus)/.test(t)){ if (/labor/.test(t)) add("m_labor", (c.m_labor || 0) + 1); if (/kuppel|aussicht/.test(t)) add("m_kuppel", (c.m_kuppel || 0) + 1); if (/gewächshaus|pflanzen/.test(t)) add("leben", "zu"); }
+  const upT = /\bbessere?\b|schärfere?|super|beste|hochwertig|stufe ?3|mehr qualität|hochauflös/.test(t), downT = /stufe ?1|einfachere?|schlechtere?|billigere (kamera|teleskop|nutzlast)/.test(t);
+  if ((upT || downT) && c.format !== "ST"){
+    const named = Object.keys(TIERINFO).filter(k => c["nutz_" + k] && new RegExp(({cam:"kamera|foto|bild", multi:"multispek|kamera", hyper:"hyperspek|kamera", teleskop:"teleskop|stern", iot:"empfänger|iot|schiff", sci:"detektor|strahlung|sensor", labor:"labor|experiment", planetenlabor:"labor|messgerät", lander:"lander|landesonde", relay:"transponder", rueckkehr:"kapsel"})[k]).test(t));
+    (named.length ? named : Object.keys(TIERINFO).filter(k => c["nutz_" + k])).forEach(k => { const cur = tierOf(c, k); add("stufe_" + k, upT ? Math.min(3, cur + (/stufe ?3|super|beste/.test(t) ? 3 : 1)) : Math.max(1, cur - 1)); });
+  }
   if (/zuverlässig|robust|strahlung/.test(t) && c.format !== "ST") add("obc", c.obc === "std" ? "red" : "rad");
   if (!goals.length && !changes.length) goals.push("fehler");
   return {ziele:goals, aenderungen:changes, erklaerung:""};
@@ -2668,6 +2732,8 @@ async function runImprove(textIn){
       "<span>Prüfungen ok</span><span>" + passed(before) + " → <b>" + passed(after) + "</b></span></div>";
     html += '<p class="muted">Geändert:</p><ul>' + changes.slice(0, 12).map(li).join("") + "</ul>";
   }
+  const open = after.tests.filter(t => t.status !== "ok" && t.id !== "budget");
+  if (open.length) html += '<p class="muted">Noch ' + (open.some(t => t.status === "fail") ? "offen" : "knapp") + ':</p><ul>' + open.map(t => li(t.name + (t.fix ? " – " + t.fix : ""))).join("") + "</ul>";
   html += '<p class="muted">' + (via === "claude" ? "Wunsch von Claude gelesen, Änderungen von der Werkstatt geprüft." : "Stichwörter erkannt, Änderungen von der Werkstatt geprüft.") + "</p>";
   if (changes.length){ AI.prev = c0; writeForm(res.c); update(true); document.getElementById("ai-undo").hidden = false; }
   aiOut.innerHTML = html; aiOut.hidden = false;
