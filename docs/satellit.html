@@ -321,6 +321,7 @@ const OBC = {
 };
 const EPS = {name:"Energieversorgung (EPS)", c:[0.12,0.1,0.2,9000], s:[8,10,8,90000]};
 const FUNK = {
+  lora: {name:"LoRa-Funk", sub:"ca. 2 kbit/s · sehr sparsam und billig, viele Hobby-Empfangsstationen (TinyGS)", c:[0.03,0.04,0.2,1500], s:[0.5,1,2,10000], rate:{c:2400,s:2400}, point:180, station:2000, diy:40, min:3},
   uhf:  {name:"UHF-Funk", sub:"19,2 kbit/s · Befehle und Zustandsdaten", c:[0.1,0.12,0.6,7000], s:[1.5,2,6,30000], rate:{c:19200,s:19200}, point:180, station:8000, diy:400, min:3},
   s:    {name:"S-Band", sub:"2 Mbit/s (Klein: 10 Mbit/s)", c:[0.2,0.2,1.5,22000], s:[4,4,25,160000], rate:{c:2e6,s:10e6}, point:30, station:45000, diy:3000, min:3},
   x:    {name:"X-Band", sub:"100 Mbit/s (Klein: 400 Mbit/s) · für große Datenmengen", c:[0.3,0.4,4,65000], s:[8,8,60,450000], rate:{c:100e6,s:400e6}, point:5, station:120000, diy:15000, min:10},
@@ -328,6 +329,7 @@ const FUNK = {
 };
 const BODEN = {
   eigen: {name:"Eigene Bodenstation", sub:"eine Antenne auf dem Dach, einmal kaufen oder selbst bauen"},
+  tinygs: {name:"Eigene Station + TinyGS", sub:"hunderte LoRa-Hobbystationen weltweit empfangen kostenlos mit (nur LoRa) · eigene Station ca. 30 €"},
   satnogs: {name:"Eigene Station + SatNOGS", sub:"du sendest Befehle, Hunderte freiwillige Stationen weltweit empfangen kostenlos mit (nur UHF/S-Band)"},
   netz:  {name:"Gemietetes Bodennetz", sub:"viele Stationen weltweit, Abrechnung pro Minute"},
   dsn:   {name:"Weltraum-Funknetz", sub:"riesige 35-m-Antennen der Raumfahrtagenturen – nötig für Mond und tiefen Weltraum, teuer"}
@@ -367,6 +369,7 @@ const HAUT = {
 };
 const HEIZ = {name:"Akkuheizung mit Thermostat", c:[0.04,0.02,1,1500], s:[1,1,40,25000]};
 const BAUWEISE = {
+  bastler: {name:"Bastler", sub:"Hobby-Elektronik wie ESP32, LoRa-Modul, einfache Solarzellen", f:0.02, test:0.05, em:0.5},
   selbst:  {name:"Selbstbau", sub:"offene Baupläne, eigene Platinen", f:0.25, test:0.4, em:0.1},
   bausatz: {name:"Bausatz", sub:"fertige Platinen, selbst montiert", f:0.55, test:0.7, em:0.18},
   kauf:    {name:"Kaufteile", sub:"geprüfte Raumfahrt-Bauteile", f:1, test:1, em:0.25}
@@ -389,8 +392,11 @@ const CAT = {
   nutz:{name:"Nutzlast", col:"#4f9be8"}, waerme:{name:"Wärme", col:"#d5c9b0"}, eigen:{name:"Eigene Teile", col:"#d68bd8"}
 };
 
-const HOBBY = {bauweise:"selbst", budget:0, maxkg:0};
+const HOBBY = {bauweise:"selbst", budget:0, maxkg:0, start:"kauf"};
 const PRESETS = {
+  euro: {label:"1000-€-CubeSat", sub:"1U aus Hobby-Teilen · Start über Förderung", c:{titel:"1000-€-CubeSat", bahn:"leo", hoehe:450, jahre:1, format:"1U", koerper:true, fluegel:0, segmente:1, batterie:10,
+    funk_lora:true, funk_uhf:false, funk_s:false, funk_x:false, funk_laser:false, boden:"tinygs", lage:"none", stern:false, antrieb:"none", segel:false,
+    nutz_sci:true, obc:"std", haut:"mli", heizung:true, bauweise:"bastler", budget:0, maxkg:0, start:"foerder"}},
   bake: {label:"Funkbake", sub:"PocketQube 2P · Funk + Messwerte", c:{titel:"Funkbake 2P", bahn:"sso", hoehe:500, jahre:2, format:"2P", koerper:true, fluegel:0, segmente:1, batterie:6,
     funk_uhf:true, funk_s:false, funk_x:false, funk_laser:false, boden:"satnogs", lage:"none", stern:false, antrieb:"none", segel:false,
     nutz_cam:false, nutz_multi:false, nutz_hyper:false, nutz_iot:false, nutz_sci:true, nutz_relay:false, obc:"std", haut:"mli", heizung:true, ...HOBBY}},
@@ -419,8 +425,8 @@ const PRESETS = {
 const nf0 = new Intl.NumberFormat("de-DE", {maximumFractionDigits:0});
 const nf1 = new Intl.NumberFormat("de-DE", {maximumFractionDigits:1, minimumFractionDigits:1});
 const nf2 = new Intl.NumberFormat("de-DE", {maximumFractionDigits:2, minimumFractionDigits:2});
-const eur = v => v >= 1e6 ? nf2.format(v/1e6).replace(/,00$/,"") + " Mio. €" : nf0.format(Math.round(v/100)*100) + " €";
-const eurExact = v => nf0.format(Math.round(v/100)*100) + " €";
+const eur = v => v >= 1e6 ? nf2.format(v/1e6).replace(/,00$/,"") + " Mio. €" : nf0.format(v < 2000 ? Math.round(v/10)*10 : Math.round(v/100)*100) + " €";
+const eurExact = v => nf0.format(v < 2000 ? Math.round(v/10)*10 : Math.round(v/100)*100) + " €";
 const kg = v => v < 10 ? nf2.format(v) + " kg" : nf1.format(v) + " kg";
 const pct = v => nf0.format(v*100) + " %";
 const esc = s => String(s).replace(/[&<>"]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
@@ -552,12 +558,13 @@ function compute(c){
     const lam = Math.acos(RE/r*Math.cos(10*D2R)) - 10*D2R;
     contact = (1 - Math.cos(lam))/2*86400*(h < 2000 ? 2 : 1);
     if (c.boden === "satnogs") contact = Math.min(contact*4, 86400*0.3);
+    if (c.boden === "tinygs") contact = Math.min(contact*10, 86400*0.5);
     if (c.boden === "netz") contact = Math.min(contact*(h < 2000 ? 8 : 2), 86400*(h < 2000 ? 0.5 : 0.9));
   }
   const dist = h < 2000 ? Math.max(h, 500)*1.8 : h + 2000;
   const distF = deep ? Math.min(1, B.link*(c.boden === "dsn" ? 1 : 0.01)*(cube ? 1 : 20)) : Math.min(1, (cube ? 1 : 20)*(c.boden === "dsn" ? 50 : 1)*(1000/dist)**2);
   let best = 0, bestKey = null;
-  const usable = c.boden === "satnogs" ? funkKeys.filter(x => x === "uhf" || x === "s") : funkKeys;
+  const usable = c.boden === "satnogs" ? funkKeys.filter(x => x === "uhf" || x === "s") : c.boden === "tinygs" ? funkKeys.filter(x => x === "lora") : funkKeys;
   usable.forEach(x => {
     const rr = FUNK[x].rate[kr]*distF*(x === "laser" ? 0.4 : 1);
     if (rr > best){ best = rr; bestKey = x; }
@@ -592,7 +599,7 @@ function compute(c){
 
   /* Strahlung */
   const doseYr = deep ? B.dose : h >= 35000 ? 12 : h >= 2000 ? 40 : 0.5 + Math.max(0, h - 400)/400*2;
-  const dose = doseYr*yrs, tol = OBC[c.obc].tol;
+  const dose = doseYr*yrs, tol = OBC[c.obc].tol*(c.bauweise === "bastler" ? 0.5 : 1);
 
   /* ---------- Tests ---------- */
   const tests = [];
@@ -689,7 +696,7 @@ function compute(c){
 
   T_("strahlung", "Strahlung", dose <= tol*0.5 ? "ok" : dose <= tol ? "warn" : "fail",
     nf0.format(dose) + " / " + nf0.format(tol) + " krad",
-    "In dieser Bahn sammelt die Elektronik etwa " + nf1.format(doseYr) + " krad pro Jahr, nach " + yrs + " Jahren also " + nf0.format(dose) + " krad. Der Bordcomputer verträgt " + nf0.format(tol) + " krad.",
+    "In dieser Bahn sammelt die Elektronik etwa " + nf1.format(doseYr) + " krad pro Jahr, nach " + yrs + " Jahren also " + nf0.format(dose) + " krad. Der Bordcomputer verträgt " + nf0.format(tol) + " krad" + (c.bauweise === "bastler" ? " – Hobby-Elektronik hält nur etwa halb so viel aus wie geprüfte Teile." : "."),
     dose <= tol*0.5 ? "" : c.obc !== "rad" ? "Ein strahlenfester Bordcomputer hält deutlich mehr aus." : "Kürzere Mission oder niedrigere Bahn.");
 
   /* ---------- Kosten ---------- */
@@ -698,16 +705,19 @@ function compute(c){
   once.push({name:"Montage, Kabelbaum, Stecker", cost:hw*0.06});
   once.push({name:"Testmodell (zweites Exemplar für Bodentests)", cost:hw*BW.em});
   once.push({name:"Umwelttests: Rütteltisch, Thermal-Vakuum" + (c.bauweise === "kauf" ? ", EMV" : " (z. B. an einer Hochschule)"), cost:F.test*BW.test});
-  const launch = cube ? F.launch*B.x : Math.max(400000, 6500*mass)*B.x + 25000;
+  const freeStart = c.start === "foerder";
+  const launch = freeStart ? 0 : cube ? F.launch*B.x : Math.max(400000, 6500*mass)*B.x + 25000;
   if (deep) once.push({name:"Bahnberechnung und Flugplanung " + (c.bahn === "mond" ? "zum Mond" : "durchs Sonnensystem"), cost: cube ? 25000*BW.test : 300000});
-  once.push({name:"Start als Mitflieger" + (k === "p" ? " (inkl. PocketQube-Ausstoßer)" : cube ? " (inkl. Ausstoßbehälter)" : " (inkl. Trennring)"), cost:launch});
-  const amateur = cube && c.bauweise !== "kauf" && c.boden !== "netz" && funkKeys.length > 0 && funkKeys.every(x => x === "uhf" || x === "s");
-  once.push({name: amateur ? "Amateurfunk-Koordination (kostenlos), Registrierung, Haftpflicht" : "Frequenzanmeldung, Zulassung, Haftpflicht", cost: amateur ? 3000 : cube ? 12000 : 120000 + 0.03*(hw + launch)});
+  if (freeStart) once.push({name:"Start über ein Förderprogramm (kostenlos, Bewerbung nötig)", cost:0});
+  else once.push({name:"Start als Mitflieger" + (k === "p" ? " (inkl. PocketQube-Ausstoßer)" : cube ? " (inkl. Ausstoßbehälter)" : " (inkl. Trennring)"), cost:launch});
+  const amateur = cube && c.bauweise !== "kauf" && c.boden !== "netz" && c.boden !== "dsn" && funkKeys.length > 0 && funkKeys.every(x => x === "uhf" || x === "s" || x === "lora");
+  once.push({name: amateur ? "Amateurfunk-Koordination (kostenlos), Registrierung, Haftpflicht" : "Frequenzanmeldung, Zulassung, Haftpflicht", cost: amateur ? (c.bauweise === "bastler" ? 500 : 3000) : cube ? 12000 : 120000 + 0.03*(hw + launch)});
   if (c.boden !== "netz" && c.boden !== "dsn"){
     const diy = c.bauweise !== "kauf";
-    const st = funkKeys.reduce((s,x) => s + (diy ? FUNK[x].diy : FUNK[x].station), 0) + (cube ? (diy ? 300 : 4000) : 40000);
-    once.push({name:"Bodenstation: " + funkKeys.map(x => FUNK[x].name).join(", ") + (funkKeys.length ? (diy ? " (Selbstbau mit SDR-Empfänger)" : " + Rechner") : ""), cost:st});
+    const st = funkKeys.reduce((s,x) => s + (diy ? FUNK[x].diy : FUNK[x].station), 0) + (cube ? (c.bauweise === "bastler" ? 30 : diy ? 300 : 4000) : 40000);
+    once.push({name:"Bodenstation: " + funkKeys.map(x => FUNK[x].name).join(", ") + (funkKeys.length ? (funkKeys.every(x => x === "lora") && diy ? " (ESP32-Platine mit LoRa-Modul)" : diy ? " (Selbstbau mit SDR-Empfänger)" : " + Rechner") : ""), cost:st});
     if (c.boden === "satnogs") once.push({name:"SatNOGS-Empfangsnetz (freiwillige Stationen weltweit)", cost:0});
+    if (c.boden === "tinygs") once.push({name:"TinyGS-Empfangsnetz (LoRa-Hobbystationen weltweit)", cost:0});
   } else {
     once.push({name: c.boden === "dsn" ? "Vertrag mit dem Weltraum-Funknetz" : "Einrichtung Bodennetz", cost: c.boden === "dsn" ? 20000 : 5000});
     const rate = c.boden === "dsn" ? 25 : funkKeys.reduce((m,x) => Math.max(m, FUNK[x].min), 0);
@@ -715,14 +725,15 @@ function compute(c){
   }
   const subOnce = hw + once.reduce((s,x) => s + x.cost, 0);
   once.push({name:"Reserve für Unvorhergesehenes (15 %)", cost:subOnce*0.15});
-  const opsYr = cube ? {selbst:300, bausatz:1000, kauf:25000}[c.bauweise] : {selbst:50000, bausatz:100000, kauf:250000}[c.bauweise];
+  const opsYr = cube ? {bastler:100, selbst:300, bausatz:1000, kauf:25000}[c.bauweise] : {bastler:50000, selbst:50000, bausatz:100000, kauf:250000}[c.bauweise];
   run.push({name:(c.bauweise === "kauf" ? "Missionsbetrieb: Überwachung, Steuerung" : "Betrieb: du steuerst selbst – Server, Strom, Internet") + " (" + yrs + " J.)", cost:(opsYr || 25000)*yrs});
   const totalOnce = subOnce*1.15, totalRun = run.reduce((s,x) => s + x.cost, 0), total = totalOnce + totalRun;
 
   /* Budget und Wunschgewicht */
   if (c.budget > 0){
     const tips = [];
-    if (c.bauweise !== "selbst") tips.push("Selbstbau statt " + BW.name + " senkt die Bauteilkosten stark");
+    if (c.bauweise !== "bastler" && cube) tips.push("Bastler-Bauweise mit Hobby-Elektronik statt " + BW.name + " senkt die Bauteilkosten stark");
+    if (!freeStart) tips.push("ein kostenloser Startplatz über ein Förderprogramm (der Start kostet " + eur(launch) + ")");
     if (c.boden === "netz") tips.push("eigene Station mit SatNOGS statt gemietetem Netz");
     if (k !== "p" && !nutzKeys.some(x => ["multi","hyper","relay"].includes(x))) tips.push("eine kleinere Bauform – der Start ist meist der größte Posten");
     if (yrs > 2) tips.push("eine kürzere Mission");
@@ -779,11 +790,12 @@ form.innerHTML =
     '<div class="field"><span class="lbl">Umlaufbahn</span>' + optRadio("bahn", BAHNEN, "none") + '</div>' +
     range("hoehe", "Bahnhöhe", 300, 1200, 10, "km") +
     range("jahre", "Missionsdauer", 1, 15, 1, "Jahre") +
+    seg("start", [["kauf","Startplatz kaufen","Mitflug-Anbieter"],["foerder","Förderprogramm","kostenlos, Bewerbung"]], "Start ins All") +
   '</div>' +
   '<div class="sec"><h2>Bauform <i id="dimLine"></i></h2>' +
     seg("format", [["1P","1P","5 cm"],["2P","2P","11 cm"],["3P","3P","18 cm"],["1U","1U","10 cm"],["3U","3U","34 cm"],["6U","6U","34 cm"],["12U","12U","34 cm"],["S","Klein","bis 250 kg"]], "", "seg-grid") +
     '<p class="note">PocketQubes (5 cm) sind die günstigste Art, ins All zu kommen. CubeSats bieten mehr Platz.</p>' +
-    seg("bauweise", Object.entries(BAUWEISE).map(([k,b]) => [k, b.name, b.f === 1 ? "voller Preis" : "ca. " + Math.round(b.f*100) + " % Preis"]), "Bauweise") +
+    seg("bauweise", Object.entries(BAUWEISE).map(([k,b]) => [k, b.name, b.f === 1 ? "voller Preis" : "ca. " + Math.round(b.f*100) + " %"]), "Bauweise") +
   '</div>' +
   '<div class="sec"><h2>Energie</h2>' +
     check1("koerper", {name:"Solarzellen auf dem Gehäuse", sub:"fest aufgeklebt, keine Mechanik"}) +
@@ -808,7 +820,7 @@ document.getElementById("presets").innerHTML = Object.entries(PRESETS).map(([k,p
 
 const NUMS = ["hoehe","jahre","segmente","batterie","fluegel"];
 const BOOLS = ["koerper","stern","segel","heizung", ...Object.keys(FUNK).map(x => "funk_" + x), ...Object.keys(NUTZ).map(x => "nutz_" + x)];
-const RADIOS = ["bahn","format","fluegel","boden","lage","antrieb","obc","haut","bauweise","sonne"];
+const RADIOS = ["bahn","format","fluegel","boden","lage","antrieb","obc","haut","bauweise","sonne","start"];
 let MANUAL = {d:{}, x:[]};
 function readForm(){
   const el = form.elements, c = {};
@@ -828,7 +840,7 @@ function batteryRange(fmt){
   if (k === "p"){ b.min = 2; b.max = 40; b.step = 1; } else if (k === "c"){ b.min = 10; b.max = 250; b.step = 5; } else { b.min = 200; b.max = 5000; b.step = 50; }
 }
 function writeForm(c){
-  c = Object.assign({sonne:"none", boden:"eigen", bauweise:"selbst"}, c);
+  c = Object.assign({sonne:"none", boden:"eigen", bauweise:"selbst", start:"kauf"}, c);
   MANUAL = c.manuell && typeof c.manuell === "object" ? JSON.parse(JSON.stringify({d:c.manuell.d || {}, x:c.manuell.x || []})) : {d:{}, x:[]};
   const el = form.elements;
   el.titel.value = c.titel;
@@ -905,7 +917,7 @@ function renderResults(){
   document.getElementById("costHero").innerHTML =
     '<div class="big">' + eur(R.total) + '</div>' +
     '<div class="split"><span>Einmalig <b>' + eur(R.totalOnce) + '</b></span><span>Laufend über ' + c.jahre + (c.jahre === 1 ? " Jahr" : " Jahre") + ' <b>' + eur(R.totalRun) + '</b></span><span>Bauteile <b>' + eur(R.hw) + '</b></span><span>Start <b>' + eur(R.launch) + '</b></span></div>' +
-    (c.bauweise !== "kauf" ? '<p class="note">' + R.BW.name + ': Bauteile kosten etwa ' + Math.round(R.BW.f*100) + ' % von fertigen Raumfahrt-Teilen. Dafür steckst du viele Abende Arbeit hinein, und das Risiko eines Ausfalls ist höher.</p>' : '');
+    (c.bauweise !== "kauf" ? '<p class="note">' + R.BW.name + ': Bauteile kosten etwa ' + Math.round(R.BW.f*100) + ' % von fertigen Raumfahrt-Teilen' + (c.bauweise === "bastler" ? ' – die Bauteile allein kommen auf ' + eur(R.hw) : '') + '. Dafür steckst du viele Abende Arbeit hinein, und das Risiko eines Ausfalls ist höher.</p>' : '');
 
   const rows = [];
   rows.push('<thead><tr><th>Posten</th><th class="n">Masse</th><th class="n">Preis</th></tr></thead><tbody>');
@@ -922,6 +934,9 @@ function renderResults(){
 
   const ex = [];
   ex.push("<b>Frequenzanmeldung</b> bei der Bundesnetzagentur, die sie an die ITU weitergibt. Vorlauf etwa 2 Jahre – als Erstes erledigen.");
+  if (c.start === "foerder") ex.push("<b>Kostenloser Startplatz</b> über ein Förderprogramm, z. B. ESA »Fly Your Satellite!« für Studierendenteams oder Bildungsprogramme anderer Raumfahrtagenturen. Die Plätze sind begehrt: Bewerbung mit fertigem Konzept, Auswahl nicht garantiert – plane den gekauften Start als Ausweichlösung.");
+  if (c.bauweise === "bastler") ex.push("<b>Hobby-Elektronik</b> ist nicht fürs All gemacht: Kälte, Vakuum und Strahlung lassen sie früher ausfallen. Gründlich testen – Kühlschrank und Gefriertruhe, eine Vakuumglocke, Rütteln auf einem Schwingtisch (oft an einer Hochschule oder in einem Makerspace).");
+  if (c.funk_lora || c.boden === "tinygs") ex.push("<b>TinyGS</b>: offenes Netz aus LoRa-Hobby-Bodenstationen. Eine eigene Station kostet etwa 30 € (ESP32-Platine mit LoRa-Modul und kleiner Antenne).");
   ex.push(R.B.deep ? "<b>Mitflug ins tiefe All</b>: Plätze auf Mond- und Planetenmissionen sind selten – Raumfahrtagenturen schreiben sie gelegentlich für kleine Satelliten aus." : "<b>Startplatz buchen</b> bei einem Mitflug-Anbieter, 12 bis 18 Monate vor dem Start.");
   if (c.boden === "dsn") ex.push("<b>Zeit auf den Großantennen</b> (ESA Estrack oder NASA Deep Space Network) früh anfragen – sie ist knapp und wird vergeben.");
   if (c.sonne !== "none") ex.push("<b>Sonnensegel testen</b>: Das Entfalten der dünnen Folie vorher oft am Boden üben – das ist der heikelste Moment der Mission.");
@@ -1261,6 +1276,12 @@ function buildSat(c){
     P("relay", NUTZ.relay.name, gg);
   }
   /* UHF-Antennen */
+  if (c.funk_lora){
+    const gg = grp(); gg.position.set(-W*0.3, H/2, D*0.3);
+    const a = cyl(0.01*sc + 0.004, 0.01*sc + 0.004, 0.9*sc, m.tape, 8); a.position.y = 0.45*sc; gg.add(a);
+    const tip = mesh(new THREE.SphereGeometry(0.025*sc, 10, 8), m.dark); tip.position.y = 0.9*sc; gg.add(tip);
+    P("lora", "LoRa-Antenne", gg);
+  }
   if (c.funk_uhf){
     const L = cube ? 1.7 : 5, gg = grp(); gg.position.set(0, H/2 - 0.08*sc, 0);
     [[1,0],[-1,0],[0,1],[0,-1]].forEach(([sx,sz]) => { const a = box(sx ? L : 0.03*sc, 0.006, sz ? L : 0.03*sc, m.tape); a.position.set(sx*(W/2 + L/2), 0, sz*(D/2 + L/2)); gg.add(a); });
@@ -1686,10 +1707,10 @@ function parseWishes(text){
   if (has(/hyperspek|mineral/)) nutz.push("hyper");
   else if (!labor && has(/multispek|pflanz|landwirt|vegetation|feld|wald|ernte|dürre/)) nutz.push("multi");
   if (!nutz.length && has(/kamera|foto|bild|aufnahm|selfie|erde sehen|von oben|video/)) nutz.push("cam");
-  if (has(/iot|sensor|schiff|ais\b|tracking|tier|wetterstation|lora/)) nutz.push("iot");
+  if (has(/iot|sensor|schiff|ais\b|tracking|tier|wetterstation/)) nutz.push("iot");
   if (has(/strahlung|teilchen|messen|messung|schule|unterricht/) || (!labor && !nutz.includes("teleskop") && has(/wissenschaft|forschung|experiment/))) nutz.push("sci");
   if (has(/fernseh|\btv\b|internet|telefon|transponder|relais|repeater für|kommunikationssatellit/)) nutz.push("relay");
-  let funk = "uhf";
+  let funk = has(/lora|tinygs/) ? "lora" : "uhf";
   if (nutz.includes("multi") || nutz.includes("hyper")) funk = "x";
   else if (nutz.includes("cam") || has(/video|viele daten|hochauflös/)) funk = "s";
   let bahn = null;
@@ -1707,12 +1728,14 @@ function parseWishes(text){
   const g1 = t.match(/(\d[\d,.]*)\s*(kg|kilo)/), g2 = t.match(/(\d[\d,.]*)\s*(g|gramm)\b/);
   if (g1) maxkg = num(g1[1]); else if (g2) maxkg = num(g2[1])/1000;
   let bauweise = null;
-  if (has(/selbst bau|selber bau|selbstbau|diy|löten/)) bauweise = "selbst";
+  if (has(/bastler|esp32|arduino|raspberry|hobby-?elektronik|billig|günstig|wenig geld|kleines budget/)) bauweise = "bastler";
+  else if (has(/selbst bau|selber bau|selbstbau|diy|löten/)) bauweise = "selbst";
   else if (has(/bausatz|kit\b/)) bauweise = "bausatz";
   else if (has(/profi|kaufteile|zuverlässig|fertig kaufen/)) bauweise = "kauf";
   const what = nutz.map(x => NUTZ[x].name).join(" und ");
   const sonne = has(/sonnensegel|lichtsegel|solar ?sail|mit (sonnen)?licht fliegen/) ? "klein" : null;
-  return {titel:"", nutzlast:nutz, funk, bahn, sonne, jahre: yr ? Number(yr[1]) : null, budget, maxkg, bauweise,
+  const familie = has(/cubesat/) ? "c" : has(/pocketqube/) ? "p" : null;
+  return {titel:"", nutzlast:nutz, funk, bahn, sonne, familie, jahre: yr ? Number(yr[1]) : null, budget, maxkg, bauweise,
     verstanden: (bahn === "mond" ? "Dein Satellit fliegt zum Mond" : bahn === "tief" ? "Dein Satellit reist durchs Sonnensystem" : "") + (sonne ? (bahn ? " – mit einem Sonnensegel" : "Dein Satellit fliegt mit einem Sonnensegel") : "") + (bahn || sonne ? ". " : "") +
       (nutz.length ? "An Bord: " + what + "." : (bahn || sonne ? "Er sendet Funksignale und Messwerte." : "Ein einfacher Satellit, der Funksignale sendet und Messwerte überträgt.")),
     realismus: (nutz.includes("relay") || bahn === "geo") ? "Ein Kommunikationssatellit in hoher Bahn kostet Millionen. Für ein Hobbyprojekt ist ein Amateurfunk-Relais in niedriger Bahn realistischer." : null};
@@ -1721,7 +1744,8 @@ function cleanWishes(w, fallback){
   const o = Object.assign({}, fallback);
   if (!w || typeof w !== "object") return o;
   if (Array.isArray(w.nutzlast)) o.nutzlast = w.nutzlast.map(String).filter(x => NUTZ_KEYS.includes(x));
-  if (["uhf","s","x"].includes(w.funk)) o.funk = w.funk;
+  if (["lora","uhf","s","x"].includes(w.funk)) o.funk = w.funk;
+  if (w.familie === "c" || w.familie === "p") o.familie = w.familie;
   o.bahn = BAHNEN[w.bahn] ? w.bahn : null;
   o.jahre = Number(w.jahre) >= 1 ? Math.min(15, Math.round(Number(w.jahre))) : null;
   o.budget = Number(w.budget) > 0 ? Number(w.budget) : o.budget;
@@ -1772,7 +1796,7 @@ function repair(c, R){
   }
   if (bad("funk") === "fail"){
     if (R.B.deep && c.boden !== "dsn"){ c.boden = "dsn"; return "Weltraum-Funknetz mit Großantennen – nur die hören so weit draußen."; }
-    if (!c.funk_uhf && !c.funk_s && !c.funk_x){ c.funk_uhf = true; return "UHF-Funk für Befehle eingebaut."; }
+    if (!c.funk_uhf && !c.funk_s && !c.funk_x){ c.funk_uhf = true; if (c.boden === "tinygs") c.boden = "satnogs"; return "UHF-Funk ergänzt – LoRa ist für diese Datenmenge zu langsam."; }
     if (c.boden === "eigen" && !c.funk_x && R.k !== "s" && !R.B.deep){ c.boden = "satnogs"; return "SatNOGS-Netz dazugenommen – mehr Empfangszeit, kostenlos."; }
     if (!c.funk_s && !c.funk_x){ c.funk_s = true; return "S-Band-Funk ergänzt, UHF ist für diese Datenmenge zu langsam."; }
     if (!c.funk_x){ c.funk_x = true; if (!R.B.deep) c.boden = "eigen"; return "X-Band-Funk für große Datenmengen (mit eigener Parabolantenne)."; }
@@ -1799,15 +1823,15 @@ function repair(c, R){
   if (bad("start") === "warn" && c.segmente > 1){ c.segmente--; return "Solarflügel etwas kürzer, damit er beim Start steifer ist."; }
   return null;
 }
-function designFor(w, format, bauweise){
+function designFor(w, format, bauweise, start){
   const nutz = new Set(w.nutzlast);
   const optical = ["cam","multi","hyper"].some(x => nutz.has(x));
   const bahn = w.bahn || "sso";
   const cls = FORMATE[format].cls;
   const c = {titel:w.titel || (w.nutzlast.length ? NUTZ[w.nutzlast[0]].name.split(/[ -]/)[0] + "-Satellit" : "Funkbake"), bahn, hoehe:500, jahre:w.jahre || 2, format,
     koerper:true, fluegel:0, segmente:1, batterie: cls === "p" ? 4 : cls === "c" ? 15 : 400,
-    funk_uhf:true, funk_s:w.funk === "s", funk_x:w.funk === "x", funk_laser:false,
-    boden: BAHNEN[bahn].deep ? "dsn" : w.funk === "x" ? "eigen" : "satnogs", lage: optical || nutz.has("relay") || nutz.has("teleskop") || w.sonne ? "mtq" : "none", stern:false,
+    funk_lora:w.funk === "lora", funk_uhf:w.funk !== "lora", funk_s:w.funk === "s", funk_x:w.funk === "x", funk_laser:false,
+    boden: BAHNEN[bahn].deep ? "dsn" : w.funk === "x" ? "eigen" : w.funk === "lora" ? "tinygs" : "satnogs", start:start || "kauf", lage: optical || nutz.has("relay") || nutz.has("teleskop") || w.sonne ? "mtq" : "none", stern:false,
     antrieb: ["geo","meo"].includes(bahn) ? "elek" : "none", segel:false, sonne:w.sonne || "none", obc:"std", haut:"weiss", heizung:true, bauweise,
     budget:w.budget || 0, maxkg:w.maxkg || 0, _bahnFix:!!w.bahn};
   NUTZ_KEYS.forEach(x => c["nutz_" + x] = nutz.has(x));
@@ -1822,8 +1846,11 @@ function designFor(w, format, bauweise){
   return {c, R:R_, log, hard};
 }
 function plan(w){
-  const bauweise = w.bauweise || (w.budget && w.budget >= 1.5e6 ? "kauf" : "selbst");
-  const res = Object.keys(FORMATE).map(f => designFor(w, f, bauweise));
+  const bauweise = w.bauweise || (w.budget && w.budget >= 1.5e6 ? "kauf" : w.budget && w.budget < 30000 ? "bastler" : "selbst");
+  const fams = Object.keys(FORMATE).filter(f => !w.familie || FORMATE[f].cls === w.familie);
+  let res = fams.map(f => designFor(w, f, bauweise, "kauf"));
+  // Reicht das Budget nicht für einen gekauften Start, auch den kostenlosen Förderplatz prüfen
+  if (w.budget && !res.some(r => r.hard === 0 && r.R.total <= w.budget)) res = res.concat(fams.map(f => designFor(w, f, bauweise, "foerder")));
   const okOnes = res.filter(r => r.hard === 0);
   const pool = okOnes.length ? okOnes : res.slice().sort((a,b) => a.hard - b.hard).slice(0, 1);
   const inBudget = w.budget ? pool.filter(r => r.R.total <= w.budget) : pool;
@@ -1840,13 +1867,14 @@ function aiPrompt(text, budget, maxkg){
   return "Du hilfst Hobby-Satellitenbauern, die meist ein sehr kleines Budget haben. Lies die Beschreibung und antworte NUR mit einem JSON-Objekt dieser Form:\n" +
     '{"titel": "kurzer Missionsname, höchstens 30 Zeichen",\n' +
     ' "nutzlast": ["cam" | "multi" | "hyper" | "iot" | "sci" | "teleskop" | "labor" | "relay", ...]  (leere Liste, wenn er nur funken soll),\n' +
-    ' "funk": "uhf" | "s" | "x"  (die kleinste ausreichende Funkverbindung: uhf für Funkbaken und kleine Datenmengen, s für Fotos, x für große Bilddaten),\n' +
+    ' "funk": "lora" | "uhf" | "s" | "x"  (die kleinste ausreichende Funkverbindung: lora für sehr billige Hobby-Satelliten mit wenigen Messwerten, uhf für Funkbaken und kleine Datenmengen, s für Fotos, x für große Bilddaten),\n' +
     ' "bahn": "leo" | "sso" | "dd" | "meo" | "geo" | "mond" | "tief" | null,\n' +
     ' "sonnensegel": true | false (true, wenn er mit einem Sonnensegel fliegen soll),\n' +
     ' "jahre": Zahl 1-15 oder null,\n' +
     ' "budget": Euro-Betrag oder null (nur wenn genannt),\n' +
     ' "maxkg": Kilogramm oder null (nur wenn genannt),\n' +
-    ' "bauweise": "selbst" | "bausatz" | "kauf" | null,\n' +
+    ' "familie": "c" (wenn ausdrücklich ein CubeSat gewünscht ist) | "p" (PocketQube) | null,\n' +
+    ' "bauweise": "bastler" | "selbst" | "bausatz" | "kauf" | null  (bastler = Hobby-Elektronik wie ESP32 und LoRa für sehr kleine Budgets),\n' +
     ' "verstanden": "1-2 einfache Sätze auf Deutsch in Du-Form: was der Satellit tun soll",\n' +
     ' "realismus": null oder "1 Satz, falls der Wunsch mit Hobby-Budget kaum machbar ist, und was stattdessen ginge"}\n\n' +
     "Nutzlasten: cam = einfache Farbkamera; multi = Multispektralkamera (Pflanzen, Landwirtschaft); hyper = Hyperspektralkamera (Mineralien); " +
@@ -1862,18 +1890,22 @@ function showPlan(w, P, via){
   let st, cls;
   if (!possible && P.lighter){ st = "Unter " + kg(w.maxkg) + " ist kein Satellit mit diesen Aufgaben machbar. Der leichteste, der alle Prüfungen besteht: " + P.lighter.R.F.name + " mit " + kg(P.lighter.R.massRes) + " (inkl. Reserve) für " + eur(P.lighter.R.total) + ". Gezeigt wird die beste Annäherung."; cls = "fail"; }
   else if (!possible){ st = "Keine Bauform besteht alle Prüfungen – hier die beste Annäherung."; cls = "fail"; }
+  else if (w.budget && !inBudget && Rr.hw <= w.budget){ st = "Die Bauteile passen in dein Budget: " + eur(Rr.hw) + ". Mit Testmodell, Tests, Zulassung, Bodenstation und Reserve kommen insgesamt " + eur(Rr.total) + " zusammen."; cls = "warn"; }
   else if (w.budget && !inBudget){ st = "Über Budget: die günstigste Variante kostet " + eur(Rr.total) + ", " + eur(Rr.total - w.budget) + " mehr als geplant."; cls = "fail"; }
   else if (w.budget){ st = "Passt ins Budget – es bleiben " + eur(w.budget - Rr.total) + " Luft."; cls = "ok"; }
   else { st = "Günstigste Variante, die alle Prüfungen besteht."; cls = "ok"; }
   let html = '<b class="h">' + esc(Rr.F.name) + " · " + esc(BAUWEISE[c.bauweise].name) + " · " + eur(Rr.total) + " · " + kg(Rr.mass) + "</b>" +
     '<p class="st ' + cls + '">' + esc(st) + "</p>" +
-    "<p>" + esc(w.verstanden) + "</p>";
+    "<p>" + esc(w.verstanden) + "</p>" +
+    '<p class="muted">Davon Bauteile: ' + eur(Rr.hw) + (Rr.launch ? " · Start: " + eur(Rr.launch) : " · Start: kostenlos über Förderprogramm") + "</p>";
   if (w.realismus) html += '<p class="st warn">' + esc(w.realismus) + "</p>";
   if (best.log.length) html += '<p class="muted">Das habe ich angepasst:</p><ul>' + best.log.slice(0, 8).map(li).join("") + "</ul>";
   if (fails.length) html += '<p class="muted">Noch offen: ' + esc(fails.map(t => t.name).join(", ")) + ".</p>";
+  if (c.start === "foerder" && (!w.budget || inBudget)) html += '<p class="st warn">Das klappt nur mit einem kostenlosen Startplatz über ein Förderprogramm. Ein gekaufter Start kostet ' + eur(compute(Object.assign({}, c, {start:"kauf"})).launch) + '.</p>';
   if (w.budget && !inBudget){
     const tips = [];
-    if (c.bauweise !== "selbst") tips.push("Selbstbau statt " + BAUWEISE[c.bauweise].name);
+    if (c.bauweise !== "bastler" && Rr.cube) tips.push("Bastler-Bauweise mit Hobby-Elektronik statt " + BAUWEISE[c.bauweise].name);
+    if (c.start !== "foerder") tips.push("Bewerbung um einen kostenlosen Startplatz – der Start ist meist der größte Posten");
     if (c.jahre > 1) tips.push("kürzere Mission (" + (c.jahre - 1) + (c.jahre - 1 === 1 ? " Jahr" : " Jahre") + ")");
     if (c.nutz_multi || c.nutz_hyper) tips.push("einfache Farbkamera statt Spezialkamera");
     if (c.nutz_cam && Rr.k !== "p") tips.push("ohne Kamera passt eine PocketQube für rund " + eur(Math.max(30000, FORMATE["2P"].launch*1.6)));
