@@ -17,6 +17,12 @@ Kommandozeile.
 > Bilder, KI-Stimme, Videos) ergänzen und direkt ins Netz stellen.
 > Entwürfe liegen verschlüsselt, der Studio-Login ist mit LoginShield geschützt.
 
+> **Neu: [Satellitenwerkstatt](docs/satellit.html)** – einen Satelliten
+> zusammenstellen (CubeSat 1U bis Kleinsatellit), als 3D-Modell drehen,
+> Rütteltest, Wärmebild und 24 Stunden im Orbit simulieren und sehen,
+> welche Bauteile du brauchst und was alles zusammen kostet.
+> Online: `https://levirob2015.github.io/L-vi/satellit.html`
+
 ### Klickbare Vorschau
 
 [`docs/demo.html`](docs/demo.html) ist eine bedienbare Version dieser

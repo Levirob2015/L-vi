@@ -1,0 +1,1395 @@
+<title>Satellitenwerkstatt</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Satelliten zusammenstellen, als 3D-Modell ansehen, im Orbit testen und erfahren, was er kostet.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: Werkbank in drei Bahnen – Bauteile links, Prüfstand (3D) in der Mitte, Prüfbericht und Kosten rechts. */
+:root{
+  --bg:#eaeef3; --panel:#f8fafc; --raise:#ffffff; --ink:#141b25; --muted:#566273; --line:#d2d9e2;
+  --accent:#3346c9; --accent-ink:#ffffff; --accent-soft:#e2e6fb;
+  --ok:#1b7a4f; --ok-soft:#dcf0e6; --warn:#9a5c00; --warn-soft:#fbeed6; --fail:#bd3530; --fail-soft:#f8e0de;
+  --vp:#101823; --vp-ink:#dbe3ee; --vp-muted:#8a99ad; --vp-line:rgba(219,227,238,.14); --vp-glass:rgba(16,24,35,.78);
+  --f-display:"Chakra Petch","Segoe UI",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --r:8px; --pill-ink:#ffffff;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0d1218; --panel:#131a23; --raise:#19222e; --ink:#e3e9f1; --muted:#93a0b2; --line:#263140;
+  --accent:#8492f7; --accent-ink:#0d1218; --accent-soft:#222a52;
+  --ok:#55c993; --ok-soft:#14332a; --warn:#eeb04a; --warn-soft:#38290f; --fail:#f27a71; --fail-soft:#3b1a18;
+  --vp:#080c12; --vp-glass:rgba(8,12,18,.8); --pill-ink:#0d1218; color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0d1218; --panel:#131a23; --raise:#19222e; --ink:#e3e9f1; --muted:#93a0b2; --line:#263140;
+  --accent:#8492f7; --accent-ink:#0d1218; --accent-soft:#222a52;
+  --ok:#55c993; --ok-soft:#14332a; --warn:#eeb04a; --warn-soft:#38290f; --fail:#f27a71; --fail-soft:#3b1a18;
+  --vp:#080c12; --vp-glass:rgba(8,12,18,.8); --pill-ink:#0d1218; color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 var(--f-body);-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.app{display:grid;grid-template-columns:330px minmax(0,1fr) 400px;grid-template-rows:auto minmax(0,1fr);height:100%}
+.top{grid-column:1/-1;display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-block:10px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  background:var(--panel);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:baseline;gap:10px;min-width:0}
+.brand b{font:700 20px/1 var(--f-display);letter-spacing:.01em}
+.brand span{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .spacer{flex:1}
+.top-cost{display:flex;flex-direction:column;align-items:flex-end;line-height:1.1}
+.top-cost small{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.top-cost b{font:600 20px/1.1 var(--f-display);font-variant-numeric:tabular-nums}
+.btn{border:1px solid var(--line);background:var(--raise);border-radius:6px;padding:8px 14px;cursor:pointer;font-weight:500}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn:disabled{opacity:.55;cursor:progress}
+
+/* ---------- Konfiguration ---------- */
+.cfg{background:var(--panel);border-right:1px solid var(--line);overflow:auto;padding-block:14px 40px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.presets{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px}
+.presets button{text-align:left;border:1px solid var(--line);background:var(--raise);border-radius:6px;padding:7px 9px;cursor:pointer;font-size:12.5px;line-height:1.25}
+.presets button small{display:block;color:var(--muted);font-size:11.5px}
+.presets button:hover{border-color:var(--accent)}
+.sec{border-top:1px solid var(--line);padding-top:12px;margin-top:14px;display:grid;gap:10px}
+.sec h2{margin:0;font:600 12px/1 var(--f-display);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between}
+.sec h2 i{font-style:normal;letter-spacing:0;text-transform:none;font-family:var(--f-mono);font-weight:400}
+.field{display:grid;gap:5px}
+.lbl{font-size:12.5px;font-weight:600}
+.field input[type=text]{border:1px solid var(--line);background:var(--raise);border-radius:6px;padding:7px 9px;width:100%}
+.opts{display:grid;gap:4px}
+.opt{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:2px 9px;align-items:start;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--raise);cursor:pointer}
+.opt:hover{border-color:var(--muted)}
+.opt input{margin:2px 0 0;accent-color:var(--accent)}
+.opt:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.opt-name{font-weight:500;font-size:13px;line-height:1.3}
+.opt-sub{display:block;color:var(--muted);font-size:11.5px;line-height:1.3;margin-top:1px}
+.opt-hint{font:11px/1.3 var(--f-mono);color:var(--muted);text-align:right;white-space:nowrap;padding-top:2px}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--raise)}
+.seg label{flex:1;text-align:center;cursor:pointer;position:relative}
+.seg label+label{border-left:1px solid var(--line)}
+.seg input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.seg span{display:block;padding:7px 4px;font-size:12.5px;font-weight:500}
+.seg span small{display:block;font:400 10.5px/1.2 var(--f-mono);color:var(--muted)}
+.seg label:has(input:checked){background:var(--accent);color:var(--accent-ink)}
+.seg label:has(input:checked) small{color:inherit;opacity:.8}
+.seg label:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:-2px}
+.range{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;align-items:center}
+.range input{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.range output{font:500 12.5px var(--f-mono);font-variant-numeric:tabular-nums}
+
+/* ---------- Ansicht ---------- */
+.view{position:relative;background:var(--vp);min-height:0;overflow:hidden;color:var(--vp-ink)}
+#c3d{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.vp-tools{position:absolute;display:flex;gap:2px;padding:3px;background:var(--vp-glass);border:1px solid var(--vp-line);border-radius:8px;backdrop-filter:blur(6px)}
+.vp-tl{top:12px;left:max(12px,env(safe-area-inset-left,0px))}
+.vp-tr{top:12px;right:max(12px,env(safe-area-inset-right,0px))}
+.vp-tools button{border:0;background:transparent;color:var(--vp-ink);padding:6px 11px;border-radius:5px;cursor:pointer;font-size:12.5px;font-weight:500}
+.vp-tools button:hover{background:rgba(255,255,255,.08)}
+.vp-tools button.on,.vp-tools button[aria-pressed="true"]{background:var(--vp-ink);color:var(--vp)}
+.vp-progress{position:absolute;top:60px;left:50%;transform:translateX(-50%);background:var(--vp-glass);border:1px solid var(--vp-line);border-radius:8px;padding:8px 14px;font-size:13px;display:flex;gap:10px;align-items:center;white-space:nowrap;max-width:calc(100% - 32px)}
+.vp-progress b{font:600 12px var(--f-mono);color:var(--vp-muted)}
+.vp-bottom{position:absolute;left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));bottom:12px;display:flex;flex-direction:column;gap:8px;align-items:flex-start;pointer-events:none}
+.vp-bottom>*{pointer-events:auto}
+.vp-info{font:12px/1.4 var(--f-mono);color:var(--vp-muted);background:var(--vp-glass);border-radius:6px;padding:5px 9px}
+.vp-info b{color:var(--vp-ink);font-weight:500}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;background:var(--vp-glass);border:1px solid var(--vp-line);border-radius:8px;padding:7px 10px;max-width:100%}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.heatbar{display:grid;gap:4px;min-width:min(320px,100%)}
+.heatbar .bar{height:8px;border-radius:4px;background:linear-gradient(90deg,#0d0d40,#731090,#e6332a,#ffbf1a,#fffbe0)}
+.heatbar .ends{display:flex;justify-content:space-between;font:11.5px var(--f-mono);color:var(--vp-muted);gap:12px}
+.hud{width:100%;background:var(--vp-glass);border:1px solid var(--vp-line);border-radius:8px;padding:8px 10px 6px}
+.hud-line{display:flex;flex-wrap:wrap;gap:4px 14px;font:12px/1.4 var(--f-mono);color:var(--vp-muted)}
+.hud-line b{color:var(--vp-ink);font-weight:500}
+.hud-line .ecl{color:#ffd27a}
+#soc{width:100%;height:92px;display:block;margin-top:4px}
+.no3d{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:24px;color:var(--vp-muted)}
+
+/* ---------- Ergebnis ---------- */
+.res{background:var(--bg);overflow:auto;padding-block:14px 40px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:18px;align-content:start}
+.res h2{margin:0 0 8px;font:600 12px/1 var(--f-display);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.verdict{border-radius:var(--r);padding:12px 14px;display:grid;gap:4px;border:1px solid}
+.verdict b{font:600 18px/1.2 var(--f-display)}
+.verdict span{font-size:13px}
+.v-ok{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+.v-warn{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+.v-fail{background:var(--fail-soft);border-color:var(--fail);color:var(--fail)}
+.verdict span{color:var(--ink)}
+.budgets{display:grid;gap:9px}
+.bud{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 8px;font-size:12.5px}
+.bud .val{font:12px var(--f-mono);font-variant-numeric:tabular-nums;color:var(--muted)}
+.bud .track{grid-column:1/-1;height:6px;border-radius:3px;background:var(--line);overflow:hidden;position:relative}
+.bud .fill{position:absolute;inset:0 auto 0 0;border-radius:3px;background:var(--ok);transition:width .35s ease}
+.bud .fill.warn{background:var(--warn)} .bud .fill.fail{background:var(--fail)}
+
+.tests{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.test{background:var(--panel);border:1px solid var(--line);border-radius:6px}
+.test summary{list-style:none;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px 10px;cursor:pointer}
+.test summary::-webkit-details-marker{display:none}
+.test .tname{font-weight:500;font-size:13px}
+.test .tval{font:11.5px/1.3 var(--f-mono);color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.test .tbody{padding:0 10px 10px 34px;font-size:12.5px;display:grid;gap:6px;min-width:0}
+.test .tbody p{margin:0}
+.test .fix{border-left:2px solid var(--accent);padding-left:8px;color:var(--ink)}
+.pill{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font:700 11px/1 var(--f-body);color:var(--pill-ink)}
+.pill.ok{background:var(--ok)} .pill.warn{background:var(--warn);border-radius:3px;transform:rotate(45deg) scale(.82)}
+.pill.warn::after{content:"!";transform:rotate(-45deg)} .pill.ok::after{content:"✓"}
+.pill.fail{background:var(--fail);border-radius:3px} .pill.fail::after{content:"✕"}
+.test.reveal{animation:pop .45s ease both}
+@keyframes pop{from{transform:translateY(4px);opacity:.25}to{transform:none;opacity:1}}
+
+.cost-hero{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;display:grid;gap:10px}
+.cost-hero .big{font:600 30px/1 var(--f-display);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.cost-hero .split{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12.5px;color:var(--muted)}
+.cost-hero .split b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+.tablewrap{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:var(--r)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{padding:6px 10px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:600 11px var(--f-display);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+td.n,th.n{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.grp td{background:var(--bg);font:600 11px var(--f-display);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding-top:9px}
+tr.sum td{font-weight:600;border-bottom:0}
+td .dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px}
+.extra{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:12.5px}
+.extra li{display:grid;grid-template-columns:16px minmax(0,1fr);gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+.extra li::before{content:"";width:9px;height:9px;border:1.5px solid var(--muted);border-radius:2px;margin-top:4px}
+.extra b{font-weight:600}
+.fine{color:var(--muted);font-size:11.5px;margin:0}
+
+@media (max-width:1180px){
+  .app{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto auto auto;height:auto}
+  html,body{height:auto}
+  .view{grid-column:1/-1;grid-row:2;height:64vh;min-height:380px}
+  .cfg{grid-column:1;grid-row:3}
+  .res{grid-column:2;grid-row:3}
+  .cfg,.res{overflow:visible}
+  .cfg{border-right:1px solid var(--line)}
+}
+@media (max-width:760px){
+  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto auto}
+  .view{height:58vh;min-height:340px}
+  .cfg{grid-column:1;grid-row:3}
+  .res{grid-column:1;grid-row:4}
+  .cfg{border-right:0;border-bottom:1px solid var(--line)}
+  .top-cost b{font-size:17px}
+  .brand span{display:none}
+  .vp-tools button{padding:6px 8px}
+  .vp-tr{top:54px;right:auto;left:max(12px,env(safe-area-inset-left,0px))}
+  .vp-progress{top:98px}
+}
+@media (prefers-reduced-motion: reduce){ .test.reveal{animation:none} .bud .fill{transition:none} }
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand"><b>Satellitenwerkstatt</b><span id="missionLine">Erdbeobachtung 6U</span></div>
+    <div class="spacer"></div>
+    <div class="top-cost"><small>Geschätzte Gesamtkosten</small><b id="topCost">–</b></div>
+    <button class="btn primary" id="bTest" type="button">Alles testen</button>
+  </header>
+
+  <aside class="cfg" aria-label="Satellit zusammenstellen">
+    <div class="sec" style="border-top:0;margin-top:0;padding-top:0">
+      <h2>Vorlagen</h2>
+      <div class="presets" id="presets"></div>
+    </div>
+    <form id="cfg" autocomplete="off"></form>
+  </aside>
+
+  <main class="view" id="view">
+    <canvas id="c3d" aria-label="3D-Modell des Satelliten. Ziehen zum Drehen, Scrollen oder Zwei-Finger-Geste zum Zoomen."></canvas>
+    <div class="vp-tools vp-tl" role="group" aria-label="Ansicht">
+      <button type="button" data-mode="modell" class="on">Modell</button>
+      <button type="button" data-mode="innen">Innenleben</button>
+      <button type="button" data-mode="orbit">Im Orbit</button>
+    </div>
+    <div class="vp-tools vp-tr" role="group" aria-label="Einzeltests">
+      <button type="button" id="bShake">Rütteltest</button>
+      <button type="button" id="bHeat" aria-pressed="false">Wärmebild</button>
+    </div>
+    <div class="vp-progress" id="vpProg" hidden></div>
+    <div class="vp-bottom">
+      <div class="legend" id="legend" hidden></div>
+      <div class="hud" id="hud" hidden><div class="hud-line" id="hudLine"></div><canvas id="soc"></canvas></div>
+      <div class="vp-info" id="vpInfo"></div>
+    </div>
+    <div class="no3d" id="no3d" hidden><p>Die 3D-Ansicht konnte nicht geladen werden.<br>Sie braucht eine Internetverbindung für die Grafikbibliothek. Alle Berechnungen rechts funktionieren trotzdem.</p></div>
+  </main>
+
+  <section class="res" aria-label="Prüfbericht und Kosten">
+    <div>
+      <div class="verdict" id="verdict"></div>
+    </div>
+    <div class="budgets" id="budgets"></div>
+    <div>
+      <h2>Prüfstand</h2>
+      <ul class="tests" id="tests"></ul>
+    </div>
+    <div>
+      <h2>Was es kostet</h2>
+      <div class="cost-hero" id="costHero"></div>
+    </div>
+    <div>
+      <h2>Was du brauchst</h2>
+      <div class="tablewrap"><table id="shop"></table></div>
+    </div>
+    <div>
+      <h2>Außerdem nötig</h2>
+      <ul class="extra" id="extra"></ul>
+    </div>
+    <p class="fine">Alle Preise sind Schätzungen auf Basis typischer Marktpreise (2025/26) für CubeSat- und Kleinsatelliten-Bauteile, Mitflug-Starts und Bodennetze. Die Prüfungen sind vereinfachte Ingenieursmodelle für eine erste Machbarkeitsabschätzung, kein Ersatz für echte Qualifikationstests. Entwicklungsarbeit des eigenen Teams ist nicht eingerechnet.</p>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+"use strict";
+/* =====================================================================
+   Daten: Bauformen, Bahnen, Bauteile
+   Tupel je Bauteil: [Masse kg, Volumen in Liter (≈ U), mittlere Leistung W, Preis €]
+   c = CubeSat-Klasse, s = Kleinsatellit
+   ===================================================================== */
+const S0 = 1361, ETA = 0.28, RE = 6371, MU = 398600.4418, D2R = Math.PI / 180, SIGMA = 5.670e-8;
+
+const FORMATE = {
+  "1U":  {name:"CubeSat 1U",  kurz:"1U",  cube:true,  d:[1,1.135,1],        U:1,   max:2,   struct:[0.12,0,0,3500],   launch:75000,  test:20000,  f0:260},
+  "3U":  {name:"CubeSat 3U",  kurz:"3U",  cube:true,  d:[1,3.405,1],        U:3,   max:6,   struct:[0.32,0,0,6500],   launch:210000, test:35000,  f0:220},
+  "6U":  {name:"CubeSat 6U",  kurz:"6U",  cube:true,  d:[2.263,3.405,1],    U:6,   max:12,  struct:[0.9,0,0,14000],   launch:380000, test:50000,  f0:200},
+  "12U": {name:"CubeSat 12U", kurz:"12U", cube:true,  d:[2.263,3.405,2.263],U:12,  max:24,  struct:[1.6,0,0,24000],   launch:680000, test:70000,  f0:180},
+  "S":   {name:"Kleinsatellit", kurz:"bis 250 kg", cube:false, d:[7,9,7],   U:441, max:250, struct:[18,0,0,220000],   launch:0,      test:550000, f0:70}
+};
+const BAHNEN = {
+  leo: {name:"Niedrige Bahn", sub:"wie die ISS, viel Schatten", beta:0, x:1},
+  sso: {name:"Sonnensynchron", sub:"überfliegt jeden Ort um 10:30 Uhr – Standard für Erdbeobachtung", beta:25, x:1.05},
+  dd:  {name:"Dämmerungsbahn", sub:"über der Tag-Nacht-Grenze, fast immer Sonne", beta:65, x:1.12},
+  meo: {name:"Mittlere Bahn", sub:"20.200 km wie GPS – mitten im Strahlungsgürtel", h:20200, beta:0, x:4},
+  geo: {name:"Geostationär", sub:"35.786 km, steht still über einem Punkt der Erde", h:35786, beta:0, x:6}
+};
+const OBC = {
+  std: {name:"Standard-Bordcomputer", sub:"handelsübliche Elektronik, verträgt ca. 20 krad Strahlung", c:[0.1,0.1,0.4,6000], s:[2,4,6,60000], tol:20},
+  red: {name:"Redundant (2 Rechner)", sub:"fällt einer aus, übernimmt der zweite · ca. 40 krad", c:[0.2,0.2,0.7,14000], s:[4,7,10,140000], tol:40},
+  rad: {name:"Strahlenfest", sub:"Raumfahrt-Bauteile, verträgt ca. 300 krad", c:[0.35,0.3,1.2,85000], s:[6,8,15,600000], tol:300}
+};
+const EPS = {name:"Energieversorgung (EPS)", c:[0.15,0.12,0.2,9000], s:[8,10,8,90000]};
+const FUNK = {
+  uhf:  {name:"UHF-Funk", sub:"19,2 kbit/s · Befehle und Zustandsdaten", c:[0.1,0.12,0.6,7000], s:[1.5,2,6,30000], rate:{c:19200,s:19200}, point:180, station:8000, min:3},
+  s:    {name:"S-Band", sub:"2 Mbit/s (Klein: 10 Mbit/s)", c:[0.2,0.2,1.5,22000], s:[4,4,25,160000], rate:{c:2e6,s:10e6}, point:30, station:45000, min:3},
+  x:    {name:"X-Band", sub:"100 Mbit/s (Klein: 400 Mbit/s) · für große Datenmengen", c:[0.3,0.4,4,65000], s:[8,8,60,450000], rate:{c:100e6,s:400e6}, point:5, station:120000, min:10},
+  laser:{name:"Laserfunk", sub:"1 Gbit/s (Klein: 10 Gbit/s) · nur bei klarem Himmel", c:[0.4,0.6,5,180000], s:[12,10,80,1100000], rate:{c:1e9,s:10e9}, point:0.05, station:250000, min:25}
+};
+const BODEN = {
+  eigen: {name:"Eigene Bodenstation", sub:"eine Antenne auf dem Dach, einmal kaufen"},
+  netz:  {name:"Gemietetes Bodennetz", sub:"viele Stationen weltweit, Abrechnung pro Minute"}
+};
+const LAGE = {
+  none: {name:"Passiv (Dauermagnet)", sub:"richtet sich grob am Erdmagnetfeld aus", c:[0.05,0.05,0,1500], s:[1,1,0,15000], acc:90, wing:0.25},
+  mtq:  {name:"Magnetspulen + Sonnensensoren", sub:"Ausrichtung auf ca. 10° genau", c:[0.2,0.3,0.6,9000], s:[5,6,6,60000], acc:10, wing:0.55},
+  rw:   {name:"Reaktionsräder", sub:"ca. 1° genau, dreht die Flügel zur Sonne", c:[0.7,0.6,2.5,45000], s:[25,30,40,450000], acc:1, wing:0.85}
+};
+const STERN = {name:"Sternsensor", sub:"misst die eigene Lage auf 0,01° genau", c:[0.15,0.3,1.0,30000], s:[2,3,8,120000]};
+const ANTRIEB = {
+  none: {name:"Kein Antrieb", sub:"die Bahn lässt sich nicht mehr ändern", c:[0,0,0,0], s:[0,0,0,0], dv:{c:0,s:0}},
+  kalt: {name:"Kaltgas", sub:"einfach und sicher · 15 m/s (Klein: 40 m/s)", c:[0.6,1.0,0.5,45000], s:[20,25,10,350000], dv:{c:15,s:40}},
+  chem: {name:"Chemisch (grüner Treibstoff)", sub:"kräftig · 60 m/s (Klein: 200 m/s)", c:[1.2,1.5,0.8,120000], s:[60,50,20,1200000], dv:{c:60,s:200}},
+  elek: {name:"Elektrisch (Ionentriebwerk)", sub:"sparsam, aber stromhungrig · 150 m/s (Klein: 1.500 m/s)", c:[0.9,1.2,6,95000], s:[30,30,150,900000], dv:{c:150,s:1500}}
+};
+const SEGEL = {name:"Bremssegel", sub:"entfaltet sich nach der Mission und holt ihn schneller herunter", c:[0.15,0.15,0,12000], s:[3,4,0,90000], area:{c:1.5,s:12}};
+const NUTZ = {
+  cam:   {name:"Farbkamera", sub:"ca. 25 m pro Pixel (Klein: 5 m)", c:[0.3,0.5,1.5,15000], s:[8,10,20,200000], data:{c:0.3,s:3}, point:10},
+  multi: {name:"Multispektralkamera", sub:"erkennt Pflanzen, Wasser, Böden · ca. 5 m (Klein: 1 m)", c:[1.2,1.5,5,120000], s:[30,40,60,2500000], data:{c:4,s:40}, point:1},
+  hyper: {name:"Hyperspektralkamera", sub:"Hunderte Farbkanäle, z. B. für Mineralien", c:[2.5,3,9,350000], s:[60,80,120,6000000], data:{c:15,s:150}, point:0.1},
+  iot:   {name:"IoT- und Schiffsempfänger", sub:"sammelt Signale von Sensoren und Schiffen (AIS)", c:[0.15,0.2,1.5,18000], s:[3,4,15,150000], data:{c:0.01,s:0.1}, point:180},
+  sci:   {name:"Strahlungsdetektor", sub:"misst Teilchen im All – Wissenschaft und Schule", c:[0.2,0.2,0.4,25000], s:[5,6,10,180000], data:{c:0.001,s:0.01}, point:180},
+  relay: {name:"Kommunikations-Transponder", sub:"leitet Fernsehen, Internet und Telefonie weiter (Ka-Band)", c:[1.0,1.5,20,250000], s:[30,40,300,8000000], data:{c:0,s:0}, point:1}
+};
+const HAUT = {
+  weiss:   {name:"Weißer Speziallack", sub:"wirft Sonnenlicht zurück, bleibt kühl", a:0.25, e:0.88, damp:0.3, c:[0.03,0,0,800], s:[1.5,0,0,15000]},
+  schwarz: {name:"Schwarz eloxiert", sub:"nimmt viel Wärme auf und strahlt viel ab", a:0.9, e:0.88, damp:0.3, c:[0.02,0,0,600], s:[1,0,0,10000]},
+  mli:     {name:"Goldfolie (MLI)", sub:"mehrlagige Isolierung, dämpft Temperatursprünge", a:0.4, e:0.65, damp:0.18, c:[0.08,0,0,4000], s:[4,0,0,60000]}
+};
+const HEIZ = {name:"Akkuheizung mit Thermostat", c:[0.04,0.02,1,1500], s:[1,1,40,25000]};
+const CAT = {
+  struktur:{name:"Struktur", col:"#9aa6b4"}, daten:{name:"Bordcomputer", col:"#2fb5a3"}, energie:{name:"Energie", col:"#e2a33b"},
+  funk:{name:"Funk", col:"#a07ff0"}, lage:{name:"Lageregelung", col:"#5cc46a"}, antrieb:{name:"Antrieb", col:"#ec6352"},
+  nutz:{name:"Nutzlast", col:"#4f9be8"}, waerme:{name:"Wärme", col:"#d5c9b0"}
+};
+
+const PRESETS = {
+  lern: {label:"Lern-CubeSat", sub:"1U · Schulprojekt", c:{titel:"Lern-CubeSat", bahn:"leo", hoehe:420, jahre:1, format:"1U", koerper:true, fluegel:0, segmente:1, batterie:20,
+    funk_uhf:true, funk_s:false, funk_x:false, funk_laser:false, boden:"eigen", lage:"none", stern:false, antrieb:"none", segel:false,
+    nutz_cam:false, nutz_multi:false, nutz_hyper:false, nutz_iot:false, nutz_sci:true, nutz_relay:false, obc:"std", haut:"weiss", heizung:true}},
+  erde: {label:"Erdbeobachtung", sub:"6U · Landwirtschaft", c:{titel:"Erdbeobachtung 6U", bahn:"sso", hoehe:550, jahre:5, format:"6U", koerper:true, fluegel:2, segmente:2, batterie:80,
+    funk_uhf:true, funk_s:false, funk_x:true, funk_laser:false, boden:"netz", lage:"rw", stern:true, antrieb:"none", segel:true,
+    nutz_cam:false, nutz_multi:true, nutz_hyper:false, nutz_iot:false, nutz_sci:false, nutz_relay:false, obc:"red", haut:"mli", heizung:true}},
+  iot: {label:"IoT-Netz", sub:"3U · Sensoren und Schiffe", c:{titel:"IoT-Knoten 3U", bahn:"sso", hoehe:560, jahre:4, format:"3U", koerper:true, fluegel:2, segmente:1, batterie:40,
+    funk_uhf:true, funk_s:true, funk_x:false, funk_laser:false, boden:"eigen", lage:"mtq", stern:false, antrieb:"none", segel:false,
+    nutz_cam:false, nutz_multi:false, nutz_hyper:false, nutz_iot:true, nutz_sci:false, nutz_relay:false, obc:"std", haut:"weiss", heizung:true}},
+  geo: {label:"Fernseh-Satellit", sub:"Kleinsatellit · GEO", c:{titel:"Kommunikation GEO", bahn:"geo", hoehe:550, jahre:12, format:"S", koerper:false, fluegel:4, segmente:3, batterie:1500,
+    funk_uhf:false, funk_s:true, funk_x:false, funk_laser:false, boden:"eigen", lage:"rw", stern:true, antrieb:"elek", segel:false,
+    nutz_cam:false, nutz_multi:false, nutz_hyper:false, nutz_iot:false, nutz_sci:false, nutz_relay:true, obc:"rad", haut:"mli", heizung:true}}
+};
+
+/* ---------- Formatierung ---------- */
+const nf0 = new Intl.NumberFormat("de-DE", {maximumFractionDigits:0});
+const nf1 = new Intl.NumberFormat("de-DE", {maximumFractionDigits:1, minimumFractionDigits:1});
+const nf2 = new Intl.NumberFormat("de-DE", {maximumFractionDigits:2, minimumFractionDigits:2});
+const eur = v => v >= 1e6 ? nf2.format(v/1e6).replace(/,00$/,"") + " Mio. €" : nf0.format(Math.round(v/100)*100) + " €";
+const eurExact = v => nf0.format(Math.round(v/100)*100) + " €";
+const kg = v => v < 10 ? nf2.format(v) + " kg" : nf1.format(v) + " kg";
+const pct = v => nf0.format(v*100) + " %";
+const esc = s => String(s).replace(/[&<>"]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
+const dataStr = gb => gb >= 1000 ? nf1.format(gb/1000) + " TB" : gb >= 1 ? nf1.format(gb) + " GB" : nf0.format(gb*1000) + " MB";
+const degStr = d => d >= 1 ? nf0.format(d) + "°" : d >= 0.1 ? nf1.format(d) + "°" : nf2.format(d) + "°";
+
+/* =====================================================================
+   Berechnung
+   ===================================================================== */
+function compute(c){
+  const F = FORMATE[c.format], cube = F.cube, k = cube ? "c" : "s", B = BAHNEN[c.bahn];
+  const h = B.h || c.hoehe, r = RE + h, T = 2*Math.PI*Math.sqrt(r**3/MU);
+  const beta = B.beta*D2R, bstar = Math.asin(RE/r);
+  let fe = 0;
+  if (beta < bstar) fe = Math.acos(Math.min(1, Math.sqrt(h*h + 2*RE*h)/(r*Math.cos(beta))))/Math.PI;
+  const yrs = c.jahre;
+
+  const parts = [];
+  const add = (cat, name, v, o) => parts.push(Object.assign({cat, name, mass:v[0], vol:v[1], power:v[2], cost:v[3], internal:true}, o||{}));
+  add("struktur", "Struktur " + F.name, F.struct, {internal:false});
+  add("daten", OBC[c.obc].name, OBC[c.obc][k], {key:"obc"});
+  add("energie", EPS.name, EPS[k], {key:"eps"});
+  const wh = c.batterie;
+  add("energie", "Akku " + nf0.format(wh) + " Wh", [wh/110, cube ? wh/220 : wh/160, 0, cube ? 2000 + wh*90 : 20000 + wh*45], {key:"bat"});
+
+  const [W,H,D] = F.d;
+  const faceA = (W*H*2 + D*H*2)*0.01, A_tot = (W*H*2 + D*H*2 + W*D*2)*0.01;
+  const A_body = c.koerper ? faceA*0.8 : 0;
+  const segX = cube ? D*H*0.01 : 0.48, segZ = cube ? W*H*0.01 : 0.48;
+  const nSeg = c.fluegel > 0 ? c.segmente : 0;
+  const A_wing_raw = c.fluegel === 0 ? 0 : (2*segX + (c.fluegel === 4 ? 2*segZ : 0))*nSeg;
+  const A_wing = A_wing_raw*0.9;
+  if (A_body > 0) add("energie", "Solarzellen am Gehäuse (" + nf2.format(A_body) + " m²)", [A_body*1.2, 0, 0, A_body*(cube ? 230000 : 110000)], {internal:false});
+  if (A_wing > 0) add("energie", "Solarflügel " + c.fluegel + " × " + nSeg + " Felder (" + nf2.format(A_wing) + " m²)",
+    [A_wing_raw*(cube ? 3.5 : 4) + (cube ? 0.04 : 3)*c.fluegel, (cube ? 0.05 : 2)*c.fluegel, 0, A_wing_raw*(cube ? 420000 : 160000) + (cube ? 3000 : 30000)*c.fluegel], {internal:false});
+  if (A_wing > 0 && !cube && c.lage === "rw") add("energie", "Solarflügel-Drehantrieb (2×)", [6,4,6,240000]);
+
+  const funkKeys = Object.keys(FUNK).filter(x => c["funk_" + x]);
+  funkKeys.forEach(x => add("funk", FUNK[x].name, FUNK[x][k], {key:"funk_" + x}));
+  add("lage", LAGE[c.lage].name, LAGE[c.lage][k], {key:"lage"});
+  if (c.stern) add("lage", STERN.name, STERN[k], {key:"stern"});
+  if (c.antrieb !== "none") add("antrieb", ANTRIEB[c.antrieb].name + " mit Tank", ANTRIEB[c.antrieb][k], {key:"antrieb"});
+  if (c.segel) add("antrieb", SEGEL.name, SEGEL[k], {key:"segel"});
+  const nutzKeys = Object.keys(NUTZ).filter(x => c["nutz_" + x]);
+  nutzKeys.forEach(x => add("nutz", NUTZ[x].name, NUTZ[x][k], {key:"nutz_" + x}));
+  add("waerme", "Oberfläche: " + HAUT[c.haut].name, HAUT[c.haut][k], {internal:false});
+  const heizW = c.heizung ? HEIZ[k][2] : 0;
+  if (c.heizung) add("waerme", HEIZ.name, [HEIZ[k][0], HEIZ[k][1], 0, HEIZ[k][3]], {key:"heiz"});
+
+  /* Masse */
+  const dry = parts.reduce((s,p) => s + p.mass, 0);
+  const harness = dry*0.04, mass = dry + harness, massRes = mass*1.10;
+
+  /* Volumen */
+  const vol = parts.filter(p => p.internal).reduce((s,p) => s + p.vol, 0);
+  const volMax = F.U*(cube ? 0.8 : 0.7);
+
+  /* Energie */
+  const degr = Math.pow(h > 15000 ? 0.97 : 0.975, yrs);
+  const wf = LAGE[c.lage].wing*(c.lage === "rw" && !cube ? 1.1 : 1);
+  const P_sun = S0*ETA*(A_body*0.3 + A_wing*wf)*degr;
+  const P_gen = P_sun*(1 - fe);
+  const P_base = parts.reduce((s,p) => s + p.power, 0);
+
+  /* Wärme (Ein-Knoten-Modell: Sonne, Erdalbedo, Erd-Infrarot, Eigenwärme) */
+  const H_ = HAUT[c.haut];
+  const cellFrac = A_body/A_tot;
+  const alpha = cellFrac*(0.92 - ETA) + (1 - cellFrac)*H_.a;
+  const eps = cellFrac*0.85 + (1 - cellFrac)*H_.e;
+  const Fv = (1 - Math.sqrt(1 - (RE/r)**2))/2;
+  const Q_ir = eps*237*Fv*A_tot;
+  const Q_sun = alpha*S0*A_tot/4 + alpha*0.3*S0*Fv*A_tot;
+  const kRad = eps*SIGMA*A_tot;
+  const Tk = Q => Math.pow(Q/kRad, 0.25) - 273.15;
+  const T_hotSS = Tk(Q_sun + Q_ir + P_base), T_coldSS = Tk(Q_ir + P_base);
+  const T_mean = Tk((1 - fe)*(Q_sun + Q_ir + P_base) + fe*(Q_ir + P_base));
+  const offs = P_base*(cube ? 0.4 : 0.03);
+  const damp = H_.damp;
+  const tHot = T_mean + offs + damp*(T_hotSS - T_mean);
+  let tCold = T_mean + offs - damp*(T_mean - T_coldSS);
+  const tColdRaw = tCold;
+  let heatUsed = 0;
+  if (c.heizung && tCold < 5){
+    const kInt = cube ? 0.03 : 1.2;
+    const lift = Math.min(5 - tCold, heizW/kInt);
+    tCold += lift; heatUsed = lift*kInt;
+  }
+  const P_heat = heatUsed*Math.min(1, fe + 0.15);
+  const P_cons = P_base + P_heat;
+  const ratio = P_gen/P_cons;
+  const Th = T/3600;
+  const E_ecl = P_cons*fe*Th;
+  const dod = E_ecl/wh;
+  // Oberflächen für Wärmebild
+  const tPlate = Math.pow((alpha*S0 + 0.3*Q_ir/A_tot)/(eps*SIGMA), 0.25) - 273.15;
+  const tSunSide = T_hotSS + 0.45*(tPlate - T_hotSS);
+  const tShadowSide = T_coldSS + 0.3*(T_mean - T_coldSS);
+
+  /* Batterie über 24 Stunden simulieren */
+  const sim = []; let E = wh, emptyAt = -1, minSoc = 1;
+  const dt = Math.max(10, T/240), steps = Math.ceil(86400/dt), every = Math.max(1, Math.floor(steps/480));
+  for (let i = 0; i <= steps; i++){
+    const t = i*dt, ph = (t % T)/T, ecl = Math.abs(ph - 0.5) < fe/2;
+    const gen = ecl ? 0 : P_sun;
+    E = Math.min(wh, E + (gen - P_cons)*dt/3600);
+    if (E <= 0){ E = 0; if (emptyAt < 0) emptyAt = t; }
+    minSoc = Math.min(minSoc, E/wh);
+    if (i % every === 0) sim.push([t, E/wh, ecl]);
+  }
+
+  /* Funk */
+  let contact;
+  if (h >= 35000) contact = 86400;
+  else {
+    const lam = Math.acos(RE/r*Math.cos(10*D2R)) - 10*D2R;
+    contact = (1 - Math.cos(lam))/2*86400*(h < 2000 ? 2 : 1);
+    if (c.boden === "netz") contact = Math.min(contact*(h < 2000 ? 8 : 2), 86400*(h < 2000 ? 0.5 : 0.9));
+  }
+  const dist = h < 2000 ? Math.max(h, 500)*1.8 : h + 2000;
+  const distF = Math.min(1, (cube ? 1 : 20)*(1000/dist)**2);
+  let best = 0, bestKey = null;
+  funkKeys.forEach(x => {
+    const rr = FUNK[x].rate[k]*distF*(x === "laser" ? 0.4 : 1);
+    if (rr > best){ best = rr; bestKey = x; }
+  });
+  const downGB = best*contact*0.6/8/1e9;
+  const needGB = nutzKeys.reduce((s,x) => s + NUTZ[x].data[k], 0) + 0.0005;
+  const needMinDay = best > 0 ? needGB*8e9/(best*0.6)/60 + 10 : 0;
+  const bookedMin = Math.min(contact/60, needMinDay*1.5);
+
+  /* Ausrichtung */
+  const acc = c.stern ? (c.lage === "rw" ? 0.05 : c.lage === "mtq" ? 5 : 45) : LAGE[c.lage].acc;
+  const needs = [];
+  nutzKeys.forEach(x => needs.push({name:NUTZ[x].name, p:NUTZ[x].point}));
+  funkKeys.forEach(x => needs.push({name:FUNK[x].name, p:FUNK[x].point}));
+  const needAcc = needs.reduce((m,n) => Math.min(m, n.p), 180);
+  const tooCoarse = needs.filter(n => n.p < acc);
+
+  /* Start: Eigenfrequenz */
+  const f1 = F.f0*Math.sqrt(F.max*0.6/mass)*(1 - (cube ? 0.035 : 0.012)*c.fluegel*nSeg);
+  const fReq = cube ? 100 : 35;
+
+  /* Lebensdauer & Weltraummüll */
+  const A_drag = A_tot/4 + A_wing_raw*0.5;
+  const life = (m, A) => h >= 2000 ? Infinity : 0.8*Math.exp((h - 400)/62)*((m/A)/60);
+  const L_nat = life(mass, A_drag);
+  const L_sail = c.segel ? life(mass, A_drag + SEGEL.area[k]) : L_nat;
+  const dvHave = ANTRIEB[c.antrieb].dv[k];
+  const dvSK = h >= 35000 ? 50*yrs : h >= 2000 ? 2*yrs : (h < 450 ? 25 : h < 550 ? 8 : 2)*yrs;
+  const dvDis = h >= 35000 ? 11 : h >= 2000 ? 30 : Math.max(0, h - 250)*0.27;
+
+  /* Strahlung */
+  const doseYr = h >= 35000 ? 12 : h >= 2000 ? 40 : 0.5 + Math.max(0, h - 400)/400*2;
+  const dose = doseYr*yrs, tol = OBC[c.obc].tol;
+
+  /* ---------- Tests ---------- */
+  const tests = [];
+  const T_ = (id, name, status, val, text, fix) => tests.push({id, name, status, val, text, fix});
+
+  T_("masse", "Masse", massRes <= F.max ? "ok" : mass <= F.max ? "warn" : "fail",
+    kg(mass) + " / " + nf0.format(F.max) + " kg",
+    "Leer gewogen " + kg(dry) + ", plus Kabel " + kg(harness) + ". Mit 10 % Reserve sind es " + kg(massRes) + ". Der Startplatz für " + F.name + " erlaubt höchstens " + nf0.format(F.max) + " kg.",
+    massRes <= F.max ? "" : "Nimm eine größere Bauform, einen kleineren Akku oder weniger Nutzlast. Antrieb und Hyperspektralkamera sind die schwersten Teile.");
+
+  T_("volumen", "Platz im Gehäuse", vol <= volMax*0.9 ? "ok" : vol <= volMax ? "warn" : "fail",
+    nf1.format(vol) + " / " + nf1.format(volMax) + (cube ? " U" : " L"),
+    "Die inneren Bauteile brauchen " + nf1.format(vol) + (cube ? " U" : " Liter") + ". Nutzbar sind etwa " + nf1.format(volMax) + (cube ? " U" : " Liter") + ", der Rest geht für Rahmen, Kabel und Stecker drauf.",
+    vol <= volMax*0.9 ? "" : "Wechsle zu einer größeren Bauform. Schau dir unter »Innenleben« an, was herausragt.");
+
+  T_("energie", "Energiebilanz", ratio >= 1.2 ? "ok" : ratio >= 1.0 ? "warn" : "fail",
+    nf1.format(P_gen) + " W / " + nf1.format(P_cons) + " W",
+    "Im Mittel über eine Umrundung erzeugen die Solarzellen " + nf1.format(P_gen) + " W (am Missionsende, nach Alterung). Verbraucht werden " + nf1.format(P_cons) + " W. Verhältnis " + nf2.format(ratio) + ", gut ist ab 1,2.",
+    ratio >= 1.2 ? "" : (c.fluegel === 0 ? "Füge ausklappbare Solarflügel hinzu." : c.lage !== "rw" ? "Mit Reaktionsrädern zeigen die Flügel immer zur Sonne – das bringt deutlich mehr Strom." : "Mehr Flügelfelder, eine Dämmerungsbahn oder weniger Verbraucher helfen."));
+
+  const dodOk = h >= 2000 ? 0.6 : 0.3, dodWarn = h >= 2000 ? 0.75 : 0.45;
+  T_("akku", "Akku im Erdschatten", emptyAt >= 0 ? "fail" : dod <= dodOk ? "ok" : dod <= dodWarn ? "warn" : "fail",
+    fe > 0 ? pct(dod) + " Entladung" : "kein Schatten",
+    fe > 0 ? "Pro Umrundung ist der Satellit " + nf0.format(fe*T/60) + " Minuten im Erdschatten und braucht dabei " + nf1.format(E_ecl) + " Wh aus dem Akku. Für lange Lebensdauer sollten es höchstens " + pct(dodOk) + " der Kapazität sein." + (emptyAt >= 0 ? " In der 24-Stunden-Simulation ist der Akku nach " + nf1.format(emptyAt/3600) + " Stunden leer." : " Tiefster Ladestand in 24 Stunden: " + pct(minSoc) + ".")
+           : "In dieser Bahn ist der Satellit fast nie im Erdschatten.",
+    emptyAt >= 0 ? "Der Akku wird leer, weil mehr verbraucht als erzeugt wird. Erst die Energiebilanz reparieren, dann den Akku vergrößern." : dod <= dodOk ? "" : "Vergrößere den Akku auf mindestens " + nf0.format(Math.ceil(E_ecl/dodOk/5)*5) + " Wh.");
+
+  T_("funk", "Datenverbindung", best === 0 ? "fail" : downGB >= needGB*1.5 ? "ok" : downGB >= needGB ? "warn" : "fail",
+    best === 0 ? "kein Funk" : dataStr(downGB) + " / " + dataStr(needGB) + " am Tag",
+    best === 0 ? "Ohne Funkgerät kann niemand mit dem Satelliten sprechen." :
+      "Kontaktzeit mit " + (c.boden === "netz" ? "dem Bodennetz" : "deiner Station") + ": " + (contact >= 86000 ? "rund um die Uhr" : nf0.format(contact/60) + " Minuten am Tag") + ". Über " + FUNK[bestKey].name + " passen damit " + dataStr(downGB) + " herunter. Die Nutzlast erzeugt " + dataStr(needGB) + " am Tag." + (distF < 1 ? " Wegen der großen Entfernung kommt nur " + pct(distF) + " der Datenrate an." : ""),
+    best === 0 ? "Wähle mindestens UHF für Befehle." : downGB >= needGB*1.5 ? (c.funk_uhf ? "" : "Tipp: UHF als Reserve für Notfallbefehle ist üblich und billig.") : "Nimm eine schnellere Funkverbindung (X-Band) oder miete ein Bodennetz mit mehr Stationen.");
+
+  T_("lage", "Ausrichtung", tooCoarse.length ? "fail" : acc*2 > needAcc && needAcc < 180 ? "warn" : "ok",
+    "kann " + degStr(acc) + " · braucht " + (needAcc >= 180 ? "–" : degStr(needAcc)),
+    tooCoarse.length ? tooCoarse.map(n => n.name + " muss auf " + degStr(n.p) + " genau zeigen").join(", ") + ". Die Lageregelung schafft nur " + degStr(acc) + "." :
+      needAcc >= 180 ? "Kein Bauteil muss genau ausgerichtet werden." : "Die Lageregelung hält " + degStr(acc) + ", gebraucht werden " + degStr(needAcc) + ".",
+    tooCoarse.length ? (c.lage !== "rw" ? "Reaktionsräder einbauen" + (needAcc < 0.5 ? " und einen Sternsensor ergänzen." : ".") : "Einen Sternsensor ergänzen.") : acc*2 > needAcc && needAcc < 180 ? "Knapp – ein Sternsensor gibt Reserve." : "");
+
+  const thermFail = tCold < 0 || tHot > 45 || tCold < -20 || tHot > 60;
+  const thermWarn = tCold < 5 || tHot > 40;
+  T_("waerme", "Temperatur innen", thermFail ? "fail" : thermWarn ? "warn" : "ok",
+    nf0.format(tCold) + " bis " + nf0.format(tHot) + " °C",
+    "Im Sonnenlicht wärmt sich der Satellit auf, im Erdschatten kühlt er aus. Innen schwankt es zwischen " + nf0.format(tCold) + " und " + nf0.format(tHot) + " °C. Der Akku verträgt 0 bis 45 °C, die Elektronik −20 bis 60 °C." + (c.heizung && tColdRaw < 5 ? " Die Heizung hebt den kältesten Wert von " + nf0.format(tColdRaw) + " °C an." : ""),
+    tCold < 0 ? (c.heizung ? "Die Heizung reicht nicht. Goldfolie (MLI) dämpft die Kälte." : "Baue eine Akkuheizung ein oder nimm Goldfolie (MLI) als Isolierung.") : tHot > 45 ? (c.haut !== "weiss" ? "Zu heiß: weißer Lack wirft mehr Sonnenlicht zurück." : "Zu heiß: weniger Stromverbrauch senkt die Eigenwärme.") :
+      !thermWarn ? "" : tHot > 40 ? (c.haut !== "weiss" ? "Etwas warm – weißer Lack wirft mehr Sonnenlicht zurück." : "Etwas warm – weniger Stromverbrauch senkt die Eigenwärme.") :
+      c.haut !== "mli" ? "Etwas kühl – Goldfolie (MLI) glättet die Schwankungen." : c.heizung ? "Etwas kühl, die Heizung hält den Akku aber über 0 °C." : "Etwas kühl – eine Akkuheizung gibt Reserve.");
+
+  T_("start", "Start & Vibration", mass > F.max ? "fail" : f1 >= fReq*1.15 ? "ok" : f1 >= fReq ? "warn" : "fail",
+    "Eigenfrequenz " + nf0.format(f1) + " Hz",
+    "Beim Start schüttelt die Rakete stark. Die niedrigste Eigenschwingung des Satelliten liegt bei etwa " + nf0.format(f1) + " Hz. Die Rakete verlangt mehr als " + fReq + " Hz, sonst schaukelt er sich auf." + (mass > F.max ? " Außerdem ist er zu schwer für den Startplatz." : ""),
+    f1 >= fReq*1.15 ? "" : "Weniger oder kürzere Solarflügel und weniger Masse machen ihn steifer.");
+
+  let lifeStatus, lifeVal, lifeText, lifeFix = "";
+  if (h >= 2000){
+    const need = dvSK + dvDis;
+    lifeStatus = dvHave >= need ? "ok" : dvHave >= dvDis ? "warn" : "fail";
+    lifeVal = nf0.format(dvHave) + " / " + nf0.format(need) + " m/s";
+    lifeText = "So hoch oben bremst keine Luft – der Satellit bliebe für immer dort. Er braucht Treibstoff, um die Position zu halten (" + nf0.format(dvSK) + " m/s) und am Ende auf eine Friedhofsbahn auszuweichen (" + nf0.format(dvDis) + " m/s).";
+    if (lifeStatus !== "ok") lifeFix = c.antrieb === "elek" ? "Mehr Treibstoff nötig – nimm einen Kleinsatelliten." : "Ein elektrischer Antrieb liefert genug Schub für viele Jahre.";
+  } else {
+    const ok5 = (L_nat - yrs) <= 5;
+    const dvOk = dvHave >= dvDis + (L_nat < yrs ? dvSK : 0);
+    if (L_nat < yrs && dvHave < dvSK){
+      lifeStatus = "fail"; lifeVal = "verglüht nach " + nf1.format(L_nat) + " J.";
+      lifeText = "In " + nf0.format(h) + " km Höhe bremst die dünne Luft. Der Satellit fällt nach etwa " + nf1.format(L_nat) + " Jahren und verglüht – vor dem Ende der Mission (" + yrs + " Jahre).";
+      lifeFix = "Fliege höher oder baue einen Antrieb ein, der die Bahn wieder anhebt.";
+    } else if (ok5 || dvOk || (c.segel && L_sail <= 5)){
+      lifeStatus = "ok";
+      const how = ok5 ? "Er verglüht von selbst nach etwa " + nf1.format(Math.max(L_nat, 0.1)) + " Jahren." : dvOk ? "Am Ende bremst ihn sein Antrieb ab und er verglüht kontrolliert." : "Nach der Mission öffnet sich das Bremssegel, dann verglüht er in etwa " + nf1.format(L_sail) + " Jahren.";
+      lifeVal = L_nat > 200 ? "> 200 Jahre ohne Hilfe" : "natürlich " + nf1.format(L_nat) + " J.";
+      lifeText = "Regel: Spätestens 5 Jahre nach Missionsende muss der Satellit aus der Umlaufbahn verschwinden. " + how;
+    } else {
+      lifeStatus = "fail"; lifeVal = L_nat > 200 ? "> 200 Jahre Müll" : nf0.format(L_nat - yrs) + " J. Müll";
+      lifeText = "Nach der Mission würde der Satellit noch " + (L_nat > 200 ? "Jahrhunderte" : "etwa " + nf0.format(L_nat - yrs) + " Jahre") + " als Weltraummüll kreisen. Erlaubt sind höchstens 5 Jahre – ohne Lösung gibt es keine Startgenehmigung.";
+      lifeFix = h > 750 ? "Baue einen Antrieb ein (nötig: " + nf0.format(dvDis) + " m/s) oder fliege niedriger." : "Ein Bremssegel löst das günstig, oder fliege etwas niedriger.";
+    }
+  }
+  T_("leben", "Weltraummüll-Regel", lifeStatus, lifeVal, lifeText, lifeFix);
+
+  T_("strahlung", "Strahlung", dose <= tol*0.5 ? "ok" : dose <= tol ? "warn" : "fail",
+    nf0.format(dose) + " / " + nf0.format(tol) + " krad",
+    "In dieser Bahn sammelt die Elektronik etwa " + nf1.format(doseYr) + " krad pro Jahr, nach " + yrs + " Jahren also " + nf0.format(dose) + " krad. Der Bordcomputer verträgt " + nf0.format(tol) + " krad.",
+    dose <= tol*0.5 ? "" : c.obc !== "rad" ? "Ein strahlenfester Bordcomputer hält deutlich mehr aus." : "Kürzere Mission oder niedrigere Bahn.");
+
+  /* ---------- Kosten ---------- */
+  const hw = parts.reduce((s,p) => s + p.cost, 0);
+  const once = [], run = [];
+  once.push({name:"Montage, Kabelbaum, Stecker", cost:hw*0.06});
+  once.push({name:"Testmodell (zweites Exemplar für Bodentests)", cost:hw*0.25});
+  once.push({name:"Umwelttests: Rütteltisch, Thermal-Vakuum, EMV", cost:F.test});
+  const launch = cube ? F.launch*B.x : Math.max(400000, 6500*mass)*B.x + 25000;
+  once.push({name:"Start als Mitflieger" + (cube ? " (inkl. Ausstoßbehälter)" : " (inkl. Trennring)"), cost:launch});
+  once.push({name:"Frequenzanmeldung, Zulassung, Haftpflicht", cost:cube ? 12000 : 120000 + 0.03*(hw + launch)});
+  if (c.boden === "eigen"){
+    const st = funkKeys.reduce((s,x) => s + FUNK[x].station, 0) + (cube ? 4000 : 40000);
+    once.push({name:"Bodenstation: " + funkKeys.map(x => FUNK[x].name).join(", ") + (funkKeys.length ? " + Rechner" : ""), cost:st});
+  } else {
+    once.push({name:"Einrichtung Bodennetz", cost:5000});
+    const rate = funkKeys.reduce((m,x) => Math.max(m, FUNK[x].min), 0);
+    run.push({name:"Bodennetz-Miete: " + nf0.format(bookedMin) + " min/Tag × " + rate + " €/min × " + yrs + " J.", cost:bookedMin*365*rate*yrs});
+  }
+  const subOnce = hw + once.reduce((s,x) => s + x.cost, 0);
+  once.push({name:"Reserve für Unvorhergesehenes (15 %)", cost:subOnce*0.15});
+  run.push({name:"Missionsbetrieb: Überwachung, Steuerung (" + yrs + " J.)", cost:(cube ? 25000 : 250000)*yrs});
+  const totalOnce = subOnce*1.15, totalRun = run.reduce((s,x) => s + x.cost, 0);
+
+  return {c, F, B, cube, k, h, T, fe, parts, dry, harness, mass, massRes, vol, volMax, P_sun, P_gen, P_cons, ratio, dod, E_ecl,
+    sim, emptyAt, minSoc, contact, downGB, needGB, best, bestKey, acc, needAcc, f1, fReq, L_nat, tHot, tCold, tSunSide, tShadowSide,
+    tests, hw, once, run, totalOnce, totalRun, total:totalOnce + totalRun, launch, funkKeys, nutzKeys, nSeg, A_wing, A_body, dose, tol};
+}
+
+/* =====================================================================
+   Formular
+   ===================================================================== */
+const form = document.getElementById("cfg");
+function optRadio(key, obj, hintKey){
+  return '<div class="opts" role="radiogroup">' + Object.entries(obj).map(([v,o]) =>
+    '<label class="opt"><input type="radio" name="' + key + '" value="' + v + '" id="f-' + key + '-' + v + '"><span><span class="opt-name">' + esc(o.name) + '</span><span class="opt-sub">' + esc(o.sub) + '</span></span><span class="opt-hint" data-hint="' + (hintKey || key) + ':' + v + '"></span></label>').join("") + '</div>';
+}
+function optChecks(prefix, obj){
+  return '<div class="opts">' + Object.entries(obj).map(([v,o]) =>
+    '<label class="opt"><input type="checkbox" name="' + prefix + v + '" id="f-' + prefix + v + '"><span><span class="opt-name">' + esc(o.name) + '</span><span class="opt-sub">' + esc(o.sub) + '</span></span><span class="opt-hint" data-hint="' + prefix + v + '"></span></label>').join("") + '</div>';
+}
+function check1(key, o){
+  return '<div class="opts"><label class="opt"><input type="checkbox" name="' + key + '" id="f-' + key + '"><span><span class="opt-name">' + esc(o.name) + '</span><span class="opt-sub">' + esc(o.sub) + '</span></span><span class="opt-hint" data-hint="' + key + '"></span></label></div>';
+}
+function seg(key, opts, label){
+  return '<div class="field">' + (label ? '<span class="lbl">' + label + '</span>' : '') + '<div class="seg" role="radiogroup"' + (label ? ' aria-label="' + esc(label) + '"' : '') + '>' + opts.map(([v,t,s]) =>
+    '<label><input type="radio" name="' + key + '" value="' + v + '" id="f-' + key + '-' + v + '"><span>' + t + (s ? '<small>' + s + '</small>' : '') + '</span></label>').join("") + '</div></div>';
+}
+function range(key, label, min, max, step, unit){
+  return '<div class="field range" data-wrap="' + key + '"><label class="lbl" for="f-' + key + '">' + label + '</label><output id="o-' + key + '" for="f-' + key + '"></output><input type="range" id="f-' + key + '" name="' + key + '" min="' + min + '" max="' + max + '" step="' + step + '" data-unit="' + unit + '"></div>';
+}
+form.innerHTML =
+  '<div class="sec"><h2>Mission</h2>' +
+    '<label class="field"><span class="lbl">Name</span><input type="text" id="f-titel" name="titel" maxlength="40"></label>' +
+    '<div class="field"><span class="lbl">Umlaufbahn</span>' + optRadio("bahn", BAHNEN, "none") + '</div>' +
+    range("hoehe", "Bahnhöhe", 300, 1200, 10, "km") +
+    range("jahre", "Missionsdauer", 1, 15, 1, "Jahre") +
+  '</div>' +
+  '<div class="sec"><h2>Bauform <i id="dimLine"></i></h2>' +
+    seg("format", [["1U","1U","10 cm"],["3U","3U","34 cm"],["6U","6U","34 cm"],["12U","12U","34 cm"],["S","Klein","bis 250 kg"]]) +
+  '</div>' +
+  '<div class="sec"><h2>Energie</h2>' +
+    check1("koerper", {name:"Solarzellen auf dem Gehäuse", sub:"fest aufgeklebt, keine Mechanik"}) +
+    seg("fluegel", [["0","Keine"],["2","2 Flügel"],["4","4 Flügel"]], "Ausklappbare Solarflügel") +
+    range("segmente", "Felder je Flügel", 1, 3, 1, "") +
+    range("batterie", "Akku", 10, 200, 5, "Wh") +
+  '</div>' +
+  '<div class="sec"><h2>Funk</h2>' + optChecks("funk_", FUNK) +
+    '<div class="field"><span class="lbl">Bodenstation</span>' + optRadio("boden", BODEN, "none") + '</div>' +
+  '</div>' +
+  '<div class="sec"><h2>Lageregelung & Antrieb</h2>' + optRadio("lage", LAGE) + check1("stern", STERN) +
+    '<div class="field"><span class="lbl">Antrieb</span>' + optRadio("antrieb", ANTRIEB) + '</div>' + check1("segel", SEGEL) +
+  '</div>' +
+  '<div class="sec"><h2>Nutzlast</h2>' + optChecks("nutz_", NUTZ) + '</div>' +
+  '<div class="sec"><h2>Bordcomputer & Wärme</h2>' + optRadio("obc", OBC) +
+    '<div class="field"><span class="lbl">Oberfläche</span>' + optRadio("haut", HAUT) + '</div>' + check1("heizung", {name:HEIZ.name, sub:"hält den Akku im Erdschatten über 5 °C"}) +
+  '</div>';
+
+document.getElementById("presets").innerHTML = Object.entries(PRESETS).map(([k,p]) =>
+  '<button type="button" data-preset="' + k + '">' + esc(p.label) + '<small>' + esc(p.sub) + '</small></button>').join("");
+
+const NUMS = ["hoehe","jahre","segmente","batterie","fluegel"];
+const BOOLS = ["koerper","stern","segel","heizung", ...Object.keys(FUNK).map(x => "funk_" + x), ...Object.keys(NUTZ).map(x => "nutz_" + x)];
+const RADIOS = ["bahn","format","fluegel","boden","lage","antrieb","obc","haut"];
+function readForm(){
+  const el = form.elements, c = {};
+  c.titel = el.titel.value.trim() || "Mein Satellit";
+  RADIOS.forEach(k => { const x = form.querySelector('input[name="' + k + '"]:checked'); c[k] = x ? x.value : null; });
+  ["hoehe","jahre","segmente","batterie"].forEach(k => c[k] = Number(el[k].value));
+  c.fluegel = Number(c.fluegel);
+  BOOLS.forEach(k => c[k] = el[k].checked);
+  return c;
+}
+function batteryRange(fmt){
+  const b = form.elements.batterie;
+  if (FORMATE[fmt].cube){ b.min = 10; b.max = 250; b.step = 5; } else { b.min = 200; b.max = 5000; b.step = 50; }
+}
+function writeForm(c){
+  const el = form.elements;
+  el.titel.value = c.titel;
+  batteryRange(c.format);
+  RADIOS.forEach(k => { const x = form.querySelector('input[name="' + k + '"][value="' + c[k] + '"]'); if (x) x.checked = true; });
+  ["hoehe","jahre","segmente","batterie"].forEach(k => el[k].value = c[k]);
+  BOOLS.forEach(k => el[k].checked = !!c[k]);
+}
+function tupleFor(key, v, k){
+  const map = {obc:OBC, lage:LAGE, antrieb:ANTRIEB, haut:HAUT};
+  if (map[key]) return map[key][v] && map[key][v][k];
+  if (key.startsWith("funk_")) return FUNK[key.slice(5)][k];
+  if (key.startsWith("nutz_")) return NUTZ[key.slice(5)][k];
+  if (key === "stern") return STERN[k];
+  if (key === "segel") return SEGEL[k];
+  if (key === "heizung") return HEIZ[k];
+  return null;
+}
+function refreshHints(c, R){
+  form.querySelectorAll("[data-hint]").forEach(n => {
+    const [key, v] = n.dataset.hint.split(":");
+    if (key === "none"){ n.textContent = ""; return; }
+    if (key === "koerper"){ const [W,H,D] = R.F.d, A = (W*H*2 + D*H*2)*0.008; n.innerHTML = eur(A*(R.cube ? 230000 : 110000)).replace(" €","&nbsp;€"); return; }
+    const t = tupleFor(key, v, R.k);
+    if (!t){ n.textContent = ""; return; }
+    n.innerHTML = t[3] === 0 ? "–" : (t[0] >= 0.01 ? kg(t[0]).replace(" kg","&nbsp;kg") + "<br>" : "") + eur(t[3]).replace(" €","&nbsp;€");
+  });
+  const o = id => document.getElementById("o-" + id);
+  o("hoehe").textContent = nf0.format(c.hoehe) + " km";
+  o("jahre").textContent = c.jahre + (c.jahre === 1 ? " Jahr" : " Jahre");
+  o("segmente").textContent = c.segmente;
+  o("batterie").textContent = nf0.format(c.batterie) + " Wh · " + kg(c.batterie/110);
+  form.querySelector('[data-wrap="hoehe"]').hidden = !!BAHNEN[c.bahn].h;
+  form.querySelector('[data-wrap="segmente"]').hidden = c.fluegel === 0;
+  const [W,H,D] = R.F.d;
+  document.getElementById("dimLine").textContent = nf0.format(W*10) + " × " + nf0.format(D*10) + " × " + nf0.format(H*10) + " cm";
+}
+
+/* =====================================================================
+   Ergebnisansicht
+   ===================================================================== */
+let R = null, revealNext = false;
+function renderResults(){
+  const c = R.c;
+  document.getElementById("missionLine").textContent = c.titel + " · " + R.F.name + " · " + BAHNEN[c.bahn].name;
+  document.getElementById("topCost").textContent = eur(R.total);
+  const fails = R.tests.filter(t => t.status === "fail"), warns = R.tests.filter(t => t.status === "warn");
+  const v = document.getElementById("verdict");
+  v.className = "verdict " + (fails.length ? "v-fail" : warns.length ? "v-warn" : "v-ok");
+  v.innerHTML = fails.length
+    ? "<b>Noch nicht startklar</b><span>" + fails.length + (fails.length === 1 ? " Prüfung fällt" : " Prüfungen fallen") + " durch: " + fails.map(t => t.name).join(", ") + ". Öffne sie für einen Lösungsvorschlag.</span>"
+    : warns.length ? "<b>Startklar mit Auflagen</b><span>" + warns.length + " Punkt" + (warns.length === 1 ? "" : "e") + " knapp: " + warns.map(t => t.name).join(", ") + ".</span>"
+    : "<b>Startklar</b><span>Alle " + R.tests.length + " Prüfungen bestanden. Bauzeit etwa " + buildMonths() + " Monate.</span>";
+
+  const bud = (name, val, max, txt) => {
+    const f = Math.min(1, val/max), cls = val > max ? "fail" : val > max*0.9 ? "warn" : "";
+    return '<div class="bud"><span>' + name + '</span><span class="val">' + txt + '</span><div class="track"><div class="fill ' + cls + '" style="width:' + (f*100).toFixed(1) + '%"></div></div></div>';
+  };
+  document.getElementById("budgets").innerHTML =
+    bud("Masse (mit Reserve)", R.massRes, R.F.max, kg(R.massRes) + " von " + nf0.format(R.F.max) + " kg") +
+    bud("Platz innen", R.vol, R.volMax, nf1.format(R.vol) + " von " + nf1.format(R.volMax) + (R.cube ? " U" : " L")) +
+    bud("Stromverbrauch", R.P_cons, Math.max(R.P_gen, 0.01), nf1.format(R.P_cons) + " von " + nf1.format(R.P_gen) + " W");
+
+  const open = new Set([...document.querySelectorAll(".test[open]")].map(d => d.dataset.id));
+  document.getElementById("tests").innerHTML = R.tests.map((t,i) =>
+    '<li><details class="test' + (revealNext ? " reveal" : "") + '" data-id="' + t.id + '"' + (open.has(t.id) ? " open" : "") + (revealNext ? ' style="animation-delay:' + (i*90) + 'ms"' : "") + '>' +
+    '<summary><span class="pill ' + t.status + '" role="img" aria-label="' + ({ok:"bestanden", warn:"knapp", fail:"durchgefallen"}[t.status]) + '"></span><span class="tname">' + t.name + '</span><span class="tval">' + esc(t.val) + '</span></summary>' +
+    '<div class="tbody"><p>' + esc(t.text) + '</p>' + (t.fix ? '<p class="fix">' + esc(t.fix) + '</p>' : '') + '</div></details></li>').join("");
+  revealNext = false;
+
+  document.getElementById("costHero").innerHTML =
+    '<div class="big">' + eur(R.total) + '</div>' +
+    '<div class="split"><span>Einmalig <b>' + eur(R.totalOnce) + '</b></span><span>Laufend über ' + c.jahre + (c.jahre === 1 ? " Jahr" : " Jahre") + ' <b>' + eur(R.totalRun) + '</b></span><span>Bauteile <b>' + eur(R.hw) + '</b></span><span>Start <b>' + eur(R.launch) + '</b></span></div>';
+
+  const rows = [];
+  rows.push('<thead><tr><th>Posten</th><th class="n">Masse</th><th class="n">Preis</th></tr></thead><tbody>');
+  rows.push('<tr class="grp"><td colspan="3">Bauteile</td></tr>');
+  R.parts.forEach(p => rows.push('<tr><td><span class="dot" style="background:' + CAT[p.cat].col + '"></span>' + esc(p.name) + '</td><td class="n">' + (p.mass > 0 ? kg(p.mass) : "–") + '</td><td class="n">' + eurExact(p.cost) + '</td></tr>'));
+  rows.push('<tr><td><span class="dot" style="background:' + CAT.struktur.col + '"></span>Kabel und Kleinteile</td><td class="n">' + kg(R.harness) + '</td><td class="n">in Montage</td></tr>');
+  rows.push('<tr class="sum"><td>Summe Bauteile</td><td class="n">' + kg(R.mass) + '</td><td class="n">' + eurExact(R.hw) + '</td></tr>');
+  rows.push('<tr class="grp"><td colspan="3">Einmalig</td></tr>');
+  R.once.forEach(x => rows.push('<tr><td>' + esc(x.name) + '</td><td class="n"></td><td class="n">' + eurExact(x.cost) + '</td></tr>'));
+  rows.push('<tr class="grp"><td colspan="3">Laufend</td></tr>');
+  R.run.forEach(x => rows.push('<tr><td>' + esc(x.name) + '</td><td class="n"></td><td class="n">' + eurExact(x.cost) + '</td></tr>'));
+  rows.push('<tr class="sum"><td>Gesamt</td><td class="n"></td><td class="n">' + eurExact(R.total) + '</td></tr></tbody>');
+  document.getElementById("shop").innerHTML = rows.join("");
+
+  const ex = [];
+  ex.push("<b>Frequenzanmeldung</b> bei der Bundesnetzagentur, die sie an die ITU weitergibt. Vorlauf etwa 2 Jahre – als Erstes erledigen.");
+  ex.push("<b>Startplatz buchen</b> bei einem Mitflug-Anbieter, 12 bis 18 Monate vor dem Start.");
+  if (c.funk_uhf && c.boden === "eigen") ex.push("<b>Amateurfunk-Koordination</b> (IARU), wenn du im Amateurfunkband sendest – kostenlos, verlangt aber offene Funkprotokolle.");
+  if (c.boden === "eigen") ex.push("<b>Antennenplatz mit freier Sicht</b>: " + (R.funkKeys.some(x => x === "x" || x === "s") ? "Parabolantenne mit 2–4 m Durchmesser und Motor-Nachführung." : "Yagi-Antenne mit Rotor, passt auf ein Hausdach."));
+  if (c.funk_laser) ex.push("<b>Optische Bodenstation</b> an einem Ort mit wenig Wolken (z. B. Kanaren), sonst kommt kaum etwas an.");
+  ex.push("<b>Reinraum oder ESD-Arbeitsplatz</b> für die Montage, dazu ein »Flatsat« – alle Platinen ausgebreitet auf dem Tisch zum Testen.");
+  ex.push("<b>Team</b>: " + (R.cube ? "3–6 Leute für Elektronik, Software, Mechanik und Funk." : "15–40 Leute, dazu Systemingenieure und Qualitätssicherung.") + " Bauzeit etwa " + buildMonths() + " Monate.");
+  ex.push("<b>Registrierung</b> im UN-Register für Weltraumobjekte und beim Weltraumlagezentrum, damit andere Satelliten dir ausweichen können.");
+  if (c.antrieb === "chem") ex.push("<b>Sicherheitsnachweis für den Treibstoff</b> – Startanbieter prüfen Tanks unter Druck besonders genau.");
+  document.getElementById("extra").innerHTML = ex.map(x => "<li><span>" + x + "</span></li>").join("");
+}
+function buildMonths(){
+  const c = R.c; let m = R.cube ? 10 + R.F.U*0.8 : 30;
+  m += R.nutzKeys.some(x => ["multi","hyper","relay"].includes(x)) ? 6 : 0;
+  m += c.antrieb !== "none" ? 4 : 0;
+  return nf0.format(Math.round(m/2)*2);
+}
+
+/* =====================================================================
+   3D
+   ===================================================================== */
+const V = {ok:false, mode:"modell", heat:false, shake:null, orbitT:0, testOrbit:null, lastFit:0};
+const view = document.getElementById("view"), canvas = document.getElementById("c3d");
+let renderer, satScene, bgScene, camera, controls, satRoot, earth, clouds, orbitLine, sunLight, hemi, earthGroup;
+const TEX = {};
+
+function hash3(i, j, k){
+  let n = Math.imul(i, 374761393) ^ Math.imul(j, 668265263) ^ Math.imul(k, 1274126177);
+  n = Math.imul(n ^ (n >>> 13), 1274126177); n ^= n >>> 16;
+  return (n >>> 0)/4294967295;
+}
+function vnoise(x, y, z){
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+  const xf = x - xi, yf = y - yi, zf = z - zi;
+  const u = xf*xf*(3 - 2*xf), v = yf*yf*(3 - 2*yf), w = zf*zf*(3 - 2*zf);
+  const L = (a,b,t) => a + (b - a)*t;
+  const c = (dx,dy,dz) => hash3(xi + dx, yi + dy, zi + dz);
+  return L(L(L(c(0,0,0), c(1,0,0), u), L(c(0,1,0), c(1,1,0), u), v), L(L(c(0,0,1), c(1,0,1), u), L(c(0,1,1), c(1,1,1), u), v), w);
+}
+function fbm(x, y, z, oct){ let s = 0, a = 0.5, f = 1; for (let i = 0; i < oct; i++){ s += a*vnoise(x*f, y*f, z*f); f *= 2.03; a *= 0.5; } return s; }
+
+function makeEarthTextures(){
+  const w = 768, hh = 384;
+  const cv = document.createElement("canvas"); cv.width = w; cv.height = hh;
+  const cl = document.createElement("canvas"); cl.width = w; cl.height = hh;
+  const ctx = cv.getContext("2d"), cctx = cl.getContext("2d");
+  const img = ctx.createImageData(w, hh), cim = cctx.createImageData(w, hh);
+  for (let y = 0; y < hh; y++){
+    const lat = (0.5 - y/hh)*Math.PI, cy = Math.sin(lat), cr = Math.cos(lat);
+    for (let x = 0; x < w; x++){
+      const lon = x/w*Math.PI*2, px = cr*Math.cos(lon), pz = cr*Math.sin(lon);
+      const n = fbm(px*1.7 + 11, cy*1.7 + 3, pz*1.7 + 7, 5);
+      const dry = fbm(px*3 + 40, cy*3, pz*3, 3);
+      const i = (y*w + x)*4; let r, g, b;
+      const alat = Math.abs(lat)/D2R;
+      if (n > 0.53){
+        const t = Math.min(1, (n - 0.53)*6);
+        const desert = alat < 35 && alat > 12 && dry > 0.5;
+        if (desert){ r = 196 - t*30; g = 170 - t*30; b = 118 - t*20; }
+        else { r = 52 + t*70 + dry*30; g = 96 + t*40 - dry*10; b = 46 + t*30; }
+        if (alat > 66 || n > 0.7){ r = g = b = 236; }
+      } else {
+        const t = Math.max(0, Math.min(1, (0.53 - n)*5));
+        r = 22 - t*12; g = 82 - t*42; b = 140 - t*40;
+        if (alat > 74){ r = g = 228; b = 238; }
+      }
+      img.data[i] = r; img.data[i+1] = g; img.data[i+2] = b; img.data[i+3] = 255;
+      const cn = fbm(px*2.6 + 90, cy*4.5 + 20, pz*2.6, 5);
+      const ca = Math.max(0, Math.min(1, (cn - 0.5)*3.2));
+      cim.data[i] = cim.data[i+1] = cim.data[i+2] = 255; cim.data[i+3] = ca*230;
+    }
+  }
+  ctx.putImageData(img, 0, 0); cctx.putImageData(cim, 0, 0);
+  return [cv, cl];
+}
+function cellCanvas(){
+  const cv = document.createElement("canvas"); cv.width = 128; cv.height = 128; const x = cv.getContext("2d");
+  x.fillStyle = "#c3c8d0"; x.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 2; i++){
+    const ox = 3 + i*64, oy = 3, cw = 58, ch = 122, cut = 9;
+    const g = x.createLinearGradient(ox, oy, ox + cw, oy + ch); g.addColorStop(0, "#22327f"); g.addColorStop(1, "#141f5a");
+    x.fillStyle = g; x.beginPath(); x.moveTo(ox + cut, oy); x.lineTo(ox + cw, oy); x.lineTo(ox + cw, oy + ch - cut); x.lineTo(ox + cw - cut, oy + ch); x.lineTo(ox, oy + ch); x.lineTo(ox, oy + cut); x.closePath(); x.fill();
+    x.strokeStyle = "rgba(190,200,230,.28)"; x.lineWidth = 1;
+    for (let kk = 1; kk < 14; kk++){ x.beginPath(); x.moveTo(ox, oy + kk*ch/14); x.lineTo(ox + cw, oy + kk*ch/14); x.stroke(); }
+    x.fillStyle = "rgba(225,228,236,.85)"; x.fillRect(ox + cw/2 - 1.5, oy, 3, ch);
+  }
+  return cv;
+}
+function foilCanvas(){
+  const cv = document.createElement("canvas"); cv.width = 256; cv.height = 256; const x = cv.getContext("2d");
+  const g = x.createLinearGradient(0, 0, 256, 256); g.addColorStop(0, "#c8922e"); g.addColorStop(.5, "#f3d27a"); g.addColorStop(1, "#d39f3c");
+  x.fillStyle = g; x.fillRect(0, 0, 256, 256);
+  let s = 7; const rnd = () => (s = (s*16807) % 2147483647)/2147483647;
+  for (let i = 0; i < 260; i++){
+    const cx = rnd()*256, cy = rnd()*256, rr = 8 + rnd()*30;
+    x.fillStyle = rnd() > 0.5 ? "rgba(255,236,170," + (rnd()*0.22) + ")" : "rgba(90,55,10," + (rnd()*0.2) + ")";
+    x.beginPath(); for (let a = 0; a < 5; a++){ const an = a/5*Math.PI*2 + rnd(); x.lineTo(cx + Math.cos(an)*rr*(0.5 + rnd()), cy + Math.sin(an)*rr*(0.5 + rnd())); } x.fill();
+  }
+  return cv;
+}
+function texFrom(cv, rx, ry){
+  const t = new THREE.CanvasTexture(cv); t.encoding = THREE.sRGBEncoding; t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(rx, ry); t.anisotropy = 4; return t;
+}
+
+function init3d(){
+  if (!window.THREE || !THREE.OrbitControls){ document.getElementById("no3d").hidden = false; return; }
+  try {
+    renderer = new THREE.WebGLRenderer({canvas, antialias:true, preserveDrawingBuffer:false});
+  } catch(e){ document.getElementById("no3d").hidden = false; return; }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.autoClear = false;
+  renderer.setClearColor(new THREE.Color(getComputedStyle(view).backgroundColor || "#101823"), 1);
+  satScene = new THREE.Scene(); bgScene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(38, 1, 0.05, 6000);
+  controls = new THREE.OrbitControls(camera, canvas);
+  controls.enableDamping = true; controls.dampingFactor = 0.08; controls.autoRotate = true; controls.autoRotateSpeed = 0.7;
+  controls.addEventListener("start", () => controls.autoRotate = false);
+
+  hemi = new THREE.HemisphereLight(0xc7d5ea, 0x3a2f22, 0.75); satScene.add(hemi);
+  sunLight = new THREE.DirectionalLight(0xfff6e8, 1.6); sunLight.position.set(6, 8, 10); satScene.add(sunLight);
+  const fill = new THREE.DirectionalLight(0x9db4ff, 0.35); fill.position.set(-8, -3, -6); satScene.add(fill);
+
+  // Sterne
+  const sg = new THREE.BufferGeometry(), pos = [];
+  let s = 3; const rnd = () => (s = (s*16807) % 2147483647)/2147483647;
+  for (let i = 0; i < 1800; i++){ const u = rnd()*2 - 1, a = rnd()*Math.PI*2, q = Math.sqrt(1 - u*u); pos.push(q*Math.cos(a)*2500, u*2500, q*Math.sin(a)*2500); }
+  sg.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  bgScene.add(new THREE.Points(sg, new THREE.PointsMaterial({color:0xbfcbe0, size:1.4, sizeAttenuation:false})));
+
+  // Erde
+  earthGroup = new THREE.Group(); earthGroup.visible = false; bgScene.add(earthGroup);
+  const [ecv, ccv] = makeEarthTextures();
+  earth = new THREE.Mesh(new THREE.SphereGeometry(30, 72, 48), new THREE.MeshPhongMaterial({map:texFrom(ecv,1,1), shininess:12, specular:0x223344}));
+  clouds = new THREE.Mesh(new THREE.SphereGeometry(30.25, 72, 48), new THREE.MeshLambertMaterial({map:texFrom(ccv,1,1), transparent:true, depthWrite:false}));
+  const atm = new THREE.Mesh(new THREE.SphereGeometry(31.4, 64, 40), new THREE.MeshBasicMaterial({color:0x5aa0ff, transparent:true, opacity:0.12, side:THREE.BackSide, depthWrite:false}));
+  earthGroup.add(earth, clouds, atm);
+  const eSun = new THREE.DirectionalLight(0xffffff, 1.35); eSun.position.set(100, 0, 0); bgScene.add(eSun);
+  bgScene.add(new THREE.AmbientLight(0x223047, 0.35));
+
+  TEX.cell = cellCanvas(); TEX.foil = foilCanvas();
+  V.ok = true;
+  new ResizeObserver(resize).observe(view); resize();
+  requestAnimationFrame(loop);
+}
+function resize(){
+  if (!V.ok) return;
+  const w = view.clientWidth, h = view.clientHeight;
+  renderer.setSize(w, h, false); camera.aspect = w/Math.max(1, h); camera.updateProjectionMatrix();
+  if (!document.getElementById("hud").hidden) drawSoc();
+}
+
+/* ---------- Materialien ---------- */
+function M(){
+  const std = (o) => new THREE.MeshStandardMaterial(o);
+  return {
+    alu: std({color:0xb9c0c8, metalness:0.75, roughness:0.38}),
+    dark: std({color:0x2a2f37, metalness:0.3, roughness:0.6}),
+    black: std({color:0x0f1115, metalness:0.2, roughness:0.5}),
+    pcb: std({color:0x1f5c3b, metalness:0.1, roughness:0.7}),
+    white: std({color:0xeef0f2, metalness:0.0, roughness:0.55}),
+    copper: std({color:0xc98a4b, metalness:0.85, roughness:0.3}),
+    glass: std({color:0x1b2c55, metalness:0.95, roughness:0.08}),
+    tape: std({color:0xd8dbe0, metalness:0.8, roughness:0.25}),
+    blue: std({color:0x6fb6ff, emissive:0x3a8dff, emissiveIntensity:0.9, metalness:0, roughness:0.4}),
+    sail: std({color:0xc9ced6, metalness:0.9, roughness:0.2})
+  };
+}
+function cellMat(w, h){ return new THREE.MeshStandardMaterial({map:texFrom(TEX.cell, Math.max(1, Math.round(w)), Math.max(1, Math.round(h/1.135))), metalness:0.35, roughness:0.32}); }
+function coatMat(haut, w, h){
+  if (haut === "mli") return new THREE.MeshStandardMaterial({map:texFrom(TEX.foil, Math.max(1, w/2.5), Math.max(1, h/2.5)), metalness:0.45, roughness:0.38});
+  if (haut === "schwarz") return new THREE.MeshStandardMaterial({color:0x22252b, metalness:0.4, roughness:0.45});
+  return new THREE.MeshStandardMaterial({color:0xf1f2f0, metalness:0.0, roughness:0.6});
+}
+const mesh = (g, m) => new THREE.Mesh(g, m);
+const box = (w, h, d, m) => mesh(new THREE.BoxGeometry(w, h, d), m);
+const cyl = (rt, rb, h, m, seg) => mesh(new THREE.CylinderGeometry(rt, rb, h, seg || 28), m);
+function dish(R, depth, m){
+  const pts = []; for (let i = 0; i <= 18; i++){ const rr = R*i/18; pts.push(new THREE.Vector2(rr, depth*(rr/R)**2)); }
+  const d = mesh(new THREE.LatheGeometry(pts, 40), m); m.side = THREE.DoubleSide; return d;
+}
+
+/* ---------- Satellit bauen ---------- */
+function buildSat(c){
+  const F = FORMATE[c.format], cube = F.cube, [W,H,D] = F.d, m = M();
+  const g = new THREE.Group(), outer = new THREE.Group(), inner = new THREE.Group();
+  g.add(outer, inner);
+  const innen = V.mode === "innen";
+  const bodyMats = [];
+  const faceMat = (w, h, cells) => { const mm = cells ? cellMat(w, h) : coatMat(c.haut, w, h); bodyMats.push(mm); return mm; };
+  const inset = cube ? 0.94 : 1;
+  const mats = [faceMat(D, H, c.koerper), faceMat(D, H, c.koerper), faceMat(W, D, false), faceMat(W, D, false), faceMat(W, H, c.koerper), faceMat(W, H, c.koerper)];
+  const body = mesh(new THREE.BoxGeometry(W*inset, H*0.985, D*inset), mats); outer.add(body);
+  if (cube){
+    const rw = 0.085, railMat = m.alu; bodyMats.push(railMat);
+    [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([sx,sz]) => { const r = box(rw, H + 0.07, rw, railMat); r.position.set(sx*(W/2 - rw/2), 0, sz*(D/2 - rw/2)); outer.add(r); });
+    [-1,1].forEach(sy => {
+      const y = sy*(H/2 - 0.02);
+      const a = box(W, 0.04, rw*0.6, railMat); a.position.set(0, y, D/2 - rw*0.3); outer.add(a);
+      const b = a.clone(); b.position.z = -(D/2 - rw*0.3); outer.add(b);
+      const cc = box(rw*0.6, 0.04, D, railMat); cc.position.set(W/2 - rw*0.3, y, 0); outer.add(cc);
+      const d = cc.clone(); d.position.x = -(W/2 - rw*0.3); outer.add(d);
+    });
+    for (let u = 1; u < Math.round(H/1.135); u++){ const y = -H/2 + u*1.135; [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([sx,sz]) => { const n = box(0.1, 0.03, 0.1, railMat); n.position.set(sx*(W/2 - 0.0425), y, sz*(D/2 - 0.0425)); outer.add(n); }); }
+  } else {
+    const ring = cyl(2.2, 2.4, 0.5, m.alu, 48); ring.position.y = -H/2 - 0.25; outer.add(ring); bodyMats.push(m.alu);
+    const rad = box(W*0.7, H*0.6, 0.06, m.white); rad.position.set(0, 0, -D/2 - 0.03); outer.add(rad);
+  }
+  if (innen){ bodyMats.forEach(mm => { mm.transparent = true; mm.opacity = 0.16; mm.depthWrite = false; }); }
+
+  /* Solarflügel */
+  const nSeg = c.fluegel > 0 ? c.segmente : 0;
+  const backMat = new THREE.MeshStandardMaterial({color:0x30343b, metalness:0.4, roughness:0.5});
+  const addWing = (axis, sign) => {
+    const along = cube ? (axis === "x" ? D : W) : 6, tall = cube ? H*0.96 : 8, gap = cube ? 0.05 : 0.15;
+    const start = (axis === "x" ? W : D)/2 + (cube ? 0.06 : 1.4);
+    if (!cube){ const boom = cyl(0.08, 0.08, 1.4, m.alu, 10); boom.rotation.z = Math.PI/2; if (axis === "z") boom.rotation.set(Math.PI/2, 0, 0);
+      const p = (axis === "x" ? W : D)/2 + 0.7; boom.position[axis] = sign*p; outer.add(boom); }
+    for (let i = 0; i < nSeg; i++){
+      const cm = cellMat(along, tall), cm2 = cellMat(along, tall);
+      const off = sign*(start + i*(along + gap) + along/2);
+      let p;
+      if (axis === "x"){ p = mesh(new THREE.BoxGeometry(along, tall, 0.03), [backMat, backMat, backMat, backMat, cm, cm2]); p.position.set(off, 0, 0); }
+      else { p = mesh(new THREE.BoxGeometry(0.03, tall, along), [cm, cm2, backMat, backMat, backMat, backMat]); p.position.set(0, 0, off); }
+      outer.add(p);
+      if (cube){ const hg = cyl(0.025, 0.025, tall*0.3, m.alu, 8); const hp = sign*(start + i*(along + gap) - gap/2); if (axis === "x") hg.position.set(hp, 0, 0); else hg.position.set(0, 0, hp); outer.add(hg); }
+    }
+  };
+  if (c.fluegel >= 2){ addWing("x", 1); addWing("x", -1); }
+  if (c.fluegel === 4){ addWing("z", 1); addWing("z", -1); }
+
+  /* Front (+Z, zeigt im Orbit zur Erde) */
+  const sc = cube ? 1 : 3.2;
+  const front = [];
+  const lens = (r, len, extra) => {
+    const gg = new THREE.Group();
+    const barrel = cyl(r, r*1.05, len, m.black); barrel.rotation.x = Math.PI/2; barrel.position.z = len/2; gg.add(barrel);
+    const glass = cyl(r*0.78, r*0.78, 0.02, m.glass); glass.rotation.x = Math.PI/2; glass.position.z = len + 0.005; gg.add(glass);
+    const ringM = cyl(r*1.12, r*1.12, 0.04, m.alu); ringM.rotation.x = Math.PI/2; ringM.position.z = 0.02; gg.add(ringM);
+    if (extra){ const b = box(r*2.4, r*2.4, 0.08, m.dark); b.position.z = 0.04; gg.add(b); }
+    return gg;
+  };
+  if (c.nutz_cam) front.push({o:lens(0.2*sc, 0.16*sc), s:0.5*sc});
+  if (c.nutz_multi) front.push({o:lens(0.34*sc, 0.4*sc, true), s:0.85*sc});
+  if (c.nutz_hyper) front.push({o:lens(0.42*sc, 0.75*sc, true), s:1.05*sc});
+  if (c.nutz_iot){
+    class Helix extends THREE.Curve{ getPoint(t, tg){ tg = tg || new THREE.Vector3(); const a = t*Math.PI*2*6; return tg.set(0.1*sc*Math.cos(a), 0.1*sc*Math.sin(a), t*0.55*sc); } }
+    const gg = new THREE.Group(); gg.add(mesh(new THREE.TubeGeometry(new Helix(), 120, 0.012*sc, 6), m.copper));
+    const base = cyl(0.16*sc, 0.16*sc, 0.03, m.white); base.rotation.x = Math.PI/2; gg.add(base);
+    front.push({o:gg, s:0.38*sc});
+  }
+  if (c.funk_s){ const gg = new THREE.Group(); const b = box(0.5*sc, 0.5*sc, 0.03, m.white); b.position.z = 0.015; gg.add(b); const p = box(0.3*sc, 0.3*sc, 0.012, m.copper); p.position.z = 0.035; gg.add(p); front.push({o:gg, s:0.55*sc}); }
+  if (c.funk_x && cube){ const gg = new THREE.Group(); const b = box(0.8, 0.42, 0.03, m.white); b.position.z = 0.015; gg.add(b);
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++){ const p = box(0.13, 0.13, 0.012, m.copper); p.position.set(-0.3 + i*0.2, -0.1 + j*0.2, 0.035); gg.add(p); }
+    front.push({o:gg, s:0.85}); }
+  if (c.funk_laser){ const gg = new THREE.Group(); const fork = box(0.42*sc, 0.1*sc, 0.2*sc, m.alu); fork.position.z = 0.1*sc; gg.add(fork);
+    const tube = cyl(0.15*sc, 0.15*sc, 0.42*sc, m.white); tube.rotation.x = Math.PI/2.6; tube.position.z = 0.3*sc; gg.add(tube);
+    const gl = cyl(0.12*sc, 0.12*sc, 0.02, m.glass); gl.rotation.x = Math.PI/2.6; gl.position.set(0, 0.1*sc, 0.5*sc); gg.add(gl);
+    front.push({o:gg, s:0.5*sc}); }
+  // Raster auf der Frontfläche
+  if (front.length){
+    const cols = W >= 2 ? 2 : 1, rows = Math.ceil(front.length/cols);
+    const cellH = H*0.92/rows, cellW = W*0.92/cols;
+    front.forEach((it, i) => {
+      const col = i % cols, row = Math.floor(i/cols);
+      const k = Math.min(1, 0.88*Math.min(cellH, cellW)/it.s);
+      it.o.scale.setScalar(k);
+      it.o.position.set(-W*0.46 + cellW*(col + 0.5), H*0.46 - cellH*(row + 0.5), D/2);
+      outer.add(it.o);
+    });
+  }
+  /* X-Band-Schüssel (Kleinsatellit) */
+  if (c.funk_x && !cube){ const dm = m.white.clone(); const d = dish(1.3, 0.45, dm); d.rotation.x = -Math.PI/2; d.position.set(W*0.3, -H*0.32, D/2 + 0.9); outer.add(d);
+    const st = cyl(0.08, 0.08, 0.9, m.alu); st.rotation.x = Math.PI/2; st.position.set(W*0.3, -H*0.32, D/2 + 0.45); outer.add(st); }
+  /* Transponder-Reflektor */
+  if (c.nutz_relay){
+    const R_ = cube ? 1.5 : 3.0, dm = new THREE.MeshStandardMaterial({color:0xd9dde3, metalness:0.6, roughness:0.35});
+    const d = dish(R_, R_*0.32, dm); d.rotation.x = -Math.PI/2;
+    if (cube){ d.position.set(0, H/2 + R_ + 0.2, 0.25); const boom = cyl(0.03, 0.03, R_ + 0.3, m.alu, 8); boom.position.set(0, H/2 + (R_ + 0.3)/2, 0); outer.add(boom); }
+    else { d.position.set(-W*0.05, H*0.15, D/2 + 1.6); const st = cyl(0.12, 0.12, 1.6, m.alu); st.rotation.x = Math.PI/2; st.position.set(-W*0.05, H*0.15, D/2 + 0.8); outer.add(st); }
+    outer.add(d);
+    const feed = cyl(0.06*sc, 0.12*sc, 0.35*sc, m.dark); feed.rotation.x = Math.PI/2; feed.position.copy(d.position).add(new THREE.Vector3(0, 0, R_*0.9)); outer.add(feed);
+  }
+  /* UHF-Antennen (Rollmaßband-Antennen) */
+  if (c.funk_uhf){
+    const L = cube ? 1.7 : 5;
+    [[1,0],[-1,0],[0,1],[0,-1]].forEach(([sx,sz]) => { const a = box(sx ? L : 0.03*sc, 0.006, sz ? L : 0.03*sc, m.tape);
+      a.position.set(sx*(W/2 + L/2), H/2 - 0.08*sc, sz*(D/2 + L/2)); outer.add(a); });
+  }
+  /* Rückseite (-Z): Sternsensor, Detektor */
+  if (c.stern){ const gg = new THREE.Group(); const b = cyl(0.13*sc, 0.13*sc, 0.2*sc, m.dark); b.rotation.x = Math.PI/2; b.position.z = -0.1*sc; gg.add(b);
+    const baf = cyl(0.24*sc, 0.14*sc, 0.3*sc, m.black, 24); baf.material = m.black; baf.rotation.x = -Math.PI/2; baf.position.z = -0.35*sc; gg.add(baf);
+    gg.rotation.y = 0.45; gg.position.set(W*0.25, H*0.32, -D/2); outer.add(gg); }
+  if (c.nutz_sci){ const gg = new THREE.Group(); const b = box(0.42*sc, 0.34*sc, 0.1*sc, m.dark); b.position.z = -0.05*sc; gg.add(b);
+    for (let i = 0; i < 5; i++){ const s = box(0.34*sc, 0.025*sc, 0.02, m.alu); s.position.set(0, -0.12*sc + i*0.06*sc, -0.105*sc); gg.add(s); }
+    gg.position.set(-W*0.2, -H*0.15, -D/2); outer.add(gg); }
+  /* Unterseite (-Y): Antrieb, Bremssegel */
+  if (c.antrieb !== "none"){
+    const gg = new THREE.Group(), big = c.antrieb === "chem" ? 1.25 : 1;
+    const noz = cyl(0.04*sc, 0.14*sc*big, 0.26*sc*big, c.antrieb === "elek" ? m.dark : m.alu); noz.position.y = -0.13*sc*big; gg.add(noz);
+    if (c.antrieb === "elek"){ const ring = mesh(new THREE.TorusGeometry(0.11*sc, 0.02*sc, 10, 32), m.blue); ring.rotation.x = Math.PI/2; ring.position.y = -0.26*sc; gg.add(ring); }
+    gg.position.set(0, -H/2 - (cube ? 0.035 : 0.5), 0); outer.add(gg);
+    if (!cube){ [[1,1],[-1,1],[1,-1],[-1,-1]].forEach(([a,b]) => { const t = cyl(0.03*sc, 0.07*sc, 0.15*sc, m.alu); t.position.set(a*W*0.4, -H/2 - 0.1, b*D*0.4); outer.add(t); }); }
+  }
+  if (c.segel){ const s = box(0.45*sc, 0.2*sc, 0.45*sc, m.sail); s.position.set(-W*0.25, -H/2 - 0.1*sc - (cube ? 0.035 : 0), D*0.18); outer.add(s); }
+
+  /* Innenleben */
+  if (innen){
+    const Rr = compute(c);
+    const cap = F.U*(cube ? 0.8 : 0.7);
+    const fw = W*0.78, fd = D*0.78; let y = -H/2 + 0.06;
+    Rr.parts.filter(p => p.internal && p.vol > 0).sort((a,b) => Object.keys(CAT).indexOf(a.cat) - Object.keys(CAT).indexOf(b.cat)).forEach(p => {
+      const hh = Math.max(0.03, p.vol/cap*(H - 0.12));
+      const over = y + hh > H/2 - 0.06;
+      const mat = new THREE.MeshStandardMaterial({color:over ? 0xff3b30 : CAT[p.cat].col, metalness:0.15, roughness:0.6, emissive:over ? 0x550000 : 0x000000});
+      const b = box(fw, Math.max(0.02, hh - 0.025), fd, mat); b.position.y = y + hh/2; inner.add(b);
+      const edge = new THREE.LineSegments(new THREE.EdgesGeometry(b.geometry), new THREE.LineBasicMaterial({color:0x0b0f14, transparent:true, opacity:0.5}));
+      edge.position.copy(b.position); inner.add(edge);
+      y += hh;
+    });
+  }
+  return g;
+}
+function disposeTree(o){ o.traverse(n => { if (n.geometry) n.geometry.dispose(); if (n.material){ (Array.isArray(n.material) ? n.material : [n.material]).forEach(mm => { if (mm.map) mm.map.dispose(); mm.dispose(); }); } }); }
+
+let heatMat = null;
+function getHeatMat(){
+  if (heatMat) return heatMat;
+  heatMat = new THREE.ShaderMaterial({
+    uniforms:{sunDir:{value:new THREE.Vector3(1, 0.25, -0.55).normalize()}},
+    vertexShader:"varying vec3 vN; void main(){ vN = normalize(mat3(modelMatrix)*normal); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }",
+    fragmentShader:"uniform vec3 sunDir; varying vec3 vN;" +
+      "vec3 iron(float t){ vec3 a=vec3(.05,.05,.25), b=vec3(.45,.06,.56), c=vec3(.9,.2,.16), d=vec3(1.,.75,.1), e=vec3(1.,.98,.88);" +
+      "if(t<.25) return mix(a,b,t/.25); if(t<.5) return mix(b,c,(t-.25)/.25); if(t<.75) return mix(c,d,(t-.5)/.25); return mix(d,e,(t-.75)/.25); }" +
+      "void main(){ float t = clamp(dot(normalize(vN), normalize(sunDir))*.55+.45, 0., 1.); gl_FragColor = vec4(iron(t*.94+.03), 1.); }"
+  });
+  return heatMat;
+}
+function applyHeat(on){
+  if (!satRoot) return;
+  satRoot.traverse(n => {
+    if (!n.isMesh) return;
+    if (on){ if (!n.userData.mat) n.userData.mat = n.material; n.material = getHeatMat(); }
+    else if (n.userData.mat){ n.material = n.userData.mat; n.userData.mat = null; }
+  });
+}
+
+function rebuild3d(force){
+  if (!V.ok) return;
+  if (satRoot){ satScene.remove(satRoot); applyHeat(false); disposeTree(satRoot); }
+  satRoot = buildSat(R.c);
+  satScene.add(satRoot);
+  if (V.heat) applyHeat(true);
+  const bb = new THREE.Box3().setFromObject(satRoot), sz = bb.getSize(new THREE.Vector3());
+  satRoot.userData.radius = sz.length()/2;
+  satRoot.userData.center = bb.getCenter(new THREE.Vector3());
+  if (V.mode !== "orbit"){
+    const rad = satRoot.userData.radius;
+    if (force || Math.abs(rad - V.lastFit)/Math.max(V.lastFit, 0.01) > 0.2) fitModel();
+  } else placeOrbit(V.orbitT);
+  updateInfo();
+}
+function fitModel(){
+  const rad = satRoot.userData.radius, ctr = satRoot.userData.center;
+  V.lastFit = rad;
+  const dist = rad/Math.sin(camera.fov*D2R/2)*1.05;
+  const dir = new THREE.Vector3(0.9, 0.55, 1.35).normalize();
+  camera.near = Math.max(0.02, dist/200); camera.far = 6000; camera.updateProjectionMatrix();
+  camera.position.copy(ctr).addScaledVector(dir, dist);
+  controls.target.copy(ctr); controls.minDistance = rad*0.6; controls.maxDistance = rad*12; controls.update();
+}
+function updateInfo(){
+  const [W,H,D] = R.F.d, info = document.getElementById("vpInfo");
+  if (V.mode === "orbit"){ info.innerHTML = "Erde und Bahn nicht maßstabsgetreu · Satellit stark vergrößert"; return; }
+  const span = R.c.fluegel ? " · Spannweite <b>" + nf0.format(satRoot ? satRoot.userData.radius*2*10 : 0) + " cm</b>" : "";
+  info.innerHTML = "<b>" + nf0.format(W*10) + " × " + nf0.format(D*10) + " × " + nf0.format(H*10) + " cm</b> · <b>" + kg(R.mass) + "</b>" + span + " · ziehen zum Drehen";
+}
+
+/* ---------- Orbit ---------- */
+function orbitRadius(h){ return h < 2000 ? 30*(RE + h)/RE : 30 + 12*Math.log2(1 + h/500); }
+function orbitBasis(){
+  const b = BAHNEN[R.c.bahn].beta*D2R;
+  return [new THREE.Vector3(Math.cos(b), -Math.sin(b), 0), new THREE.Vector3(0, 0, 1)];
+}
+function placeOrbit(t){
+  const r = orbitRadius(R.h), th = 2*Math.PI*((t/R.T) % 1);
+  const [e1, e2] = orbitBasis();
+  const p = e1.clone().multiplyScalar(Math.cos(th)*r).addScaledVector(e2, Math.sin(th)*r);
+  const s = (R.h < 2000 ? 2.2 : 5.5)/satRoot.userData.radius;
+  satRoot.scale.setScalar(s); satRoot.position.copy(p); satRoot.lookAt(0, 0, 0);
+  const ph = (t % R.T)/R.T, ecl = Math.abs(ph - 0.5) < R.fe/2;
+  sunLight.position.set(1, 0, 0); sunLight.intensity = ecl ? 0 : 1.9; hemi.intensity = ecl ? 0.12 : 0.35;
+  if (V.heat) heatMat.uniforms.sunDir.value.set(1, 0, 0);
+  return ecl;
+}
+function buildOrbitLine(){
+  if (orbitLine){ bgScene.remove(orbitLine); orbitLine.geometry.dispose(); orbitLine = null; }
+  const r = orbitRadius(R.h), [e1, e2] = orbitBasis(), pts = [], cols = [];
+  for (let i = 0; i <= 256; i++){
+    const th = i/256*Math.PI*2, p = e1.clone().multiplyScalar(Math.cos(th)*r).addScaledVector(e2, Math.sin(th)*r);
+    pts.push(p.x, p.y, p.z);
+    const ecl = Math.abs(i/256 - 0.5) < R.fe/2; cols.push(...(ecl ? [0.35, 0.3, 0.2] : [1, 0.82, 0.45]));
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(cols, 3));
+  orbitLine = new THREE.Line(g, new THREE.LineBasicMaterial({vertexColors:true, transparent:true, opacity:0.75}));
+  bgScene.add(orbitLine);
+}
+
+function fitOrbit(){
+  const r = orbitRadius(R.h);
+  V.orbitFit = R.h;
+  const dist = r/Math.sin(camera.fov*D2R/2)*2.0, tgt = new THREE.Vector3(0, -r*0.28, 0);
+  camera.near = 0.5; camera.updateProjectionMatrix();
+  camera.position.set(0.35, 0.42, 0.84).normalize().multiplyScalar(dist).add(tgt); controls.target.copy(tgt);
+  controls.minDistance = 38; controls.maxDistance = dist*3; controls.autoRotate = false; controls.update();
+}
+/* ---------- Ansichtsmodus ---------- */
+function setMode(mode){
+  if (V.testOrbit && mode !== "orbit") return;
+  const prev = V.mode; V.mode = mode;
+  document.querySelectorAll("[data-mode]").forEach(b => b.classList.toggle("on", b.dataset.mode === mode));
+  document.getElementById("hud").hidden = mode !== "orbit";
+  if (!V.ok){ updateLegend(); return; }
+  earthGroup.visible = mode === "orbit";
+  if (mode === "orbit"){
+    buildOrbitLine(); rebuild3d(); fitOrbit();
+    drawSoc();
+  } else {
+    if (orbitLine){ bgScene.remove(orbitLine); orbitLine = null; }
+    sunLight.position.set(6, 8, 10); sunLight.intensity = 1.6; hemi.intensity = 0.75;
+    if (heatMat) heatMat.uniforms.sunDir.value.set(1, 0.25, -0.55).normalize();
+    rebuild3d(prev === "orbit" || prev !== mode);
+    if (satRoot){ satRoot.scale.setScalar(1); satRoot.position.set(0, 0, 0); satRoot.rotation.set(0, 0, 0); }
+    if (prev === "orbit") fitModel();
+  }
+  updateLegend(); updateInfo();
+}
+function updateLegend(){
+  const lg = document.getElementById("legend");
+  if (V.heat){
+    lg.hidden = false;
+    lg.innerHTML = '<div class="heatbar"><div class="bar"></div><div class="ends"><span>Schattenseite ≈ ' + nf0.format(R.tShadowSide) + ' °C</span><span>Sonnenseite ≈ ' + nf0.format(R.tSunSide) + ' °C</span></div></div>';
+  } else if (V.mode === "innen"){
+    const used = new Set(R.parts.filter(p => p.internal && p.vol > 0).map(p => p.cat));
+    lg.hidden = false;
+    lg.innerHTML = Object.entries(CAT).filter(([k]) => used.has(k)).map(([k,v]) => '<span><i style="background:' + v.col + '"></i>' + v.name + '</span>').join("") +
+      (R.vol > R.volMax ? '<span><i style="background:#ff3b30"></i>passt nicht mehr hinein</span>' : '');
+  } else lg.hidden = true;
+}
+
+/* ---------- Ladestand-Diagramm ---------- */
+let socUntil = 86400;
+function drawSoc(cursorT){
+  const cv = document.getElementById("soc"); if (!cv || !R) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2), w = cv.clientWidth, h = cv.clientHeight;
+  if (!w) return;
+  cv.width = w*dpr; cv.height = h*dpr; const x = cv.getContext("2d"); x.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const css = getComputedStyle(view), ink = css.getPropertyValue("--vp-ink").trim() || "#dbe3ee", mut = css.getPropertyValue("--vp-muted").trim() || "#8a99ad";
+  const L = 34, Rr = 6, Tt = 6, B = 16, pw = w - L - Rr, ph = h - Tt - B;
+  const X = t => L + t/86400*pw, Y = s => Tt + (1 - s)*ph;
+  x.font = "10.5px " + (getComputedStyle(document.body).getPropertyValue("--f-mono") || "monospace");
+  x.fillStyle = "rgba(255,210,122,.10)";
+  if (R.fe > 0){ for (let t0 = 0; t0 < 86400; t0 += R.T){ const a = t0 + R.T*(0.5 - R.fe/2), b = t0 + R.T*(0.5 + R.fe/2); if (a < 86400) x.fillRect(X(a), Tt, Math.max(1, X(Math.min(b, 86400)) - X(a)), ph); } }
+  x.strokeStyle = "rgba(219,227,238,.14)"; x.lineWidth = 1;
+  [0, 0.5, 1].forEach(s => { x.beginPath(); x.moveTo(L, Y(s) + 0.5); x.lineTo(L + pw, Y(s) + 0.5); x.stroke(); });
+  x.fillStyle = mut; x.textAlign = "right"; x.textBaseline = "middle";
+  x.fillText("100 %", L - 4, Y(1)); x.fillText("50 %", L - 4, Y(0.5)); x.fillText("0 %", L - 4, Y(0));
+  x.textAlign = "center"; x.textBaseline = "top";
+  for (let hr = 0; hr <= 24; hr += 6) x.fillText(hr + " h", Math.min(Math.max(X(hr*3600), L + 8), L + pw - 10), Tt + ph + 3);
+  const until = Math.min(socUntil, 86400);
+  const pts = R.sim.filter(p => p[0] <= until);
+  if (pts.length > 1){
+    const grd = x.createLinearGradient(0, Tt, 0, Tt + ph); grd.addColorStop(0, "rgba(124,200,255,.35)"); grd.addColorStop(1, "rgba(124,200,255,0)");
+    x.beginPath(); x.moveTo(X(pts[0][0]), Y(0)); pts.forEach(p => x.lineTo(X(p[0]), Y(p[1]))); x.lineTo(X(pts[pts.length-1][0]), Y(0)); x.closePath(); x.fillStyle = grd; x.fill();
+    x.beginPath(); pts.forEach((p,i) => i ? x.lineTo(X(p[0]), Y(p[1])) : x.moveTo(X(p[0]), Y(p[1]))); x.strokeStyle = R.emptyAt >= 0 ? "#ff7a70" : "#8fd0ff"; x.lineWidth = 1.6; x.stroke();
+    const last = pts[pts.length - 1]; x.beginPath(); x.arc(X(last[0]), Y(last[1]), 3, 0, Math.PI*2); x.fillStyle = ink; x.fill();
+  }
+  if (cursorT != null && socUntil >= 86400){ x.strokeStyle = "rgba(219,227,238,.5)"; x.beginPath(); x.moveTo(X(cursorT % 86400) + 0.5, Tt); x.lineTo(X(cursorT % 86400) + 0.5, Tt + ph); x.stroke(); }
+}
+function socAt(t){ const tt = t % 86400; let best = R.sim[0]; for (const p of R.sim){ if (p[0] > tt) break; best = p; } return best[1]; }
+function updateHud(t, ecl){
+  const hr = Math.floor(t/3600), mi = Math.floor((t % 3600)/60);
+  document.getElementById("hudLine").innerHTML =
+    "<span>Zeit <b>" + String(hr).padStart(2, "0") + ":" + String(mi).padStart(2, "0") + " h</b></span>" +
+    "<span>Umlauf <b>" + nf0.format(R.T/60) + " min</b></span>" +
+    "<span>Schatten <b>" + pct(R.fe) + "</b></span>" +
+    "<span>Akku <b>" + pct(socAt(t)) + "</b></span>" +
+    (ecl ? '<span class="ecl">im Erdschatten</span>' : "<span>in der Sonne · " + nf1.format(R.P_sun) + " W</span>");
+}
+
+/* ---------- Schleife ---------- */
+let lastTs = 0, hudTick = 0;
+const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+function loop(ts){
+  const dt = Math.min(0.05, (ts - lastTs)/1000 || 0); lastTs = ts;
+  if (V.mode === "orbit" && satRoot){
+    if (V.testOrbit){
+      const p = Math.min(1, (ts - V.testOrbit.start)/V.testOrbit.dur);
+      V.orbitT = p*86400; socUntil = V.orbitT;
+      if (p >= 1){ const done = V.testOrbit.done; V.testOrbit = null; socUntil = 86400; done(); }
+    } else V.orbitT = (V.orbitT + dt*R.T/14) % 86400;
+    const ecl = placeOrbit(V.orbitT);
+    clouds.rotation.y += dt*0.01;
+    if (ts - hudTick > 90){ hudTick = ts; updateHud(V.orbitT, ecl); drawSoc(V.orbitT); }
+  }
+  if (V.shake && satRoot){
+    const p = (ts - V.shake.start)/V.shake.dur;
+    if (p >= 1){ satRoot.position.set(0, 0, 0); const d = V.shake.done; V.shake = null; d && d(); }
+    else {
+      const f = 5*Math.pow(400, p), fr = R.f1;
+      const res = 1/Math.sqrt((1 - (f/fr)**2)**2 + (0.1*f/fr)**2);
+      const amp = (reduce ? 0.004 : 0.012)*satRoot.userData.radius*Math.min(res, 6);
+      const ph = ts*0.001*Math.min(f, 60)*Math.PI*2;
+      satRoot.position.set(Math.sin(ph*1.3)*amp*0.4, Math.sin(ph)*amp, 0);
+      V.shake.onF && V.shake.onF(f, res);
+    }
+  }
+  controls.update();
+  renderer.clear(); renderer.render(bgScene, camera);
+  if (V.mode !== "orbit") renderer.clearDepth();
+  renderer.render(satScene, camera);
+  requestAnimationFrame(loop);
+}
+
+/* ---------- Tests ---------- */
+const prog = document.getElementById("vpProg");
+function progress(step, text){ if (!step){ prog.hidden = true; return; } prog.hidden = false; prog.innerHTML = "<b>" + step + "</b><span>" + text + "</span>"; }
+const wait = ms => new Promise(r => setTimeout(r, ms));
+function shakeTest(dur, label){
+  return new Promise(res => {
+    if (!V.ok || !satRoot){ res(); return; }
+    controls.autoRotate = false;
+    let lastF = 0;
+    V.shake = {start:performance.now(), dur, done:res, onF:(f, a) => {
+      if (Math.abs(f - lastF) < f*0.04) return; lastF = f;
+      progress(label, "Sinus-Sweep auf dem Rütteltisch · " + nf0.format(f) + " Hz" + (a > 2.5 ? " · Resonanz!" : ""));
+    }};
+  });
+}
+function orbitDay(dur){
+  return new Promise(res => {
+    if (!V.ok){ res(); return; }
+    socUntil = 0; V.orbitT = 0;
+    V.testOrbit = {start:performance.now(), dur, done:res};
+  });
+}
+async function runAll(){
+  const btn = document.getElementById("bTest");
+  if (btn.disabled) return;
+  btn.disabled = true; btn.textContent = "Teste …";
+  try {
+    if (V.ok){
+      if (V.heat) toggleHeat(false);
+      setMode("modell");
+      await shakeTest(3000, "1/3");
+      progress("2/3", "Thermal-Vakuum-Kammer · Sonnen- und Schattenseite");
+      toggleHeat(true); await wait(2400); toggleHeat(false);
+      progress("3/3", "24 Stunden im Orbit · Akku und Solarstrom");
+      setMode("orbit"); await orbitDay(reduce ? 3000 : 10000);
+      const f = R.tests.filter(t => t.status === "fail").length;
+      progress("Fertig", f ? f + " Prüfung" + (f === 1 ? "" : "en") + " nicht bestanden – Details rechts" : "Alle Prüfungen bestanden");
+      setTimeout(() => progress(), 4000);
+    }
+    revealNext = true; renderResults();
+    document.querySelector(".res").scrollTo({top:0, behavior:"smooth"});
+  } finally { btn.disabled = false; btn.textContent = "Alles testen"; }
+}
+function toggleHeat(on){
+  V.heat = on; document.getElementById("bHeat").setAttribute("aria-pressed", on ? "true" : "false");
+  if (V.ok){ applyHeat(on); if (on && V.mode === "orbit") heatMat.uniforms.sunDir.value.set(1, 0, 0); }
+  updateLegend();
+}
+
+/* =====================================================================
+   Verkabelung
+   ===================================================================== */
+const STORE = "satellitenwerkstatt.v1";
+function save(c){ try { localStorage.setItem(STORE, JSON.stringify(c)); } catch(e){} }
+function load(){ try { const s = JSON.parse(localStorage.getItem(STORE)); if (s && FORMATE[s.format] && BAHNEN[s.bahn]) return Object.assign({}, PRESETS.erde.c, s); } catch(e){} return null; }
+
+let lastFormat = null;
+function update(force){
+  const c = readForm();
+  if (c.format !== lastFormat && lastFormat !== null){
+    batteryRange(c.format);
+    const b = form.elements.batterie;
+    if (FORMATE[c.format].cube && Number(b.value) > 250) b.value = 60;
+    if (!FORMATE[c.format].cube && Number(b.value) < 200) b.value = 800;
+    c.batterie = Number(b.value);
+  }
+  const fmtChanged = c.format !== lastFormat;
+  lastFormat = c.format;
+  R = compute(c);
+  refreshHints(c, R);
+  renderResults();
+  if (V.ok){
+    if (V.mode === "orbit"){ buildOrbitLine(); if (Math.abs(orbitRadius(R.h) - orbitRadius(V.orbitFit || R.h)) > 3) fitOrbit(); }
+    rebuild3d(force || fmtChanged);
+    if (V.mode === "orbit") drawSoc(V.orbitT);
+  }
+  updateLegend();
+  save(c);
+}
+form.addEventListener("input", () => update(false));
+form.addEventListener("submit", e => e.preventDefault());
+document.getElementById("presets").addEventListener("click", e => {
+  const b = e.target.closest("[data-preset]"); if (!b) return;
+  writeForm(PRESETS[b.dataset.preset].c); update(true);
+});
+document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
+document.getElementById("bHeat").addEventListener("click", () => toggleHeat(!V.heat));
+document.getElementById("bShake").addEventListener("click", async () => {
+  if (V.shake || V.testOrbit) return;
+  if (V.mode === "orbit") setMode("modell");
+  await shakeTest(3000, "Rütteltest");
+  const t = R.tests.find(x => x.id === "start");
+  progress(t.status === "ok" ? "Bestanden" : t.status === "warn" ? "Knapp" : "Durchgefallen", "Eigenfrequenz " + nf0.format(R.f1) + " Hz · Rakete verlangt > " + R.fReq + " Hz");
+  setTimeout(() => progress(), 3500);
+});
+document.getElementById("bTest").addEventListener("click", runAll);
+
+writeForm(load() || PRESETS.erde.c);
+init3d();
+update(true);
+</script>
