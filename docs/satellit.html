@@ -97,6 +97,7 @@ button,input,select{font:inherit;color:inherit}
 .tiers b{font-weight:600} .tiers small{color:var(--muted);font-size:10.5px} .tiers em{font-style:normal;font:10.5px var(--f-mono);color:var(--muted)}
 .tiers label:has(input:checked) span{border-color:var(--accent);background:var(--accent-soft)}
 .tiers label:has(input:focus-visible) span{outline:2px solid var(--accent)}
+.tiers.solo{padding-left:0}
 .tier-info{grid-column:1/-1;margin:0;font-size:11.5px;color:var(--muted)}
 .imp-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px}
 .imp-row input{border:1px solid var(--line);background:var(--raise);border-radius:6px;padding:7px 9px;min-width:0}
@@ -439,6 +440,15 @@ const TIERINFO = {
   relay: ["4 Kanäle", "16 Kanäle", "48 Kanäle"],
   rueckkehr: ["bringt 0,5 kg Proben zurück", "bringt 2 kg Proben zurück", "bringt 5 kg Proben zurück"]
 };
+const FTIER = {1:{rate:0.5, power:0.7, cost:0.5, mass:0.8, q:"einfach"}, 2:{rate:1, power:1, cost:1, mass:1, q:"gut"}, 3:{rate:3, power:1.5, cost:2, mass:1.3, q:"super gut"}};
+const STIER = {
+  1: {name:"Stufe 1", q:"einfach", eta:0.20, cost:0.5, mass:1.1, info:"Silizium-Zellen wie auf dem Hausdach: 20 % Wirkungsgrad, etwas schwerer"},
+  2: {name:"Stufe 2", q:"gut", eta:0.28, cost:1, mass:1, info:"Dreifach-Solarzellen für die Raumfahrt: 28 % Wirkungsgrad"},
+  3: {name:"Stufe 3", q:"super gut", eta:0.32, cost:2, mass:0.85, info:"Vierfach-Zellen: 32 % Wirkungsgrad und leichter"}
+};
+const ftierOf = (c, x) => FTIER[c["stufe_f_" + x]] ? +c["stufe_f_" + x] : 2;
+const stierOf = c => STIER[c.stufe_solar] ? +c.stufe_solar : 2;
+const rateStr = b => b >= 1e9 ? nf1.format(b/1e9) + " Gbit/s" : b >= 1e6 ? nf0.format(b/1e6) + " Mbit/s" : b >= 1e3 ? nf1.format(b/1e3) + " kbit/s" : nf0.format(b) + " bit/s";
 const tierOf = (c, x) => TIERINFO[x] ? (TIER[c["stufe_" + x]] ? +c["stufe_" + x] : 2) : 2;
 const HEIZ = {name:"Akkuheizung mit Thermostat", c:[0.04,0.02,1,1500], s:[1,1,40,25000]};
 const BAUWEISE = {
@@ -547,7 +557,7 @@ function computeStation(c){
   const mass = parts.reduce((s,p) => s + p.mass, 0), vol = parts.reduce((s,p) => s + p.vol, 0);
   const heaviest = Math.max(KERN.mass, ...Object.entries(MODULE).filter(([k]) => cnt(k) > 0).map(([,m]) => m.mass));
   const AU = B.au || 1, degr = Math.pow(0.985, yrs);
-  const P_sun = (cnt("solar")*MODULE.solar.kw*1000 + A_extra*S0*ETA)*degr/(AU*AU);
+  const P_sun = (cnt("solar")*MODULE.solar.kw*1000*STIER[stierOf(c)].eta/0.28 + A_extra*S0*ETA)*degr/(AU*AU);
   const P_gen = P_sun*(1 - fe);
   const P_cons = parts.reduce((s,p) => s + p.power, 0) + crew*1000;
   const ratio = P_gen/Math.max(1, P_cons);
@@ -660,13 +670,15 @@ function compute(c){
   const nSeg = c.fluegel > 0 ? c.segmente : 0;
   const A_wing_raw = c.fluegel === 0 ? 0 : (2*segX + (c.fluegel === 4 ? 2*segZ : 0))*nSeg;
   const A_wing = A_wing_raw*0.9;
-  if (A_body > 0) add("energie", "Solarzellen am Gehäuse (" + nf2.format(A_body) + " m²)", [A_body*1.2, 0, 0, A_body*(cube ? 230000 : 110000)], {internal:false});
-  if (A_wing > 0) add("energie", "Solarflügel " + c.fluegel + " × " + nSeg + " Felder (" + nf2.format(A_wing) + " m²)",
-    [A_wing_raw*(cube ? 3.5 : 4) + (cube ? 0.04 : 3)*c.fluegel, (cube ? 0.05 : 2)*c.fluegel, 0, A_wing_raw*(cube ? 420000 : 160000) + (cube ? 3000 : 30000)*c.fluegel], {internal:false});
+  const ST_ = STIER[stierOf(c)], stName = " – " + ST_.name;
+  if (A_body > 0) add("energie", "Solarzellen am Gehäuse (" + nf2.format(A_body) + " m²)" + stName, [A_body*1.2*ST_.mass, 0, 0, A_body*(cube ? 230000 : 110000)*ST_.cost], {internal:false});
+  if (A_wing > 0) add("energie", "Solarflügel " + c.fluegel + " × " + nSeg + " Felder (" + nf2.format(A_wing) + " m²)" + stName,
+    [A_wing_raw*(cube ? 3.5 : 4)*ST_.mass + (cube ? 0.04 : 3)*c.fluegel, (cube ? 0.05 : 2)*c.fluegel, 0, A_wing_raw*(cube ? 420000 : 160000)*ST_.cost + (cube ? 3000 : 30000)*c.fluegel], {internal:false});
   if (A_wing > 0 && !cube && c.lage === "rw") add("energie", "Solarflügel-Drehantrieb (2×)", [6,4,6,240000]);
 
   const funkKeys = Object.keys(FUNK).filter(x => c["funk_" + x]);
-  funkKeys.forEach(x => add("funk", FUNK[x].name, tup(FUNK[x]), {key:"funk_" + x}));
+  funkKeys.forEach(x => { const F_ = FTIER[ftierOf(c, x)], v = tup(FUNK[x]);
+    add("funk", FUNK[x].name + " – Stufe " + ftierOf(c, x) + ": " + rateStr(FUNK[x].rate[kr]*F_.rate), [v[0]*F_.mass, v[1], v[2]*F_.power, v[3]*F_.cost], {key:"funk_" + x}); });
   add("lage", LAGE[c.lage].name, tup(LAGE[c.lage]), {key:"lage"});
   if (c.stern) add("lage", STERN.name, tup(STERN), {key:"stern"});
   if (c.antrieb !== "none") add("antrieb", ANTRIEB[c.antrieb].name + " mit Tank", tup(ANTRIEB[c.antrieb]), {key:"antrieb"});
@@ -700,7 +712,7 @@ function compute(c){
   const degr = Math.pow(h > 15000 ? 0.97 : 0.975, yrs);
   const wf = LAGE[c.lage].wing*(c.lage === "rw" && !cube ? 1.1 : 1);
   const AU = B.au || 1, SL = S0/(AU*AU);
-  const P_sun = SL*ETA*(A_body*0.3 + A_wing*wf + A_extra*0.9*wf)*degr;
+  const P_sun = SL*ST_.eta*(A_body*0.3 + A_wing*wf + A_extra*0.9*wf)*degr;
   const P_rtg = c.rtg ? RTG.watt[kr]*(k === "p" ? 0.3 : 1)*Math.exp(-0.016*yrs) : 0;
   const P_gen = P_sun*(1 - fe) + P_rtg;
   const P_base = parts.reduce((s,p) => s + p.power, 0);
@@ -708,7 +720,7 @@ function compute(c){
   /* Wärme (Ein-Knoten-Modell: Sonne, Erdalbedo, Erd-Infrarot, Eigenwärme) */
   const H_ = HAUT[c.haut];
   const cellFrac = A_body/A_tot;
-  const alpha = cellFrac*(0.92 - ETA) + (1 - cellFrac)*H_.a;
+  const alpha = cellFrac*(0.92 - ST_.eta) + (1 - cellFrac)*H_.a;
   const eps = cellFrac*0.85 + (1 - cellFrac)*H_.e;
   const Fv = (1 - Math.sqrt(1 - (RE/r)**2))/2;
   const Q_ir = eps*237*Fv*A_tot;
@@ -770,7 +782,7 @@ function compute(c){
   let best = 0, bestKey = null;
   const usable = c.boden === "satnogs" ? funkKeys.filter(x => x === "uhf" || x === "s") : c.boden === "tinygs" ? funkKeys.filter(x => x === "lora") : funkKeys;
   usable.forEach(x => {
-    const rr = FUNK[x].rate[kr]*Math.min(1, distF*(x === "hga" ? (deep ? 1000 : 20) : 1))*(x === "laser" ? 0.4 : 1);
+    const rr = FUNK[x].rate[kr]*FTIER[ftierOf(c, x)].rate*Math.min(1, distF*(x === "hga" ? (deep ? 1000 : 20) : 1))*(x === "laser" ? 0.4 : 1);
     if (rr > best){ best = rr; bestKey = x; }
   });
   const downGB = best*contact*0.6/8/1e9;
@@ -1015,6 +1027,13 @@ function nutzChecks(){
       '<label><input type="radio" name="stufe_' + v + '" value="' + n + '" id="f-stufe_' + v + '-' + n + '"><span><b>' + TIER[n].name + '</b><small>' + TIER[n].q + '</small><em data-tierprice="' + v + ':' + n + '"></em></span></label>').join("") +
       '<p class="tier-info" data-tierinfo="' + v + '"></p></div>' : '') + '</div>').join("") + '</div>';
 }
+function funkChecks(){
+  return '<div class="opts">' + Object.entries(FUNK).map(([v,o]) =>
+    '<div class="nutz-item"><label class="opt"><input type="checkbox" name="funk_' + v + '" id="f-funk_' + v + '"><span><span class="opt-name">' + esc(o.name) + '</span><span class="opt-sub">' + esc(o.sub) + '</span></span><span class="opt-hint" data-hint="funk_' + v + '"></span></label>' +
+    '<div class="tiers" data-ftiers="' + v + '" role="radiogroup" aria-label="Stufe für ' + esc(o.name) + '">' + [1,2,3].map(n =>
+      '<label><input type="radio" name="stufe_f_' + v + '" value="' + n + '" id="f-stufe_f_' + v + '-' + n + '"><span><b>Stufe ' + n + '</b><small>' + FTIER[n].q + '</small><em data-ftierprice="' + v + ':' + n + '"></em></span></label>').join("") +
+      '<p class="tier-info" data-ftierinfo="' + v + '"></p></div></div>').join("") + '</div>';
+}
 function optChecks(prefix, obj){
   return '<div class="opts">' + Object.entries(obj).map(([v,o]) =>
     '<label class="opt"><input type="checkbox" name="' + prefix + v + '" id="f-' + prefix + v + '"><span><span class="opt-name">' + esc(o.name) + '</span><span class="opt-sub">' + esc(o.sub) + '</span></span><span class="opt-hint" data-hint="' + prefix + v + '"></span></label>').join("") + '</div>';
@@ -1064,11 +1083,14 @@ form.innerHTML =
   '<div class="sec" data-group="sat"><h2>Energie</h2>' +
     check1("koerper", {name:"Solarzellen auf dem Gehäuse", sub:"fest aufgeklebt, keine Mechanik"}) +
     check1("rtg", RTG) +
+    '<div class="field"><span class="lbl">Qualität der Solarzellen</span><div class="tiers solo" role="radiogroup" aria-label="Qualität der Solarzellen">' + [1,2,3].map(n =>
+      '<label><input type="radio" name="stufe_solar" value="' + n + '" id="f-stufe_solar-' + n + '"><span><b>' + STIER[n].name + '</b><small>' + STIER[n].q + '</small><em>' + Math.round(STIER[n].eta*100) + ' %</em></span></label>').join("") +
+      '<p class="tier-info" id="solarInfo"></p></div></div>' +
     seg("fluegel", [["0","Keine"],["2","2 Flügel"],["4","4 Flügel"]], "Ausklappbare Solarflügel") +
     range("segmente", "Felder je Flügel", 1, 3, 1, "") +
     range("batterie", "Akku", 10, 200, 5, "Wh") +
   '</div>' +
-  '<div class="sec" data-group="sat"><h2>Funk</h2>' + optChecks("funk_", FUNK) +
+  '<div class="sec" data-group="sat"><h2>Funk</h2>' + funkChecks() +
     '<div class="field"><span class="lbl">Bodenstation</span>' + optRadio("boden", BODEN, "none") + '</div>' +
   '</div>' +
   '<div class="sec" data-group="sat"><h2>Lageregelung & Antrieb</h2>' + optRadio("lage", LAGE) + check1("stern", STERN) +
@@ -1102,6 +1124,8 @@ function readForm(){
   c.manuell = JSON.parse(JSON.stringify(MANUAL));
   c.kosten = KOSTEN;
   Object.keys(TIERINFO).forEach(k => { const x = form.querySelector('input[name="stufe_' + k + '"]:checked'); c["stufe_" + k] = x ? Number(x.value) : 2; });
+  Object.keys(FUNK).forEach(k => { const x = form.querySelector('input[name="stufe_f_' + k + '"]:checked'); c["stufe_f_" + k] = x ? Number(x.value) : 2; });
+  { const x = form.querySelector('input[name="stufe_solar"]:checked'); c.stufe_solar = x ? Number(x.value) : 2; }
   return c;
 }
 function batteryRange(fmt){
@@ -1119,6 +1143,8 @@ function writeForm(c){
   ["hoehe","jahre","segmente","batterie", ...STNUMS].forEach(k => el[k].value = c[k]);
   BOOLS.forEach(k => el[k].checked = !!c[k]);
   Object.keys(TIERINFO).forEach(k => { const x = form.querySelector('input[name="stufe_' + k + '"][value="' + (c["stufe_" + k] || 2) + '"]'); if (x) x.checked = true; });
+  Object.keys(FUNK).forEach(k => { const x = form.querySelector('input[name="stufe_f_' + k + '"][value="' + (c["stufe_f_" + k] || 2) + '"]'); if (x) x.checked = true; });
+  { const x = form.querySelector('input[name="stufe_solar"][value="' + (c.stufe_solar || 2) + '"]'); if (x) x.checked = true; }
   el.budget.value = c.budget > 0 ? c.budget : "";
   el.maxkg.value = c.maxkg > 0 ? c.maxkg : "";
 }
@@ -1142,6 +1168,15 @@ function refreshHints(c, R){
     if (!t){ n.textContent = ""; return; }
     n.innerHTML = t[3] === 0 ? "" : (t[0] >= 0.005 ? kg(t[0]).replace(" kg","&nbsp;kg") + "<br>" : "") + eur(t[3]*R.BW.f).replace(" €","&nbsp;€");
   });
+  Object.keys(FUNK).forEach(k => {
+    const box = form.querySelector('[data-ftiers="' + k + '"]'); if (!box) return;
+    box.hidden = !c["funk_" + k];
+    const t = R.station ? null : tupOf(FUNK[k], R.k), st = ftierOf(c, k), kr = R.k === "s" ? "s" : "c";
+    box.querySelectorAll("[data-ftierprice]").forEach(n => { const lv = +n.dataset.ftierprice.split(":")[1]; n.textContent = t ? eur(t[3]*FTIER[lv].cost*R.BW.f) : ""; });
+    box.querySelector("[data-ftierinfo]").textContent = rateStr(FUNK[k].rate[kr]*FTIER[st].rate) + " · " + (st === 1 ? "einfacher Sender, sparsam" : st === 3 ? "stärkerer Verstärker und bessere Antenne, braucht mehr Strom" : "ausgewogen");
+    const hint = form.querySelector('[data-hint="funk_' + k + '"]'); if (hint && t) hint.innerHTML = kg(t[0]*FTIER[st].mass).replace(" kg","&nbsp;kg") + "<br>" + eur(t[3]*FTIER[st].cost*R.BW.f).replace(" €","&nbsp;€");
+  });
+  { const si = document.getElementById("solarInfo"); if (si) si.textContent = STIER[stierOf(c)].info + " · Preis der Solarzellen ×" + nf1.format(STIER[stierOf(c)].cost).replace(",0", ""); }
   Object.keys(TIERINFO).forEach(k => {
     const box = form.querySelector('[data-tiers="' + k + '"]'); if (!box) return;
     box.hidden = !c["nutz_" + k];
@@ -2386,7 +2421,7 @@ function designFor(w, format, bauweise, start){
     rtg:far, swingby:!!(w.bahn && BAHNEN[w.bahn] && BAHNEN[w.bahn].swing && (BAHNEN[w.bahn].au || 1) > 3), funk_hga:!!(w.bahn && BAHNEN[w.bahn] && BAHNEN[w.bahn].interstellar)};
   if (c.bahn === "interstellar"){ c.jahre = Math.max(w.jahre || 0, 40); c.obc = "rad"; c.lage = "rw"; c.koerper = false; }
   NUTZ_KEYS.forEach(x => c["nutz_" + x] = nutz.has(x));
-  if (w.stufe) Object.keys(TIERINFO).forEach(x => c["stufe_" + x] = w.stufe);
+  if (w.stufe){ Object.keys(TIERINFO).forEach(x => c["stufe_" + x] = w.stufe); Object.keys(FUNK).forEach(x => c["stufe_f_" + x] = w.stufe); c.stufe_solar = w.stufe; }
   const log = [];
   let R_ = compute(c);
   for (let i = 0; i < 40; i++){
@@ -2591,9 +2626,16 @@ function movesFor(c, opts){
   if (c.fluegel){ if (c.segmente < 3) put(x => x.segmente++); if (c.segmente > 1) put(x => x.segmente--); }
   const k = FORMATE[c.format].cls, step = k === "p" ? 1 : k === "c" ? 5 : 50, lo = k === "p" ? 2 : k === "c" ? 10 : 200, hi = k === "p" ? 40 : k === "c" ? 250 : 5000;
   [0.6, 1.5].forEach(f => { const v = Math.min(hi, Math.max(lo, Math.round(c.batterie*f/step)*step)); if (v !== c.batterie) put(x => x.batterie = v); });
-  ["lora","uhf","s","x","hga"].forEach(f => put(x => x["funk_" + f] = !x["funk_" + f]));
+  ["lora","uhf","s","x","hga"].forEach(f => { const on = !!c["funk_" + f], gl0 = opts.goals || [];
+    if (on && gl0.some(g => ["kosten","masse"].includes(g))) put(x => x["funk_" + f] = false);
+    if (!on && gl0.some(g => ["daten","fehler"].includes(g))) put(x => x["funk_" + f] = true); });
   if (["leo","sso","dd"].includes(c.bahn)){ if (c.hoehe > 350) put(x => x.hoehe -= 50); if (c.hoehe < 800) put(x => x.hoehe += 50); }
   if (opts.foerder && c.start !== "foerder") put(x => x.start = "foerder");
+  const gl = opts.goals || [];
+  if (c.koerper || c.fluegel){ const sv = stierOf(c); if (gl.some(g => ["strom","masse"].includes(g)) && sv < 3) put(x => x.stufe_solar = sv + 1); if (gl.includes("kosten") && sv > 1) put(x => x.stufe_solar = sv - 1); }
+  Object.keys(FUNK).forEach(k => { if (!c["funk_" + k]) return; const fv = ftierOf(c, k);
+    if (gl.includes("daten") && fv < 3) put(x => x["stufe_f_" + k] = fv + 1);
+    if (gl.some(g => ["kosten","masse"].includes(g)) && fv > 1) put(x => x["stufe_f_" + k] = fv - 1); });
   if ((opts.goals || []).some(g => ["kosten","masse"].includes(g))) Object.keys(TIERINFO).forEach(k => { if (c["nutz_" + k] && tierOf(c, k) > 1) put(x => x["stufe_" + k] = tierOf(c, k) - 1); });
   // Bauform wechseln (mit anschließender Reparatur)
   Object.keys(FORMATE).forEach(f => {
@@ -2611,7 +2653,7 @@ function improveSearch(c0, goals, opts){
     const cf = clone(c), lf = [], Rf = fixLoop(cf, lf);
     if (quality(Rf) < quality(Rc)){ c = cf; Rc = Rf; log.push(...lf); }
   }
-  const R0 = compute(c0);
+  const R0 = Rc;
   const objGoals = goals.filter(g => GOALS[g].score);
   const norm = {}; objGoals.forEach(g => norm[g] = Math.abs(GOALS[g].score(R0)) || 1);
   const fixGoal = goals.includes("fehler") || !objGoals.length;
@@ -2642,6 +2684,8 @@ function describeChanges(a, b){
   Object.keys(FIELD_DICT).forEach(f => { if (a[f] !== b[f] && b[f] != null) out.push(FIELD_LABEL[f] + ": " + (FIELD_DICT[f][a[f]] || {name:a[f]}).name + " → " + (FIELD_DICT[f][b[f]] || {name:b[f]}).name); });
   Object.entries(BOOL_LABEL).forEach(([f,l]) => { if (!!a[f] !== !!b[f]) out.push((b[f] ? "+ " : "– ") + l); });
   const unit = {hoehe:" km", jahre:" J.", batterie:" Wh"};
+  Object.keys(FUNK).forEach(k => { if (b["funk_" + k] && a["funk_" + k] && ftierOf(a, k) !== ftierOf(b, k)) out.push(FUNK[k].name + ": Stufe " + ftierOf(a, k) + " → " + ftierOf(b, k)); });
+  if (stierOf(a) !== stierOf(b) && b.format !== "ST" && (b.koerper || b.fluegel)) out.push("Solarzellen: Stufe " + stierOf(a) + " → " + stierOf(b) + " (" + Math.round(STIER[stierOf(b)].eta*100) + " % Wirkungsgrad)");
   Object.keys(TIERINFO).forEach(k => { if (b["nutz_" + k] && a["nutz_" + k] && tierOf(a, k) !== tierOf(b, k)) out.push(NUTZ[k].name + ": Stufe " + tierOf(a, k) + " → " + tierOf(b, k) + " (" + TIERINFO[k][tierOf(b, k) - 1] + ")"); });
   ["hoehe","jahre","fluegel","segmente","batterie","crew","fluege"].forEach(f => { if (a[f] !== b[f] && b[f] != null && !(f === "hoehe" && BAHNEN[b.bahn].h) && !((f === "segmente") && !b.fluegel) && !(b.format === "ST" && ["fluegel","segmente","batterie"].includes(f))) out.push(FIELD_LABEL[f] + ": " + a[f] + " → " + b[f] + (unit[f] || "")); });
   if (b.format === "ST") Object.entries(MODULE).forEach(([k,m]) => { if ((a["m_" + k] || 0) !== (b["m_" + k] || 0) && a.format === "ST") out.push(m.name + ": " + (a["m_" + k] || 0) + " → " + (b["m_" + k] || 0)); });
@@ -2649,7 +2693,7 @@ function describeChanges(a, b){
 }
 const ALLOWED = {
   radio: {format:Object.keys(FORMATE), bahn:Object.keys(BAHNEN), boden:Object.keys(BODEN), lage:Object.keys(LAGE), antrieb:Object.keys(ANTRIEB), obc:Object.keys(OBC), haut:Object.keys(HAUT), bauweise:Object.keys(BAUWEISE), sonne:Object.keys(SONNE), start:["kauf","foerder"], leben:Object.keys(LEBEN)},
-  num: {...Object.fromEntries(Object.keys(TIERINFO).map(k => ["stufe_" + k, [1,3]])), hoehe:[300,1200], jahre:[1,50], fluegel:[0,4], segmente:[1,3], batterie:[2,5000], crew:[0,12], fluege:[0,12], ...Object.fromEntries(Object.keys(MODULE).map(k => ["m_" + k, [0,6]]))},
+  num: {...Object.fromEntries(Object.keys(TIERINFO).map(k => ["stufe_" + k, [1,3]])), ...Object.fromEntries(Object.keys(FUNK).map(k => ["stufe_f_" + k, [1,3]])), stufe_solar:[1,3], hoehe:[300,1200], jahre:[1,50], fluegel:[0,4], segmente:[1,3], batterie:[2,5000], crew:[0,12], fluege:[0,12], ...Object.fromEntries(Object.keys(MODULE).map(k => ["m_" + k, [0,6]]))},
   bool: Object.keys(BOOL_LABEL)
 };
 function applyChange(c, f, v){
@@ -2672,12 +2716,18 @@ function keywordImprove(text, c){
   }
   if (c.format === "ST" && /(labor|kuppel|gewächshaus)/.test(t)){ if (/labor/.test(t)) add("m_labor", (c.m_labor || 0) + 1); if (/kuppel|aussicht/.test(t)) add("m_kuppel", (c.m_kuppel || 0) + 1); if (/gewächshaus|pflanzen/.test(t)) add("leben", "zu"); }
   const upT = /\bbessere?\b|schärfere?|super|beste|hochwertig|stufe ?3|mehr qualität|hochauflös/.test(t), downT = /stufe ?1|einfachere?|schlechtere?|billigere (kamera|teleskop|nutzlast)/.test(t);
+  if ((upT || downT) && /solar|zellen|flügel/.test(t) && c.format !== "ST") add("stufe_solar", upT ? (/stufe ?3|super|beste/.test(t) ? 3 : Math.min(3, stierOf(c) + 1)) : Math.max(1, stierOf(c) - 1));
+  if ((upT || downT) && /funk|sender|antenne|datenrate/.test(t) && c.format !== "ST") Object.keys(FUNK).forEach(k => { if (c["funk_" + k]) add("stufe_f_" + k, upT ? (/stufe ?3|super|beste/.test(t) ? 3 : Math.min(3, ftierOf(c, k) + 1)) : Math.max(1, ftierOf(c, k) - 1)); });
   if ((upT || downT) && c.format !== "ST"){
     const named = Object.keys(TIERINFO).filter(k => c["nutz_" + k] && new RegExp(({cam:"kamera|foto|bild", multi:"multispek|kamera", hyper:"hyperspek|kamera", teleskop:"teleskop|stern", iot:"empfänger|iot|schiff", sci:"detektor|strahlung|sensor", labor:"labor|experiment", planetenlabor:"labor|messgerät", lander:"lander|landesonde", relay:"transponder", rueckkehr:"kapsel"})[k]).test(t));
-    (named.length ? named : Object.keys(TIERINFO).filter(k => c["nutz_" + k])).forEach(k => { const cur = tierOf(c, k); add("stufe_" + k, upT ? Math.min(3, cur + (/stufe ?3|super|beste/.test(t) ? 3 : 1)) : Math.max(1, cur - 1)); });
+    (named.length ? named : /solar|zellen|flügel|funk|sender|antenne|datenrate/.test(t) ? [] : Object.keys(TIERINFO).filter(k => c["nutz_" + k])).forEach(k => { const cur = tierOf(c, k); add("stufe_" + k, upT ? Math.min(3, cur + (/stufe ?3|super|beste/.test(t) ? 3 : 1)) : Math.max(1, cur - 1)); });
   }
   if (/zuverlässig|robust|strahlung/.test(t) && c.format !== "ST") add("obc", c.obc === "std" ? "red" : "rad");
   if (!goals.length && !changes.length) goals.push("fehler");
+  if (changes.length){
+    const drop = new Set(); if (/solar|zellen|flügel/.test(t)) drop.add("strom"); if (/funk|sender|antenne/.test(t)) drop.add("daten"); if (/kamera|teleskop|foto/.test(t)) drop.add("genau");
+    const keep = goals.filter(g => !drop.has(g) && g !== "fehler"); goals.length = 0; goals.push("fehler", ...keep);
+  }
   return {ziele:goals, aenderungen:changes, erklaerung:""};
 }
 function improvePrompt(text, c, Rr){
