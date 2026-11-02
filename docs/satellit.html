@@ -183,6 +183,13 @@ button,input,select{font:inherit;color:inherit}
 .test.reveal{animation:pop .45s ease both}
 @keyframes pop{from{transform:translateY(4px);opacity:.25}to{transform:none;opacity:1}}
 
+.costmode{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--raise);margin-top:4px}
+.costmode button{border:0;background:transparent;padding:3px 10px;font-size:11.5px;cursor:pointer;color:var(--muted)}
+.costmode button.on{background:var(--accent);color:var(--accent-ink)}
+.big-toggle{justify-self:start;margin-top:0}
+.big-toggle button{font-size:12.5px;padding:5px 12px}
+tr.excl td{color:var(--muted)} tr.excl td:last-child{text-decoration:line-through}
+tr.excl small{font-size:11px}
 .cost-hero{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;display:grid;gap:10px}
 .cost-hero .big{font:600 30px/1 var(--f-display);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 .cost-hero .split{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12.5px;color:var(--muted)}
@@ -229,7 +236,7 @@ td .dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right
   <header class="top">
     <div class="brand"><b>Satellitenwerkstatt</b><span id="missionLine">Erdbeobachtung 6U</span></div>
     <div class="spacer"></div>
-    <div class="top-cost"><small>Geschätzte Gesamtkosten</small><b id="topCost">–</b></div>
+    <div class="top-cost"><small id="topCostLbl">Geschätzte Gesamtkosten</small><b id="topCost">–</b><span class="costmode" role="group" aria-label="Was zählt"><button type="button" data-km="alles">Gesamt</button><button type="button" data-km="bau">Nur Bau</button></span></div>
     <button class="btn primary" id="bTest" type="button">Alles testen</button>
   </header>
 
@@ -375,6 +382,7 @@ const NUTZ = {
   teleskop: {name:"Weltraumteleskop", sub:"beobachtet Sterne, Galaxien und Planeten bei anderen Sternen", c:[1.2,1.5,5,80000], s:[40,60,80,3000000], data:{c:0.5,s:5}, point:0.1},
   schallplatte: {name:"Goldene Schallplatte", sub:"Botschaft an Außerirdische mit Bildern, Musik und Grüßen – wie auf Voyager", c:[0.1,0.05,0,2000], s:[1,0.5,0,20000], data:{c:0,s:0}, point:180},
   planetenlabor: {name:"Planetenlabor", sub:"Spektrometer, Magnetometer und Staubanalysator untersuchen Gestein, Atmosphäre und Magnetfeld eines anderen Himmelskörpers", c:[1.5,2,6,150000], s:[40,60,80,6000000], data:{c:0.2,s:2}, point:1},
+  rueckkehr: {name:"Rückkehrkapsel", sub:"bringt Proben und Experimente zurück zur Erde – mit Hitzeschild, Bremsmotor und Fallschirm", c:[1.5,1.5,0.5,60000], s:[40,50,10,1500000], data:{c:0,s:0}, point:180},
   lander: {name:"Landesonde mit Mini-Labor", sub:"setzt ein kleines Labor auf der Oberfläche ab, das Bodenproben untersucht (mit Hitzeschild und Fallschirm)", c:[2,2.5,1,250000], s:[60,80,20,10000000], data:{c:0.01,s:0.1}, point:180},
   labor: {name:"Weltraumlabor", sub:"Experimente mit Pflanzen, Bakterien oder Kristallen in der Schwerelosigkeit · braucht 15–30 °C", c:[0.8,1.2,4,50000], s:[25,40,100,1500000], data:{c:0.02,s:0.2}, point:180},
   relay: {name:"Kommunikations-Transponder", sub:"leitet Fernsehen, Internet und Telefonie weiter (Ka-Band)", c:[1.0,1.5,20,250000], s:[30,40,300,8000000], data:{c:0,s:0}, point:1}
@@ -451,6 +459,7 @@ const PRESETS = {
   mond: {label:"Mondsonde", sub:"fliegt zum Mond und fotografiert", wish:"Zum Mond fliegen und Fotos vom Mond machen"},
   segler: {label:"Sonnensegler", sub:"reist mit Licht zu einem Asteroiden", wish:"Mit einem Sonnensegel durch das Sonnensystem zu einem Asteroiden fliegen und ihn fotografieren"},
   teleskop: {label:"Weltraumteleskop", sub:"beobachtet Sterne und Galaxien", wish:"Ein Teleskop, das Sterne und Galaxien beobachtet"},
+  rueckkehr: {label:"Rückkehrkapsel", sub:"Experimente kommen zurück", wish:"Ein Satellit mit Weltraumlabor, der die Proben in einer Kapsel zurück zur Erde bringt"},
   ministation: {label:"Mini-Raumstation", sub:"für 2 Astronauten", wish:"Eine kleine Raumstation für 2 Astronauten"},
   forschstation: {label:"Forschungsstation", sub:"6 Personen, Labor, Kuppel", wish:"Eine Forschungsstation mit Labor und Aussichtskuppel für 6 Astronauten"},
   mondstation: {label:"Mondstation", sub:"4 Personen, mit Gewächshaus", wish:"Eine Raumstation am Mond für 4 Astronauten mit Gewächshaus"},
@@ -480,6 +489,14 @@ const degStr = d => d >= 1 ? nf0.format(d) + "°" : d >= 0.1 ? nf1.format(d) + "
 /* =====================================================================
    Berechnung
    ===================================================================== */
+/* Nur Baukosten: Start, Zulassung, Bodenstation und Betrieb werden nicht mitgezählt */
+function costMode(c, hw, once, run, totalOnce, totalRun){
+  const full = totalOnce + totalRun;
+  if (c.kosten !== "bau") return {totalOnce, totalRun, total:full, full, bau:false};
+  const buildSub = hw + once.filter(x => x.build).reduce((s,x) => s + x.cost, 0);
+  const res = once.find(x => x.reserve); if (res){ res.cost = buildSub*0.15; res.build = true; }
+  return {totalOnce:buildSub*1.15, totalRun:0, total:buildSub*1.15, full, bau:true};
+}
 function computeStation(c){
   const B = BAHNEN[c.bahn], deep = !!B.deep, h = B.h || c.hoehe, r = RE + h, T = deep ? 86400 : 2*Math.PI*Math.sqrt(r**3/MU);
   const beta = B.beta*D2R, bstar = Math.asin(RE/r);
@@ -564,19 +581,20 @@ function computeStation(c){
   const launchPer = 90e6*(deep ? 3 : 1);
   const launch = nLaunch*launchPer;
   const once = [], run = [];
-  once.push({name:"Integration und Tests am Boden", cost:hw*0.1});
-  once.push({name:"Zusammenbau im All (Roboterarm, Außeneinsätze)", cost:hw*0.05});
+  once.push({name:"Integration und Tests am Boden", cost:hw*0.1, build:true});
+  once.push({name:"Zusammenbau im All (Roboterarm, Außeneinsätze)", cost:hw*0.05, build:true});
   once.push({name:nLaunch + " Starts mit Schwerlastraketen à " + eur(launchPer), cost:launch});
   once.push({name:"Kontrollzentrum am Boden", cost:300e6});
   once.push({name:"Zulassung, Versicherung, Raumfahrtgesetze", cost:50e6});
   if (crew > 0) once.push({name:"Ausbildung von " + crew*2 + " Astronautinnen und Astronauten", cost:crew*2*20e6});
   const subOnce = hw + once.reduce((s,x) => s + x.cost, 0);
-  once.push({name:"Reserve für Unvorhergesehenes (15 %)", cost:subOnce*0.15});
+  once.push({name:"Reserve für Unvorhergesehenes (15 %)", cost:subOnce*0.15, reserve:true});
   const flug = 120e6*(deep ? 3 : 1);
   if (c.fluege > 0) run.push({name:(c.fluege) + " Frachtflüge pro Jahr × " + yrs + " J. à " + eur(flug), cost:c.fluege*flug*yrs});
   if (crew > 0) run.push({name:"Crew-Flüge: 2 Wechsel pro Jahr × " + crew + " Sitze × " + yrs + " J.", cost:2*crew*55e6*(deep ? 3 : 1)*yrs});
   run.push({name:"Betrieb und Kontrollzentrum (" + yrs + " J.)", cost:150e6*yrs});
-  const totalOnce = subOnce*1.15, totalRun = run.reduce((s,x) => s + x.cost, 0), total = totalOnce + totalRun;
+  const CM = costMode(c, hw, once, run, subOnce*1.15, run.reduce((s,x) => s + x.cost, 0));
+  const totalOnce = CM.totalOnce, totalRun = CM.totalRun, total = CM.total;
   if (c.budget > 0) T_("budget", "Budget", total <= c.budget*0.9 ? "ok" : total <= c.budget ? "warn" : "fail", eur(total) + " / " + eur(c.budget),
     total <= c.budget ? "Passt: es bleiben " + eur(c.budget - total) + " Luft." : "Das sind " + eur(total - c.budget) + " mehr als dein Budget.",
     total <= c.budget*0.9 ? "" : "Weniger Module, eine kleinere Besatzung oder ein aufblasbares Wohnmodul statt mehrerer fester sparen viel.");
@@ -585,7 +603,7 @@ function computeStation(c){
   const F = Object.assign({}, FORMATE.ST, {d:[len*10, 45, 45]});
   return {station:true, c, F, B, cube:false, k:"st", h, T, fe, parts, dry:mass, harness:0, mass, massRes:mass*1.1, vol, volMax:Math.max(1, crew*30), volUnit:" m³",
     P_sun, P_gen, P_cons, ratio, dod, E_ecl, sim, emptyAt, minSoc, contact:0, downGB:1, needGB:1, best:1, bestKey:null, acc:1, needAcc:180, f1:20, fReq:10, L_nat:Infinity,
-    tHot:22, tCold:18, tSunSide:120, tShadowSide:-150, tests, P_rtg:0, hw, once, run, totalOnce, totalRun, total, launch, BW:BAUWEISE.kauf, funkKeys:[], nutzKeys:[],
+    tHot:22, tCold:18, tSunSide:120, tShadowSide:-150, tests, P_rtg:0, hw, once, run, totalOnce, totalRun, total, fullTotal:CM.full, bau:CM.bau, launch, BW:BAUWEISE.kauf, funkKeys:[], nutzKeys:[],
     nSeg:0, A_wing:0, A_body:0, dose:doseYr, tol:1, crew, ports, vehicles, cool, needT, capT, nLaunch};
 }
 function compute(c){
@@ -853,6 +871,26 @@ function compute(c){
       have >= need*1.1 ? (tooShort ? "Missionsdauer auf mindestens 35 Jahre stellen." : "") : B.swing && !c.swingby ? "Swing-by an Planeten einschalten – das spart den meisten Treibstoff." : B.interstellar ? "Ein chemischer oder elektrischer Antrieb für die Kurskorrekturen ergänzen." : sailA && !sailYr ? "Lageregelung einbauen, damit das Segel zur Sonne gedreht werden kann." : c.sonne !== "gross" ? "Ein (größeres) Sonnensegel braucht keinen Treibstoff und wird mit jedem Jahr schneller." : c.antrieb !== "elek" ? "Ein elektrischer Antrieb ergänzt das Segel." : "Eine längere Mission gibt dem Segel mehr Zeit.");
   }
 
+  if (c.nutz_rueckkehr){
+    let st, val, txt, fix = "";
+    if (deep){
+      const need = c.bahn === "mond" ? (kr === "s" ? 1000 : 900) : (kr === "s" ? 4000 : 3000);
+      st = dvHave >= need ? "ok" : "fail"; val = nf0.format(dvHave) + " / " + nf0.format(need) + " m/s";
+      txt = "Für den Rückflug " + (c.bahn === "mond" ? "vom Mond" : "aus dem tiefen Weltraum") + " muss der Satellit erst Kurs auf die Erde nehmen – das braucht etwa " + nf0.format(need) + " m/s. Dann taucht die Kapsel mit rund 40.000 km/h in die Atmosphäre ein.";
+      fix = dvHave >= need ? "" : "Ein kräftiger chemischer Antrieb mit viel Treibstoff – in einem Kleinsatelliten. Oder die Kapsel kehrt aus einer Erdumlaufbahn zurück.";
+    } else if (c.lage === "none"){
+      st = "fail"; val = "nicht steuerbar";
+      txt = "Vor dem Bremsmanöver muss die Kapsel genau ausgerichtet sein – sonst bremst der Motor in die falsche Richtung und der Hitzeschild trifft schief auf die Luft.";
+      fix = "Lageregelung einbauen: Magnetspulen reichen, Reaktionsräder sind genauer.";
+    } else {
+      const ell = c.lage === "rw" ? 20 : 150;
+      st = h > 800 ? "warn" : c.lage === "rw" ? "ok" : "warn"; val = "Landegebiet ±" + ell + " km";
+      txt = "Der kleine Bremsmotor der Kapsel bremst sie um etwa " + nf0.format(50 + Math.max(0, h - 250)*0.25) + " m/s. Dann taucht sie mit fast 28.000 km/h in die Atmosphäre ein, der Hitzeschild hält über 1.500 °C aus, und in 5 km Höhe öffnet sich der Fallschirm." +
+        (c.nutz_labor ? " So kommen auch die Proben aus dem Weltraumlabor zurück." : "") + " Mit " + LAGE[c.lage].name + " landet sie in einem Gebiet von etwa ±" + ell + " km." + (h > 800 ? " Aus " + nf0.format(h) + " km Höhe braucht die Kapsel allerdings einen größeren Bremsmotor." : "");
+      fix = h > 800 ? "Niedriger fliegen (unter 800 km)." : c.lage === "rw" ? "" : "Reaktionsräder machen das Landegebiet viel kleiner – das spart die Suche.";
+    }
+    T_("rueckkehr", "Rückkehr zur Erde", st, val, txt, fix);
+  }
   const hasPL = !!c.nutz_planetenlabor, hasLand = !!c.nutz_lander;
   if (hasPL || hasLand){
     const surf = !!B.flaeche, hot = !!B.heiss;
@@ -878,11 +916,12 @@ function compute(c){
   const hw = parts.reduce((s,p) => s + p.cost, 0);
   const once = [], run = [];
   const hwBase = hw - parts.filter(p => p.key === "rtg").reduce((s,p) => s + p.cost, 0);
-  once.push({name:"Montage, Kabelbaum, Stecker", cost:hwBase*0.06});
-  once.push({name:"Testmodell (zweites Exemplar für Bodentests" + (c.rtg ? ", RTG wird durch eine elektrische Attrappe ersetzt" : "") + ")", cost:hwBase*BW.em});
-  once.push({name:"Umwelttests: Rütteltisch, Thermal-Vakuum" + (c.bauweise === "kauf" ? ", EMV" : " (z. B. an einer Hochschule)"), cost:F.test*BW.test});
+  once.push({name:"Montage, Kabelbaum, Stecker", cost:hwBase*0.06, build:true});
+  once.push({name:"Testmodell (zweites Exemplar für Bodentests" + (c.rtg ? ", RTG wird durch eine elektrische Attrappe ersetzt" : "") + ")", cost:hwBase*BW.em, build:true});
+  once.push({name:"Umwelttests: Rütteltisch, Thermal-Vakuum" + (c.bauweise === "kauf" ? ", EMV" : " (z. B. an einer Hochschule)"), cost:F.test*BW.test, build:true});
   const freeStart = c.start === "foerder";
   const launch = freeStart ? 0 : cube ? F.launch*B.x : Math.max(400000, 6500*mass)*B.x + 25000;
+  if (c.nutz_rueckkehr) once.push({name:"Bergung der Kapsel: Landegenehmigung und Suchteam", cost: !cube ? 400000 : {bastler:5000, selbst:15000, bausatz:30000, kauf:60000}[c.bauweise] || 60000});
   if (deep) once.push({name:"Bahnberechnung und Flugplanung " + (c.bahn === "mond" ? "zum Mond" : "durchs Sonnensystem") + (c.swingby && B.swing ? " mit Swing-by" : ""), cost: (cube ? 25000*BW.test : 300000)*(c.swingby && B.swing ? 2 : 1)});
   if (freeStart) once.push({name:"Start über ein Förderprogramm (kostenlos, Bewerbung nötig)", cost:0});
   else once.push({name:"Start als Mitflieger" + (k === "p" ? " (inkl. PocketQube-Ausstoßer)" : cube ? " (inkl. Ausstoßbehälter)" : " (inkl. Trennring)"), cost:launch});
@@ -900,10 +939,11 @@ function compute(c){
     run.push({name:(c.boden === "dsn" ? "Großantennen-Zeit: " : "Bodennetz-Miete: ") + nf0.format(bookedMin) + " min/Tag × " + rate + " €/min × " + yrs + " J.", cost:bookedMin*365*rate*yrs});
   }
   const subOnce = hw + once.reduce((s,x) => s + x.cost, 0);
-  once.push({name:"Reserve für Unvorhergesehenes (15 %)", cost:(subOnce - (hw - hwBase))*0.15});
+  once.push({name:"Reserve für Unvorhergesehenes (15 %)", cost:(subOnce - (hw - hwBase))*0.15, reserve:true});
   const opsYr = cube ? {bastler:100, selbst:300, bausatz:1000, kauf:25000}[c.bauweise] : {bastler:50000, selbst:50000, bausatz:100000, kauf:250000}[c.bauweise];
   run.push({name:(c.bauweise === "kauf" ? "Missionsbetrieb: Überwachung, Steuerung" : "Betrieb: du steuerst selbst – Server, Strom, Internet") + " (" + yrs + " J.)", cost:(opsYr || 25000)*yrs});
-  const totalOnce = subOnce + (subOnce - (hw - hwBase))*0.15, totalRun = run.reduce((s,x) => s + x.cost, 0), total = totalOnce + totalRun;
+  const CM = costMode(c, hw, once, run, subOnce + (subOnce - (hw - hwBase))*0.15, run.reduce((s,x) => s + x.cost, 0));
+  const totalOnce = CM.totalOnce, totalRun = CM.totalRun, total = CM.total;
 
   /* Budget und Wunschgewicht */
   if (c.budget > 0){
@@ -927,7 +967,7 @@ function compute(c){
 
   return {c, F, B, cube, k, h, T, fe, parts, dry, harness, mass, massRes, vol, volMax, P_sun, P_gen, P_cons, ratio, dod, E_ecl,
     sim, emptyAt, minSoc, contact, downGB, needGB, best, bestKey, acc, needAcc, f1, fReq, L_nat, tHot:tHotF, tCold, tSunSide, tShadowSide,
-    tests, P_rtg, hw, once, run, totalOnce, totalRun, total, launch, BW, volUnit, L_sail, dvHave, dvSK, dvDis, funkKeys, nutzKeys, nSeg, A_wing, A_body, dose, tol};
+    tests, P_rtg, hw, once, run, totalOnce, totalRun, total, fullTotal:CM.full, bau:CM.bau, launch, BW, volUnit, L_sail, dvHave, dvSK, dvDis, funkKeys, nutzKeys, nSeg, A_wing, A_body, dose, tol};
 }
 
 /* =====================================================================
@@ -1011,6 +1051,8 @@ const STNUMS = ["crew","fluege", ...Object.keys(MODULE).map(k => "m_" + k)];
 const BOOLS = ["koerper","stern","segel","heizung","rtg","swingby","schild","strahl", ...Object.keys(FUNK).map(x => "funk_" + x), ...Object.keys(NUTZ).map(x => "nutz_" + x)];
 const RADIOS = ["bahn","format","fluegel","boden","lage","antrieb","obc","haut","bauweise","sonne","start","leben"];
 let MANUAL = {d:{}, x:[]};
+let KOSTEN = "alles";
+try { if (localStorage.getItem("satellitenwerkstatt.kosten") === "bau") KOSTEN = "bau"; } catch(e){}
 function readForm(){
   const el = form.elements, c = {};
   c.titel = el.titel.value.trim() || "Mein Satellit";
@@ -1021,6 +1063,7 @@ function readForm(){
   c.budget = Math.max(0, Number(el.budget.value) || 0);
   c.maxkg = Math.max(0, Number(String(el.maxkg.value).replace(",", ".")) || 0);
   c.manuell = JSON.parse(JSON.stringify(MANUAL));
+  c.kosten = KOSTEN;
   return c;
 }
 function batteryRange(fmt){
@@ -1085,6 +1128,8 @@ function renderResults(){
   const c = R.c;
   document.getElementById("missionLine").textContent = c.titel + " · " + R.F.name + " · " + BAHNEN[c.bahn].name;
   document.getElementById("topCost").textContent = eur(R.total);
+  document.getElementById("topCostLbl").textContent = R.bau ? "Geschätzte Baukosten" : "Geschätzte Gesamtkosten";
+  document.querySelectorAll("[data-km]").forEach(b => b.classList.toggle("on", b.dataset.km === (R.bau ? "bau" : "alles")));
   const fails = R.tests.filter(t => t.status === "fail"), warns = R.tests.filter(t => t.status === "warn");
   const v = document.getElementById("verdict");
   v.className = "verdict " + (fails.length ? "v-fail" : warns.length ? "v-warn" : "v-ok");
@@ -1118,8 +1163,10 @@ function renderResults(){
   revealNext = false;
 
   document.getElementById("costHero").innerHTML =
+    '<div class="costmode big-toggle" role="group" aria-label="Was zählt"><button type="button" data-km="alles"' + (R.bau ? "" : ' class="on"') + '>Alles mit Start und Betrieb</button><button type="button" data-km="bau"' + (R.bau ? ' class="on"' : "") + '>Nur Baukosten</button></div>' +
     '<div class="big">' + eur(R.total) + '</div>' +
-    '<div class="split"><span>Einmalig <b>' + eur(R.totalOnce) + '</b></span><span>Laufend über ' + c.jahre + (c.jahre === 1 ? " Jahr" : " Jahre") + ' <b>' + eur(R.totalRun) + '</b></span><span>Bauteile <b>' + eur(R.hw) + '</b></span><span>Start <b>' + eur(R.launch) + '</b></span></div>' +
+    (R.bau ? '<div class="split"><span>Bauteile <b>' + eur(R.hw) + '</b></span><span>Montage, Tests, Reserve <b>' + eur(R.total - R.hw) + '</b></span><span>Nicht eingerechnet: Start, Zulassung, Bodenstation, Betrieb <b>' + eur(Math.max(0, R.fullTotal - R.total)) + '</b></span></div>' :
+    '<div class="split"><span>Einmalig <b>' + eur(R.totalOnce) + '</b></span><span>Laufend über ' + c.jahre + (c.jahre === 1 ? " Jahr" : " Jahre") + ' <b>' + eur(R.totalRun) + '</b></span><span>Bauteile <b>' + eur(R.hw) + '</b></span><span>Start <b>' + eur(R.launch) + '</b></span></div>') +
     (c.bauweise !== "kauf" && !R.station ? '<p class="note">' + R.BW.name + ': Bauteile kosten etwa ' + Math.round(R.BW.f*100) + ' % von fertigen Raumfahrt-Teilen' + (c.bauweise === "bastler" ? ' – die Bauteile allein kommen auf ' + eur(R.hw) : '') + '. Dafür steckst du viele Abende Arbeit hinein, und das Risiko eines Ausfalls ist höher.</p>' : '');
 
   const rows = [];
@@ -1129,10 +1176,11 @@ function renderResults(){
   if (!R.station) rows.push('<tr><td><span class="dot" style="background:' + CAT.struktur.col + '"></span>Kabel und Kleinteile</td><td class="n">' + kg(R.harness) + '</td><td class="n">in Montage</td></tr>');
   rows.push('<tr class="sum"><td>Summe Bauteile</td><td class="n">' + (R.station ? tons(R.mass) : kg(R.mass)) + '</td><td class="n">' + eurExact(R.hw) + '</td></tr>');
   rows.push('<tr class="grp"><td colspan="3">Einmalig</td></tr>');
-  R.once.forEach(x => rows.push('<tr><td>' + esc(x.name) + '</td><td class="n"></td><td class="n">' + eurExact(x.cost) + '</td></tr>'));
-  rows.push('<tr class="grp"><td colspan="3">Laufend</td></tr>');
-  R.run.forEach(x => rows.push('<tr><td>' + esc(x.name) + '</td><td class="n"></td><td class="n">' + eurExact(x.cost) + '</td></tr>'));
-  rows.push('<tr class="sum"><td>Gesamt</td><td class="n"></td><td class="n">' + eurExact(R.total) + '</td></tr></tbody>');
+  const exRow = x => R.bau && !x.build;
+  R.once.forEach(x => rows.push('<tr' + (exRow(x) ? ' class="excl"' : "") + '><td>' + esc(x.name) + (exRow(x) ? " <small>· nicht gezählt</small>" : "") + '</td><td class="n"></td><td class="n">' + eurExact(x.cost) + '</td></tr>'));
+  rows.push('<tr class="grp"><td colspan="3">Laufend' + (R.bau ? " · nicht gezählt" : "") + '</td></tr>');
+  R.run.forEach(x => rows.push('<tr' + (R.bau ? ' class="excl"' : "") + '><td>' + esc(x.name) + '</td><td class="n"></td><td class="n">' + eurExact(x.cost) + '</td></tr>'));
+  rows.push('<tr class="sum"><td>' + (R.bau ? "Baukosten" : "Gesamt") + '</td><td class="n"></td><td class="n">' + eurExact(R.total) + '</td></tr></tbody>');
   document.getElementById("shop").innerHTML = rows.join("");
 
   const ex = [];
@@ -1156,6 +1204,7 @@ function renderResults(){
   if (c.rtg) ex.push("<b>Radionuklidbatterie</b>: Plutonium-238 geben nur Raumfahrtagenturen heraus (die ESA entwickelt Batterien mit Americium-241). Für private Missionen ist das praktisch unerreichbar – dazu kommen Strahlenschutz- und Sondergenehmigungen für den Start.");
   if (R.B.interstellar) ex.push("<b>Geduld über Generationen</b>: Voyager 1 startete 1977 und erreichte 2012 den interstellaren Raum. Das Team muss die Mission über Jahrzehnte betreuen und Wissen weitergeben.");
   if (c.swingby && R.B.swing) ex.push("<b>Startfenster für Swing-by</b>: Die Planeten müssen richtig stehen. Voyager nutzte eine Stellung, die nur alle 175 Jahre vorkommt – kleinere Swing-bys sind häufiger möglich.");
+  if (c.nutz_rueckkehr) ex.push("<b>Landegebiet</b>: Kapseln landen in dünn besiedelten Gegenden, z. B. im australischen Outback oder in Kasachstan. Dafür braucht es eine Landegenehmigung des Landes, einen Funkpeilsender in der Kapsel und ein Bergungsteam vor Ort.");
   if (c.nutz_lander) ex.push("<b>Planetenschutz</b>: Was auf einem anderen Himmelskörper landet, muss im Reinraum gebaut und gereinigt werden, damit keine Erdbakterien eingeschleppt werden (Regeln der COSPAR).");
   if (c.nutz_planetenlabor || c.nutz_lander) ex.push("<b>Wissenschaftliche Partner</b>: Planetenforschung gelingt am besten mit einer Universität oder einem Forschungsinstitut, die Messgeräte beisteuern und die Daten auswerten.");
   if (c.nutz_labor) ex.push("<b>Proben für das Labor</b> erst kurz vor dem Start einsetzen; Startanbieter verlangen dafür einen Sicherheitsnachweis.");
@@ -1660,6 +1709,14 @@ function buildSat(c){
     if (!cube){ [[1,1],[-1,1],[1,-1],[-1,-1]].forEach(([a,b]) => { const t = cyl(0.03*sc, 0.07*sc, 0.15*sc, m.alu); t.position.set(a*W*0.4, 0.4, b*D*0.4); gg.add(t); }); }
     gg.position.set(0, -H/2 - (cube ? 0.035 : 0.5), 0); P("antrieb", ANTRIEB[c.antrieb].name, gg);
   }
+  if (c.nutz_rueckkehr){
+    const r = cube ? Math.min(W, D)*0.36 : 1.8, gg = grp(), hs = new THREE.MeshStandardMaterial({color:0x6b3f22, metalness:0.1, roughness:0.9});
+    const back = cyl(r*0.45, r*0.95, r*0.75, new THREE.MeshStandardMaterial({color:0x2e3238, metalness:0.3, roughness:0.6}), 36); back.position.y = -r*0.4; gg.add(back);
+    const shield = mesh(new THREE.SphereGeometry(r*1.05, 36, 12, 0, Math.PI*2, Math.PI*0.62, Math.PI*0.38), hs); shield.position.y = -r*0.2; gg.add(shield);
+    const ring = mesh(new THREE.TorusGeometry(r*0.97, r*0.04, 8, 36), m.alu); ring.rotation.x = Math.PI/2; ring.position.y = -r*0.78; gg.add(ring);
+    gg.position.set(c.antrieb !== "none" ? W*0.28 : 0, -H/2 - 0.02, c.antrieb !== "none" ? -D*0.1 : 0);
+    P("rueckkehr", NUTZ.rueckkehr.name, gg);
+  }
   if (c.segel){ const s4 = box(0.45*sc, 0.2*sc, 0.45*sc, m.sail); s4.position.set(-W*0.25, -H/2 - 0.1*sc - (cube ? 0.035 : 0), D*0.18); P("segel", SEGEL.name, s4); }
   /* Sonnensegel: quadratische Folie auf vier Auslegern über der Oberseite */
   if (c.sonne && c.sonne !== "none"){
@@ -2112,12 +2169,14 @@ function parseWishes(text){
   const nutz = [];
   const voyager = has(/voyager|interstellar|sonnensystem verlassen|aus dem sonnensystem|zu den sternen|außerirdisch|ausserirdisch|goldene schallplatte|so weit wie möglich/);
   const planetLab = has(/planet(en)?labor|labor.{0,50}(planet|mars|venus|jupiter|asteroid|mond)|(planet|mars|venus|jupiter|asteroid|mond).{0,50}(erforsch|untersuch|analys)|andere planeten|gestein|bodenprobe|atmosphäre (des|der|eines|von)/);
-  const lander = has(/landen|landung|lander|landesonde|landemodul|rover|auf dem (mars|mond|asteroiden)|auf der (venus|oberfläche)|bodenprobe/);
-  const labor = has(/bakterien|kristall|schwerelos|pflanzen (im all|im weltraum|wachsen|züchten|keimen)|im all wachsen|experimente? im all/) || (!planetLab && has(/labor/));
+  const back = has(/zurück zur erde|zur erde zurück|rückkehr|wieder (runter|zurück)|auf der erde landen|landet auf der erde|proben zurück|zurückbringen|zurückfliegen|zurückkommen|kapsel/);
+  const lander = (!back && has(/landen|landung|lander|landesonde|landemodul|rover|auf dem (mars|mond|asteroiden)|auf der (venus|oberfläche)|bodenprobe/)) || has(/landesonde|rover|auf dem (mars|mond|asteroiden) landen/);
+  const labor = has(/bakterien|kristall|schwerelos|pflanzen (im all|im weltraum|wachsen|züchten|keimen)|pflanzen-?experiment|experimente? (mit|an) (pflanzen|bakterien|kristallen|zellen)|im all wachsen|experimente? im all/) || (!planetLab && has(/labor/));
   if (planetLab && !voyager) nutz.push("planetenlabor");
   if (has(/außerirdisch|ausserirdisch|schallplatte|botschaft|voyager/)) nutz.push("schallplatte");
   if (voyager) nutz.push("sci");
   if (lander) nutz.push("lander");
+  if (back) nutz.push("rueckkehr");
   if (labor) nutz.push("labor");
   if (has(/teleskop|sterne|galax|exoplanet|astronom|nebel beobachten|planeten beobachten/)) nutz.push("teleskop");
   if (has(/hyperspek|mineral/)) nutz.push("hyper");
@@ -2217,6 +2276,7 @@ function repair(c, R){
     if (c.lage !== "rw"){ c.lage = "rw"; return "Reaktionsräder für genaue Ausrichtung."; }
     if (!c.stern){ c.stern = true; return "Sternsensor ergänzt für sehr genaue Ausrichtung."; }
   }
+  if (bad("rueckkehr") === "fail" && c.lage === "none"){ c.lage = "mtq"; return "Magnetspulen, damit die Rückkehrkapsel vor dem Bremsmanöver richtig ausgerichtet ist."; }
   if (bad("forschung") === "fail" && !R.B.deep){ c.bahn = "mars"; return "Ziel Mars gewählt – das Planetenlabor braucht einen Planeten zum Erforschen."; }
   if (bad("ziel")){
     if (R.B.swing && !c.swingby){ c.swingby = true; return "Swing-by an Planeten – holt Schwung wie Voyager und spart Treibstoff."; }
@@ -2337,7 +2397,7 @@ const aiOut = document.getElementById("ai-out");
 function aiPrompt(text, budget, maxkg){
   return "Du hilfst Hobby-Satellitenbauern, die meist ein sehr kleines Budget haben. Lies die Beschreibung und antworte NUR mit einem JSON-Objekt dieser Form:\n" +
     '{"titel": "kurzer Missionsname, höchstens 30 Zeichen",\n' +
-    ' "nutzlast": ["cam" | "multi" | "hyper" | "iot" | "sci" | "teleskop" | "labor" | "planetenlabor" | "lander" | "schallplatte" | "relay", ...]  (leere Liste, wenn er nur funken soll),\n' +
+    ' "nutzlast": ["cam" | "multi" | "hyper" | "iot" | "sci" | "teleskop" | "labor" | "planetenlabor" | "lander" | "schallplatte" | "rueckkehr" | "relay", ...]  (leere Liste, wenn er nur funken soll),\n' +
     ' "funk": "lora" | "uhf" | "s" | "x"  (die kleinste ausreichende Funkverbindung: lora für sehr billige Hobby-Satelliten mit wenigen Messwerten, uhf für Funkbaken und kleine Datenmengen, s für Fotos, x für große Bilddaten),\n' +
     ' "bahn": "leo" | "sso" | "dd" | "meo" | "geo" | "mond" | "mars" | "venus" | "jupiter" | "tief" | "interstellar" | null,\n' +
     ' "sonnensegel": true | false (true, wenn er mit einem Sonnensegel fliegen soll),\n' +
@@ -2351,7 +2411,7 @@ function aiPrompt(text, budget, maxkg){
     ' "verstanden": "1-2 einfache Sätze auf Deutsch in Du-Form: was der Satellit tun soll",\n' +
     ' "realismus": null oder "1 Satz, falls der Wunsch mit Hobby-Budget kaum machbar ist, und was stattdessen ginge"}\n\n' +
     "Nutzlasten: cam = einfache Farbkamera; multi = Multispektralkamera (Pflanzen, Landwirtschaft); hyper = Hyperspektralkamera (Mineralien); " +
-    "iot = Empfänger für Sensoren, Schiffe (AIS) oder Tiersender; sci = Strahlungs- oder Messsensor, Wissenschaft, Schule; teleskop = Weltraumteleskop für Sterne, Galaxien, Planeten; labor = Weltraumlabor für Experimente mit Pflanzen, Bakterien oder Kristallen in Schwerelosigkeit; planetenlabor = Labor, das einen anderen Planeten, Mond oder Asteroiden aus der Umlaufbahn erforscht (Gestein, Atmosphäre, Magnetfeld); lander = Landesonde mit Mini-Labor, die auf der Oberfläche landet; schallplatte = Goldene Schallplatte als Botschaft an Außerirdische wie bei Voyager; relay = Kommunikations-Transponder (Fernsehen, Internet).\n" +
+    "iot = Empfänger für Sensoren, Schiffe (AIS) oder Tiersender; sci = Strahlungs- oder Messsensor, Wissenschaft, Schule; teleskop = Weltraumteleskop für Sterne, Galaxien, Planeten; labor = Weltraumlabor für Experimente mit Pflanzen, Bakterien oder Kristallen in Schwerelosigkeit; planetenlabor = Labor, das einen anderen Planeten, Mond oder Asteroiden aus der Umlaufbahn erforscht (Gestein, Atmosphäre, Magnetfeld); lander = Landesonde mit Mini-Labor, die auf der Oberfläche landet; schallplatte = Goldene Schallplatte als Botschaft an Außerirdische wie bei Voyager; rueckkehr = Rückkehrkapsel, die Proben oder Experimente zurück zur Erde bringt; relay = Kommunikations-Transponder (Fernsehen, Internet).\n" +
     "Bahnen: leo = niedrig wie die ISS; sso = sonnensynchron (Standard für Kameras); dd = Dämmerungsbahn; meo = wie GPS; geo = geostationär; mond = Flug zum Mond; mars, venus, jupiter = Flug zu diesem Planeten; tief = Flug zu einem Asteroiden oder Kometen bzw. allgemein das All erkunden; interstellar = wie Voyager das Sonnensystem verlassen. null, wenn nichts dafür spricht.\n" +
     (budget ? "Budget laut Eingabefeld: " + budget + " Euro.\n" : "") + (maxkg ? "Höchstgewicht laut Eingabefeld: " + maxkg + " kg.\n" : "") +
     '\nBeschreibung:\n"""\n' + text.slice(0, 2000) + '\n"""';
@@ -2659,6 +2719,7 @@ document.getElementById("presets").addEventListener("click", e => {
 });
 document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
 document.getElementById("bHeat").addEventListener("click", () => toggleHeat(!V.heat));
+document.addEventListener("click", e => { const b = e.target.closest("[data-km]"); if (!b) return; KOSTEN = b.dataset.km; try { localStorage.setItem("satellitenwerkstatt.kosten", KOSTEN); } catch(err){} update(false); });
 document.getElementById("legend").addEventListener("click", e => { if (e.target.closest("[data-heatoff]")) toggleHeat(false); });
 document.getElementById("bShake").addEventListener("click", async () => {
   if (V.shake || V.testOrbit) return;
