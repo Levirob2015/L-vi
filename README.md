@@ -20,7 +20,10 @@ Kommandozeile.
 > **Neu: [Satellitenwerkstatt](docs/satellit.html)** – einen Satelliten
 > zusammenstellen (CubeSat 1U bis Kleinsatellit), als 3D-Modell drehen,
 > Rütteltest, Wärmebild und 24 Stunden im Orbit simulieren und sehen,
-> welche Bauteile du brauchst und was alles zusammen kostet.
+> welche Bauteile du brauchst und was alles zusammen kostet. Gedacht für
+> Hobby-Satellitenbauer mit kleinem Budget: PocketQubes, Selbstbau-Preise,
+> SatNOGS-Empfangsnetz und ein KI-Entwurf, der aus einer Beschreibung,
+> einem Budget und einem Höchstgewicht die günstigste startklare Variante sucht.
 > Online: `https://levirob2015.github.io/L-vi/satellit.html`
 
 ### Klickbare Vorschau
