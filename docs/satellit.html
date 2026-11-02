@@ -130,6 +130,15 @@ button,input,select{font:inherit;color:inherit}
 .hud-line b{color:var(--vp-ink);font-weight:500}
 .hud-line .ecl{color:#ffd27a}
 #soc{width:100%;height:92px;display:block;margin-top:4px}
+.buildbar{display:grid;gap:6px;background:var(--vp-glass);border:1px solid var(--vp-line);border-radius:8px;padding:8px;max-width:100%;backdrop-filter:blur(6px)}
+.bb-sel{font-size:12.5px;color:var(--vp-ink)} .bb-sel small{color:var(--vp-muted)}
+.bb-row{display:flex;flex-wrap:wrap;gap:3px;align-items:center}
+.bb-row button{border:1px solid var(--vp-line);background:transparent;color:var(--vp-ink);padding:5px 9px;border-radius:5px;cursor:pointer;font-size:12px}
+.bb-row button:hover{background:rgba(255,255,255,.08)}
+.bb-row button.on{background:var(--vp-ink);color:var(--vp)}
+.bb-row button:disabled{opacity:.4;cursor:default}
+.bb-lbl{font-size:11.5px;color:var(--vp-muted);margin-right:4px}
+.legend button{border:1px solid var(--vp-line);background:transparent;color:var(--vp-ink);border-radius:5px;padding:3px 8px;font-size:11.5px;cursor:pointer;justify-self:start}
 .no3d{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:24px;color:var(--vp-muted)}
 
 /* ---------- Ergebnis ---------- */
@@ -226,6 +235,7 @@ td .dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right
       <button type="button" data-mode="modell" class="on">Modell</button>
       <button type="button" data-mode="innen">Innenleben</button>
       <button type="button" data-mode="orbit">Im Orbit</button>
+      <button type="button" data-mode="bauen">Selbst bauen</button>
     </div>
     <div class="vp-tools vp-tr" role="group" aria-label="Einzeltests">
       <button type="button" id="bShake">Rütteltest</button>
@@ -233,6 +243,14 @@ td .dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right
     </div>
     <div class="vp-progress" id="vpProg" hidden></div>
     <div class="vp-bottom">
+      <div class="buildbar" id="buildbar" hidden>
+        <div class="bb-sel" id="bbSel"></div>
+        <div class="bb-row" id="bbTools" role="group" aria-label="Werkzeug">
+          <button type="button" data-tm="translate" class="on">Verschieben</button><button type="button" data-tm="rotate">Drehen</button><button type="button" data-tm="scale">Größe</button>
+          <button type="button" id="bbReset">Zurücksetzen</button><button type="button" id="bbDel">Entfernen</button>
+        </div>
+        <div class="bb-row" id="bbAdd" role="group" aria-label="Teil anbauen"><span class="bb-lbl">Anbauen:</span></div>
+      </div>
       <div class="legend" id="legend" hidden></div>
       <div class="hud" id="hud" hidden><div class="hud-line" id="hudLine"></div><canvas id="soc"></canvas></div>
       <div class="vp-info" id="vpInfo"></div>
@@ -267,6 +285,7 @@ td .dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
 <script>
 "use strict";
 /* =====================================================================
@@ -291,7 +310,9 @@ const BAHNEN = {
   sso: {name:"Sonnensynchron", sub:"überfliegt jeden Ort um 10:30 Uhr – Standard für Erdbeobachtung", beta:25, x:1.05},
   dd:  {name:"Dämmerungsbahn", sub:"über der Tag-Nacht-Grenze, fast immer Sonne", beta:65, x:1.12},
   meo: {name:"Mittlere Bahn", sub:"20.200 km wie GPS – mitten im Strahlungsgürtel", h:20200, beta:0, x:4},
-  geo: {name:"Geostationär", sub:"35.786 km, steht still über einem Punkt der Erde", h:35786, beta:0, x:6}
+  geo: {name:"Geostationär", sub:"35.786 km, steht still über einem Punkt der Erde", h:35786, beta:0, x:6},
+  mond: {name:"Zum Mond", sub:"384.000 km – in eine Umlaufbahn um den Mond", h:384000, beta:0, x:5, deep:true, dv:{c:300,s:900}, link:2e-3, dose:10},
+  tief: {name:"Tiefer Weltraum", sub:"durchs Sonnensystem zu einem Asteroiden oder zum Mars", h:1.5e8, beta:0, x:8, deep:true, dv:{c:1500,s:3000}, link:3e-4, dose:15}
 };
 const OBC = {
   std: {name:"Standard-Bordcomputer", sub:"handelsübliche Elektronik, verträgt ca. 20 krad Strahlung", c:[0.1,0.1,0.4,6000], s:[2,4,6,60000], tol:20},
@@ -308,7 +329,8 @@ const FUNK = {
 const BODEN = {
   eigen: {name:"Eigene Bodenstation", sub:"eine Antenne auf dem Dach, einmal kaufen oder selbst bauen"},
   satnogs: {name:"Eigene Station + SatNOGS", sub:"du sendest Befehle, Hunderte freiwillige Stationen weltweit empfangen kostenlos mit (nur UHF/S-Band)"},
-  netz:  {name:"Gemietetes Bodennetz", sub:"viele Stationen weltweit, Abrechnung pro Minute"}
+  netz:  {name:"Gemietetes Bodennetz", sub:"viele Stationen weltweit, Abrechnung pro Minute"},
+  dsn:   {name:"Weltraum-Funknetz", sub:"riesige 35-m-Antennen der Raumfahrtagenturen – nötig für Mond und tiefen Weltraum, teuer"}
 };
 const LAGE = {
   none: {name:"Passiv (Dauermagnet)", sub:"richtet sich grob am Erdmagnetfeld aus", c:[0.05,0.05,0,1500], s:[1,1,0,15000], acc:90, wing:0.25},
@@ -322,6 +344,11 @@ const ANTRIEB = {
   chem: {name:"Chemisch (grüner Treibstoff)", sub:"kräftig · 60 m/s (Klein: 200 m/s)", c:[1.2,1.5,0.8,120000], s:[60,50,20,1200000], dv:{c:60,s:200}},
   elek: {name:"Elektrisch (Ionentriebwerk)", sub:"sparsam, aber stromhungrig · 150 m/s (Klein: 1.500 m/s)", c:[0.9,1.2,6,95000], s:[30,30,150,900000], dv:{c:150,s:1500}}
 };
+const SONNE = {
+  none:  {name:"Kein Sonnensegel", sub:"", c:[0,0,0,0], s:[0,0,0,0], area:{p:0,c:0,s:0}},
+  klein: {name:"Sonnensegel klein", sub:"10 m² (Klein: 100 m²) · fliegt mit Sonnenlicht, ganz ohne Treibstoff", c:[0.4,0.6,0.3,40000], s:[8,10,5,600000], area:{p:2,c:10,s:100}},
+  gross: {name:"Sonnensegel groß", sub:"85 m² (Klein: 800 m²) · für Reisen durchs Sonnensystem", c:[0.9,1.2,0.5,90000], s:[20,25,8,1500000], area:{p:6,c:85,s:800}}
+};
 const SEGEL = {name:"Bremssegel", sub:"entfaltet sich nach der Mission und holt ihn schneller herunter", c:[0.15,0.15,0,12000], s:[3,4,0,90000], area:{c:1.5,s:12,p:0.3}};
 const NUTZ = {
   cam:   {name:"Farbkamera", sub:"ca. 25 m pro Pixel (Klein: 5 m) · etwa 25 Fotos am Tag", c:[0.2,0.3,1.5,15000], s:[8,10,20,200000], data:{c:0.05,s:3}, point:10},
@@ -329,6 +356,8 @@ const NUTZ = {
   hyper: {name:"Hyperspektralkamera", sub:"Hunderte Farbkanäle, z. B. für Mineralien", c:[2.5,3,9,350000], s:[60,80,120,6000000], data:{c:15,s:150}, point:0.1},
   iot:   {name:"IoT- und Schiffsempfänger", sub:"sammelt Signale von Sensoren und Schiffen (AIS)", c:[0.15,0.2,1.5,18000], s:[3,4,15,150000], data:{c:0.01,s:0.1}, point:180},
   sci:   {name:"Strahlungsdetektor", sub:"misst Teilchen im All – Wissenschaft und Schule", c:[0.2,0.2,0.4,25000], s:[5,6,10,180000], data:{c:0.001,s:0.01}, point:180},
+  teleskop: {name:"Weltraumteleskop", sub:"beobachtet Sterne, Galaxien und Planeten bei anderen Sternen", c:[1.2,1.5,5,80000], s:[40,60,80,3000000], data:{c:0.5,s:5}, point:0.1},
+  labor: {name:"Weltraumlabor", sub:"Experimente mit Pflanzen, Bakterien oder Kristallen in der Schwerelosigkeit · braucht 15–30 °C", c:[0.8,1.2,4,50000], s:[25,40,100,1500000], data:{c:0.02,s:0.2}, point:180},
   relay: {name:"Kommunikations-Transponder", sub:"leitet Fernsehen, Internet und Telefonie weiter (Ka-Band)", c:[1.0,1.5,20,250000], s:[30,40,300,8000000], data:{c:0,s:0}, point:1}
 };
 const HAUT = {
@@ -342,12 +371,22 @@ const BAUWEISE = {
   bausatz: {name:"Bausatz", sub:"fertige Platinen, selbst montiert", f:0.55, test:0.7, em:0.18},
   kauf:    {name:"Kaufteile", sub:"geprüfte Raumfahrt-Bauteile", f:1, test:1, em:0.25}
 };
+/* Eigene Anbauteile aus dem Bau-Modus: f(Skalierung) -> [Masse, Volumen, Leistung, Preis] */
+const EXTRA = {
+  kasten:   {name:"Kasten", f:s => { const v = 0.064*s[0]*s[1]*s[2]; return [v*0.5, 0, 0, 300 + v*3000]; }},
+  zylinder: {name:"Zylinder", f:s => { const v = 0.063*s[0]*s[1]*s[2]; return [v*0.5, 0, 0, 300 + v*3000]; }},
+  kugel:    {name:"Kugeltank", f:s => { const v = 0.065*s[0]*s[1]*s[2]; return [v*0.6, 0, 0, 800 + v*6000]; }},
+  antenne:  {name:"Stabantenne", f:s => [0.02*s[1], 0, 0, 150]},
+  schuessel:{name:"Parabolschüssel", f:s => [0.15*s[0]*s[2], 0, 0, 800*s[0]*s[2]]},
+  panel:    {name:"Solarpanel", f:s => { const a = 0.015*s[0]*s[1]; return [a*3.5 + 0.02, 0, 0, a*420000 + 500]; }, solar:s => 0.015*s[0]*s[1]},
+  teleskop: {name:"Teleskoprohr", f:s => [0.4*s[0]*s[1], 0, 0, 2000*s[0]*s[1]]}
+};
 const scaleP = v => [v[0]*0.3, v[1]*0.22, v[2]*0.4, v[3]*0.5];
 const tupOf = (it, k) => it[k] || (k === "p" ? scaleP(it.c) : it.c);
 const CAT = {
   struktur:{name:"Struktur", col:"#9aa6b4"}, daten:{name:"Bordcomputer", col:"#2fb5a3"}, energie:{name:"Energie", col:"#e2a33b"},
   funk:{name:"Funk", col:"#a07ff0"}, lage:{name:"Lageregelung", col:"#5cc46a"}, antrieb:{name:"Antrieb", col:"#ec6352"},
-  nutz:{name:"Nutzlast", col:"#4f9be8"}, waerme:{name:"Wärme", col:"#d5c9b0"}
+  nutz:{name:"Nutzlast", col:"#4f9be8"}, waerme:{name:"Wärme", col:"#d5c9b0"}, eigen:{name:"Eigene Teile", col:"#d68bd8"}
 };
 
 const HOBBY = {bauweise:"selbst", budget:0, maxkg:0};
@@ -367,6 +406,10 @@ const PRESETS = {
   iot: {label:"IoT-Netz", sub:"3U · Sensoren und Schiffe", c:{titel:"IoT-Knoten 3U", bahn:"sso", hoehe:560, jahre:4, format:"3U", koerper:true, fluegel:2, segmente:1, batterie:40,
     funk_uhf:true, funk_s:true, funk_x:false, funk_laser:false, boden:"eigen", lage:"mtq", stern:false, antrieb:"none", segel:false,
     nutz_cam:false, nutz_multi:false, nutz_hyper:false, nutz_iot:true, nutz_sci:false, nutz_relay:false, obc:"std", haut:"weiss", heizung:true, bauweise:"bausatz", budget:0, maxkg:0}},
+  mond: {label:"Mondsonde", sub:"fliegt zum Mond und fotografiert", wish:"Zum Mond fliegen und Fotos vom Mond machen"},
+  segler: {label:"Sonnensegler", sub:"reist mit Licht zu einem Asteroiden", wish:"Mit einem Sonnensegel durch das Sonnensystem zu einem Asteroiden fliegen und ihn fotografieren"},
+  teleskop: {label:"Weltraumteleskop", sub:"beobachtet Sterne und Galaxien", wish:"Ein Teleskop, das Sterne und Galaxien beobachtet"},
+  labor: {label:"Weltraumlabor", sub:"Pflanzen wachsen in Schwerelosigkeit", wish:"Ein Labor, in dem Pflanzen im All wachsen"},
   geo: {label:"Fernseh-Satellit", sub:"Kleinsatellit · GEO", c:{titel:"Kommunikation GEO", bahn:"geo", hoehe:550, jahre:12, format:"S", koerper:false, fluegel:4, segmente:3, batterie:1500,
     funk_uhf:false, funk_s:true, funk_x:false, funk_laser:false, boden:"eigen", lage:"rw", stern:true, antrieb:"elek", segel:false,
     nutz_cam:false, nutz_multi:false, nutz_hyper:false, nutz_iot:false, nutz_sci:false, nutz_relay:true, obc:"rad", haut:"mli", heizung:true, bauweise:"kauf", budget:0, maxkg:0}}
@@ -391,10 +434,10 @@ const degStr = d => d >= 1 ? nf0.format(d) + "°" : d >= 0.1 ? nf1.format(d) + "
 function compute(c){
   const F = FORMATE[c.format], cube = F.cube, k = F.cls, kr = k === "s" ? "s" : "c", B = BAHNEN[c.bahn], BW = BAUWEISE[c.bauweise] || BAUWEISE.kauf;
   const tup = it => tupOf(it, k);
-  const h = B.h || c.hoehe, r = RE + h, T = 2*Math.PI*Math.sqrt(r**3/MU);
+  const h = B.h || c.hoehe, r = RE + h, deep = !!B.deep, T = deep ? 86400 : 2*Math.PI*Math.sqrt(r**3/MU);
   const beta = B.beta*D2R, bstar = Math.asin(RE/r);
   let fe = 0;
-  if (beta < bstar) fe = Math.acos(Math.min(1, Math.sqrt(h*h + 2*RE*h)/(r*Math.cos(beta))))/Math.PI;
+  if (beta < bstar && !deep) fe = Math.acos(Math.min(1, Math.sqrt(h*h + 2*RE*h)/(r*Math.cos(beta))))/Math.PI;
   const yrs = c.jahre;
 
   const parts = [];
@@ -422,6 +465,8 @@ function compute(c){
   add("lage", LAGE[c.lage].name, tup(LAGE[c.lage]), {key:"lage"});
   if (c.stern) add("lage", STERN.name, tup(STERN), {key:"stern"});
   if (c.antrieb !== "none") add("antrieb", ANTRIEB[c.antrieb].name + " mit Tank", tup(ANTRIEB[c.antrieb]), {key:"antrieb"});
+  const sonne = SONNE[c.sonne] || SONNE.none;
+  if (c.sonne && c.sonne !== "none") add("antrieb", sonne.name, tup(sonne), {key:"sonne"});
   if (c.segel) add("antrieb", SEGEL.name, tup(SEGEL), {key:"segel"});
   const nutzKeys = Object.keys(NUTZ).filter(x => c["nutz_" + x]);
   nutzKeys.forEach(x => add("nutz", NUTZ[x].name, tup(NUTZ[x]), {key:"nutz_" + x}));
@@ -429,6 +474,10 @@ function compute(c){
   const heizW = c.heizung ? tup(HEIZ)[2] : 0;
   if (c.heizung) add("waerme", HEIZ.name, [tup(HEIZ)[0], tup(HEIZ)[1], 0, tup(HEIZ)[3]], {key:"heiz"});
 
+  let A_extra = 0;
+  const xs = (c.manuell && Array.isArray(c.manuell.x)) ? c.manuell.x : [];
+  xs.forEach(x => { const E = EXTRA[x.t]; if (!E) return; const sc3 = (x.s || [1,1,1]).map(v => Math.max(0.05, Math.abs(+v) || 1));
+    add("eigen", "Eigenes Teil: " + E.name, E.f(sc3), {internal:false}); if (E.solar) A_extra += E.solar(sc3); });
   parts.forEach(p => p.cost *= BW.f);
   const volUnit = k === "c" ? " U" : " L";
 
@@ -443,7 +492,7 @@ function compute(c){
   /* Energie */
   const degr = Math.pow(h > 15000 ? 0.97 : 0.975, yrs);
   const wf = LAGE[c.lage].wing*(c.lage === "rw" && !cube ? 1.1 : 1);
-  const P_sun = S0*ETA*(A_body*0.3 + A_wing*wf)*degr;
+  const P_sun = S0*ETA*(A_body*0.3 + A_wing*wf + A_extra*0.9*wf)*degr;
   const P_gen = P_sun*(1 - fe);
   const P_base = parts.reduce((s,p) => s + p.power, 0);
 
@@ -465,9 +514,10 @@ function compute(c){
   let tCold = T_mean + offs - damp*(T_mean - T_coldSS);
   const tColdRaw = tCold;
   let heatUsed = 0;
-  if (c.heizung && tCold < 5){
+  const lab = !!c.nutz_labor, target = lab ? 18 : 5;
+  if (c.heizung && tCold < target){
     const kInt = k === "p" ? 0.015 : cube ? 0.03 : 1.2;
-    const lift = Math.min(5 - tCold, heizW/kInt);
+    const lift = Math.min(target - tCold, (heizW + (lab ? tup(NUTZ.labor)[2] : 0))/kInt);
     tCold += lift; heatUsed = lift*kInt;
   }
   const tHotF = Math.max(tHot, tCold + 2);
@@ -496,7 +546,8 @@ function compute(c){
 
   /* Funk */
   let contact;
-  if (h >= 35000) contact = 86400;
+  if (deep) contact = (c.boden === "dsn" ? 2 : 8)*3600;
+  else if (h >= 35000) contact = 86400;
   else {
     const lam = Math.acos(RE/r*Math.cos(10*D2R)) - 10*D2R;
     contact = (1 - Math.cos(lam))/2*86400*(h < 2000 ? 2 : 1);
@@ -504,7 +555,7 @@ function compute(c){
     if (c.boden === "netz") contact = Math.min(contact*(h < 2000 ? 8 : 2), 86400*(h < 2000 ? 0.5 : 0.9));
   }
   const dist = h < 2000 ? Math.max(h, 500)*1.8 : h + 2000;
-  const distF = Math.min(1, (cube ? 1 : 20)*(1000/dist)**2);
+  const distF = deep ? Math.min(1, B.link*(c.boden === "dsn" ? 1 : 0.01)*(cube ? 1 : 20)) : Math.min(1, (cube ? 1 : 20)*(c.boden === "dsn" ? 50 : 1)*(1000/dist)**2);
   let best = 0, bestKey = null;
   const usable = c.boden === "satnogs" ? funkKeys.filter(x => x === "uhf" || x === "s") : funkKeys;
   usable.forEach(x => {
@@ -512,9 +563,9 @@ function compute(c){
     if (rr > best){ best = rr; bestKey = x; }
   });
   const downGB = best*contact*0.6/8/1e9;
-  const needGB = nutzKeys.reduce((s,x) => s + NUTZ[x].data[kr], 0) + 0.0005;
+  const needGB = nutzKeys.reduce((s,x) => s + NUTZ[x].data[kr], 0)*(deep ? 0.1 : 1) + 0.0005;
   const needMinDay = best > 0 ? needGB*8e9/(best*0.6)/60 + 10 : 0;
-  const bookedMin = Math.min(contact/60, needMinDay*1.5);
+  const bookedMin = Math.max(deep ? 15 : 0, Math.min(contact/60, needMinDay*1.3));
 
   /* Ausrichtung */
   const acc = c.stern ? (c.lage === "rw" ? 0.05 : c.lage === "mtq" ? 5 : 45) : LAGE[c.lage].acc;
@@ -534,11 +585,13 @@ function compute(c){
   const L_nat = life(mass, A_drag);
   const L_sail = c.segel ? life(mass, A_drag + (SEGEL.area[k] || SEGEL.area.c)) : L_nat;
   const dvHave = ANTRIEB[c.antrieb].dv[kr];
+  const sailA = (sonne.area[k] != null ? sonne.area[k] : sonne.area.c) || 0;
+  const sailYr = sailA > 0 && c.lage !== "none" ? 2*4.56e-6*sailA/Math.max(mass, 0.05)*3.15e7*0.4 : 0;
   const dvSK = h >= 35000 ? 50*yrs : h >= 2000 ? 2*yrs : (h < 450 ? 25 : h < 550 ? 8 : 2)*yrs;
   const dvDis = h >= 35000 ? 11 : h >= 2000 ? 30 : Math.max(0, h - 250)*0.27;
 
   /* Strahlung */
-  const doseYr = h >= 35000 ? 12 : h >= 2000 ? 40 : 0.5 + Math.max(0, h - 400)/400*2;
+  const doseYr = deep ? B.dose : h >= 35000 ? 12 : h >= 2000 ? 40 : 0.5 + Math.max(0, h - 400)/400*2;
   const dose = doseYr*yrs, tol = OBC[c.obc].tol;
 
   /* ---------- Tests ---------- */
@@ -557,7 +610,7 @@ function compute(c){
 
   T_("energie", "Energiebilanz", ratio >= 1.2 ? "ok" : ratio >= 1.0 ? "warn" : "fail",
     nf1.format(P_gen) + " W / " + nf1.format(P_cons) + " W",
-    "Im Mittel über eine Umrundung erzeugen die Solarzellen " + nf1.format(P_gen) + " W (am Missionsende, nach Alterung). Verbraucht werden " + nf1.format(P_cons) + " W. Verhältnis " + nf2.format(ratio) + ", gut ist ab 1,2.",
+    (deep ? "Weit weg von der Erde scheint die Sonne fast ununterbrochen. Die Solarzellen erzeugen " + nf1.format(P_gen) + " W, verbraucht werden " + nf1.format(P_cons) + " W. Verhältnis " + nf2.format(ratio) + ", gut ist ab 1,2." : "") || "Im Mittel über eine Umrundung erzeugen die Solarzellen " + nf1.format(P_gen) + " W (am Missionsende, nach Alterung). Verbraucht werden " + nf1.format(P_cons) + " W. Verhältnis " + nf2.format(ratio) + ", gut ist ab 1,2.",
     ratio >= 1.2 ? "" : (c.fluegel === 0 ? "Füge ausklappbare Solarflügel hinzu." : c.lage !== "rw" ? "Mit Reaktionsrädern zeigen die Flügel immer zur Sonne – das bringt deutlich mehr Strom." : "Mehr Flügelfelder, eine Dämmerungsbahn oder weniger Verbraucher helfen."));
 
   const dodOk = h >= 2000 ? 0.6 : 0.3, dodWarn = h >= 2000 ? 0.75 : 0.45;
@@ -570,7 +623,8 @@ function compute(c){
   T_("funk", "Datenverbindung", best === 0 ? "fail" : downGB >= needGB*1.5 ? "ok" : downGB >= needGB ? "warn" : "fail",
     best === 0 ? "kein Funk" : dataStr(downGB) + " / " + dataStr(needGB) + " am Tag",
     best === 0 ? "Ohne Funkgerät kann niemand mit dem Satelliten sprechen." :
-      "Kontaktzeit mit " + (c.boden === "netz" ? "dem Bodennetz" : c.boden === "satnogs" ? "deiner Station und dem SatNOGS-Netz" : "deiner Station") + ": " + (contact >= 86000 ? "rund um die Uhr" : nf0.format(contact/60) + " Minuten am Tag") + ". Über " + FUNK[bestKey].name + " passen damit " + dataStr(downGB) + " herunter. Die Nutzlast erzeugt " + dataStr(needGB) + " am Tag." + (distF < 1 ? " Wegen der großen Entfernung kommt nur " + pct(distF) + " der Datenrate an." : ""),
+      "Kontaktzeit mit " + (c.boden === "dsn" ? "den Großantennen" : c.boden === "netz" ? "dem Bodennetz" : c.boden === "satnogs" ? "deiner Station und dem SatNOGS-Netz" : "deiner Station") + ": " + (contact >= 86000 ? "rund um die Uhr" : nf0.format(contact/60) + " Minuten am Tag") + ". Über " + FUNK[bestKey].name + " passen damit " + dataStr(downGB) + " herunter. Die Nutzlast erzeugt " + dataStr(needGB) + " am Tag" + (deep ? " – so weit draußen werden nur ausgewählte Bilder und Messwerte gefunkt." : ".") + (distF < 1 ? " Wegen der großen Entfernung kommt nur " + (distF < 0.01 ? "ein winziger Teil" : pct(distF)) + " der Datenrate an." : ""),
+    deep && c.boden !== "dsn" && downGB < needGB*1.5 ? "So weit draußen hören nur die Großantennen des Weltraum-Funknetzes den Satelliten – wähle es als Bodenstation." :
     best === 0 ? (funkKeys.length ? "SatNOGS empfängt nur UHF und S-Band – nimm eines davon dazu oder eine andere Bodenstation." : "Wähle mindestens UHF für Befehle.") : downGB >= needGB*1.5 ? (c.funk_uhf ? "" : "Tipp: UHF als Reserve für Notfallbefehle ist üblich und billig.") : (c.boden === "eigen" && !c.funk_x ? "Kostenlos mehr Kontaktzeit: SatNOGS als Bodenstation wählen. Sonst hilft eine schnellere Funkverbindung." : "Nimm eine schnellere Funkverbindung (S- oder X-Band) oder miete ein Bodennetz mit mehr Stationen."));
 
   T_("lage", "Ausrichtung", tooCoarse.length ? "fail" : acc*2 > needAcc && needAcc < 180 ? "warn" : "ok",
@@ -579,11 +633,12 @@ function compute(c){
       needAcc >= 180 ? "Kein Bauteil muss genau ausgerichtet werden." : "Die Lageregelung hält " + degStr(acc) + ", gebraucht werden " + degStr(needAcc) + ".",
     tooCoarse.length ? (c.lage !== "rw" ? "Reaktionsräder einbauen" + (needAcc < 0.5 ? " und einen Sternsensor ergänzen." : ".") : "Einen Sternsensor ergänzen.") : acc*2 > needAcc && needAcc < 180 ? "Knapp – ein Sternsensor gibt Reserve." : "");
 
-  const thermFail = tCold < 0 || tHotF > 45 || tCold < -20;
-  const thermWarn = tCold < 5 || tHot > 40;
+  const thermFail = tCold < 0 || tHotF > 45 || tCold < -20 || (lab && (tCold < 10 || tHotF > 35));
+  const thermWarn = tCold < 5 || tHot > 40 || (lab && (tCold < 15 || tHotF > 30));
   T_("waerme", "Temperatur innen", thermFail ? "fail" : thermWarn ? "warn" : "ok",
     nf0.format(tCold) + " bis " + nf0.format(tHotF) + " °C",
-    "Im Sonnenlicht wärmt sich der Satellit auf, im Erdschatten kühlt er aus. Innen schwankt es zwischen " + nf0.format(tCold) + " und " + nf0.format(tHot) + " °C. Der Akku verträgt 0 bis 45 °C, die Elektronik −20 bis 60 °C." + (c.heizung && tColdRaw < 5 ? " Die Heizung hebt den kältesten Wert von " + nf0.format(tColdRaw) + " °C an." : ""),
+    "Im Sonnenlicht wärmt sich der Satellit auf, im Erdschatten kühlt er aus. Innen schwankt es zwischen " + nf0.format(tCold) + " und " + nf0.format(tHot) + " °C. Der Akku verträgt 0 bis 45 °C, die Elektronik −20 bis 60 °C." + (lab ? " Das Labor mit lebenden Proben braucht 15 bis 30 °C." : "") + (c.heizung && tColdRaw < target ? " Die Heizung hebt den kältesten Wert von " + nf0.format(tColdRaw) + " °C an." : ""),
+    lab && tCold < 15 && !c.heizung ? "Das Labor braucht eine Heizung – schalte die Akkuheizung ein, sie wärmt dann auch die Proben." : lab && tCold < 15 ? (c.haut !== "mli" ? "Goldfolie (MLI) hält die Wärme im Labor." : "Eine schwarze Oberfläche nimmt mehr Sonnenwärme auf.") :
     tCold < 0 ? (c.heizung ? (c.haut === "mli" ? "Die Heizung reicht nicht. Eine schwarz eloxierte Oberfläche nimmt mehr Sonnenwärme auf." : "Die Heizung reicht nicht. Goldfolie (MLI) dämpft die Kälte.") : "Baue eine Akkuheizung ein oder nimm Goldfolie (MLI) als Isolierung.") : tHot > 45 ? (c.haut !== "weiss" ? "Zu heiß: weißer Lack wirft mehr Sonnenlicht zurück." : "Zu heiß: weniger Stromverbrauch senkt die Eigenwärme.") :
       !thermWarn ? "" : tHot > 40 ? (c.haut !== "weiss" ? "Etwas warm – weißer Lack wirft mehr Sonnenlicht zurück." : "Etwas warm – weniger Stromverbrauch senkt die Eigenwärme.") :
       c.haut !== "mli" ? "Etwas kühl – Goldfolie (MLI) glättet die Schwankungen." : c.heizung ? "Etwas kühl, die Heizung hält den Akku aber über 0 °C." : "Etwas kühl – eine Akkuheizung gibt Reserve.");
@@ -594,7 +649,10 @@ function compute(c){
     f1 >= fReq*1.15 ? "" : "Weniger oder kürzere Solarflügel und weniger Masse machen ihn steifer.");
 
   let lifeStatus, lifeVal, lifeText, lifeFix = "";
-  if (h >= 2000){
+  if (deep){
+    lifeStatus = "ok"; lifeVal = "verlässt die Erde";
+    lifeText = "Der Satellit verlässt die Umlaufbahn um die Erde und wird dort nicht zu Weltraummüll.";
+  } else if (h >= 2000){
     const need = dvSK + dvDis;
     lifeStatus = dvHave >= need ? "ok" : dvHave >= dvDis ? "warn" : "fail";
     lifeVal = nf0.format(dvHave) + " / " + nf0.format(need) + " m/s";
@@ -620,6 +678,15 @@ function compute(c){
   }
   T_("leben", "Weltraummüll-Regel", lifeStatus, lifeVal, lifeText, lifeFix);
 
+  if (deep){
+    const need = B.dv[kr], have = dvHave + sailYr*yrs;
+    T_("ziel", "Flug zum Ziel", have >= need*1.1 ? "ok" : have >= need ? "warn" : "fail",
+      nf0.format(have) + " / " + nf0.format(need) + " m/s",
+      "Die Rakete schickt den Satelliten auf den Weg" + (c.bahn === "mond" ? " zum Mond. Um dort in eine Umlaufbahn einzuschwenken," : ". Um sein Ziel zu erreichen,") + " muss er seine Geschwindigkeit selbst noch um etwa " + nf0.format(need) + " m/s ändern. " +
+      (dvHave ? "Der Antrieb schafft " + nf0.format(dvHave) + " m/s. " : "") + (sailA ? (sailYr ? "Das Sonnensegel bringt " + nf0.format(sailYr) + " m/s pro Jahr, in " + yrs + (yrs === 1 ? " Jahr " : " Jahren ") + nf0.format(sailYr*yrs) + " m/s." : "Das Sonnensegel lässt sich ohne Lageregelung nicht steuern.") : ""),
+      have >= need*1.1 ? "" : sailA && !sailYr ? "Lageregelung einbauen, damit das Segel zur Sonne gedreht werden kann." : c.sonne !== "gross" ? "Ein (größeres) Sonnensegel braucht keinen Treibstoff und wird mit jedem Jahr schneller." : c.antrieb !== "elek" ? "Ein elektrischer Antrieb ergänzt das Segel." : "Eine längere Mission gibt dem Segel mehr Zeit.");
+  }
+
   T_("strahlung", "Strahlung", dose <= tol*0.5 ? "ok" : dose <= tol ? "warn" : "fail",
     nf0.format(dose) + " / " + nf0.format(tol) + " krad",
     "In dieser Bahn sammelt die Elektronik etwa " + nf1.format(doseYr) + " krad pro Jahr, nach " + yrs + " Jahren also " + nf0.format(dose) + " krad. Der Bordcomputer verträgt " + nf0.format(tol) + " krad.",
@@ -632,18 +699,19 @@ function compute(c){
   once.push({name:"Testmodell (zweites Exemplar für Bodentests)", cost:hw*BW.em});
   once.push({name:"Umwelttests: Rütteltisch, Thermal-Vakuum" + (c.bauweise === "kauf" ? ", EMV" : " (z. B. an einer Hochschule)"), cost:F.test*BW.test});
   const launch = cube ? F.launch*B.x : Math.max(400000, 6500*mass)*B.x + 25000;
+  if (deep) once.push({name:"Bahnberechnung und Flugplanung " + (c.bahn === "mond" ? "zum Mond" : "durchs Sonnensystem"), cost: cube ? 25000*BW.test : 300000});
   once.push({name:"Start als Mitflieger" + (k === "p" ? " (inkl. PocketQube-Ausstoßer)" : cube ? " (inkl. Ausstoßbehälter)" : " (inkl. Trennring)"), cost:launch});
   const amateur = cube && c.bauweise !== "kauf" && c.boden !== "netz" && funkKeys.length > 0 && funkKeys.every(x => x === "uhf" || x === "s");
   once.push({name: amateur ? "Amateurfunk-Koordination (kostenlos), Registrierung, Haftpflicht" : "Frequenzanmeldung, Zulassung, Haftpflicht", cost: amateur ? 3000 : cube ? 12000 : 120000 + 0.03*(hw + launch)});
-  if (c.boden !== "netz"){
+  if (c.boden !== "netz" && c.boden !== "dsn"){
     const diy = c.bauweise !== "kauf";
     const st = funkKeys.reduce((s,x) => s + (diy ? FUNK[x].diy : FUNK[x].station), 0) + (cube ? (diy ? 300 : 4000) : 40000);
     once.push({name:"Bodenstation: " + funkKeys.map(x => FUNK[x].name).join(", ") + (funkKeys.length ? (diy ? " (Selbstbau mit SDR-Empfänger)" : " + Rechner") : ""), cost:st});
     if (c.boden === "satnogs") once.push({name:"SatNOGS-Empfangsnetz (freiwillige Stationen weltweit)", cost:0});
   } else {
-    once.push({name:"Einrichtung Bodennetz", cost:5000});
-    const rate = funkKeys.reduce((m,x) => Math.max(m, FUNK[x].min), 0);
-    run.push({name:"Bodennetz-Miete: " + nf0.format(bookedMin) + " min/Tag × " + rate + " €/min × " + yrs + " J.", cost:bookedMin*365*rate*yrs});
+    once.push({name: c.boden === "dsn" ? "Vertrag mit dem Weltraum-Funknetz" : "Einrichtung Bodennetz", cost: c.boden === "dsn" ? 20000 : 5000});
+    const rate = c.boden === "dsn" ? 25 : funkKeys.reduce((m,x) => Math.max(m, FUNK[x].min), 0);
+    run.push({name:(c.boden === "dsn" ? "Großantennen-Zeit: " : "Bodennetz-Miete: ") + nf0.format(bookedMin) + " min/Tag × " + rate + " €/min × " + yrs + " J.", cost:bookedMin*365*rate*yrs});
   }
   const subOnce = hw + once.reduce((s,x) => s + x.cost, 0);
   once.push({name:"Reserve für Unvorhergesehenes (15 %)", cost:subOnce*0.15});
@@ -728,6 +796,7 @@ form.innerHTML =
   '</div>' +
   '<div class="sec"><h2>Lageregelung & Antrieb</h2>' + optRadio("lage", LAGE) + check1("stern", STERN) +
     '<div class="field"><span class="lbl">Antrieb</span>' + optRadio("antrieb", ANTRIEB) + '</div>' + check1("segel", SEGEL) +
+    '<div class="field"><span class="lbl">Sonnensegel</span>' + optRadio("sonne", SONNE) + '</div>' +
   '</div>' +
   '<div class="sec"><h2>Nutzlast</h2>' + optChecks("nutz_", NUTZ) + '</div>' +
   '<div class="sec"><h2>Bordcomputer & Wärme</h2>' + optRadio("obc", OBC) +
@@ -739,7 +808,8 @@ document.getElementById("presets").innerHTML = Object.entries(PRESETS).map(([k,p
 
 const NUMS = ["hoehe","jahre","segmente","batterie","fluegel"];
 const BOOLS = ["koerper","stern","segel","heizung", ...Object.keys(FUNK).map(x => "funk_" + x), ...Object.keys(NUTZ).map(x => "nutz_" + x)];
-const RADIOS = ["bahn","format","fluegel","boden","lage","antrieb","obc","haut","bauweise"];
+const RADIOS = ["bahn","format","fluegel","boden","lage","antrieb","obc","haut","bauweise","sonne"];
+let MANUAL = {d:{}, x:[]};
 function readForm(){
   const el = form.elements, c = {};
   c.titel = el.titel.value.trim() || "Mein Satellit";
@@ -749,6 +819,7 @@ function readForm(){
   BOOLS.forEach(k => c[k] = el[k].checked);
   c.budget = Math.max(0, Number(el.budget.value) || 0);
   c.maxkg = Math.max(0, Number(String(el.maxkg.value).replace(",", ".")) || 0);
+  c.manuell = JSON.parse(JSON.stringify(MANUAL));
   return c;
 }
 function batteryRange(fmt){
@@ -757,6 +828,8 @@ function batteryRange(fmt){
   if (k === "p"){ b.min = 2; b.max = 40; b.step = 1; } else if (k === "c"){ b.min = 10; b.max = 250; b.step = 5; } else { b.min = 200; b.max = 5000; b.step = 50; }
 }
 function writeForm(c){
+  c = Object.assign({sonne:"none", boden:"eigen", bauweise:"selbst"}, c);
+  MANUAL = c.manuell && typeof c.manuell === "object" ? JSON.parse(JSON.stringify({d:c.manuell.d || {}, x:c.manuell.x || []})) : {d:{}, x:[]};
   const el = form.elements;
   el.titel.value = c.titel;
   batteryRange(c.format);
@@ -767,7 +840,7 @@ function writeForm(c){
   el.maxkg.value = c.maxkg > 0 ? c.maxkg : "";
 }
 function tupleFor(key, v, k){
-  const map = {obc:OBC, lage:LAGE, antrieb:ANTRIEB, haut:HAUT};
+  const map = {obc:OBC, lage:LAGE, antrieb:ANTRIEB, haut:HAUT, sonne:SONNE};
   if (map[key]) return map[key][v] && tupOf(map[key][v], k);
   if (key.startsWith("funk_")) return tupOf(FUNK[key.slice(5)], k);
   if (key.startsWith("nutz_")) return tupOf(NUTZ[key.slice(5)], k);
@@ -783,7 +856,7 @@ function refreshHints(c, R){
     if (key === "koerper"){ const [W,H,D] = R.F.d, A = (W*H*2 + D*H*2)*0.008; n.innerHTML = eur(A*(R.cube ? 230000 : 110000)*R.BW.f).replace(" €","&nbsp;€"); return; }
     const t = tupleFor(key, v, R.k);
     if (!t){ n.textContent = ""; return; }
-    n.innerHTML = t[3] === 0 ? "–" : (t[0] >= 0.005 ? kg(t[0]).replace(" kg","&nbsp;kg") + "<br>" : "") + eur(t[3]*R.BW.f).replace(" €","&nbsp;€");
+    n.innerHTML = t[3] === 0 ? "" : (t[0] >= 0.005 ? kg(t[0]).replace(" kg","&nbsp;kg") + "<br>" : "") + eur(t[3]*R.BW.f).replace(" €","&nbsp;€");
   });
   const o = id => document.getElementById("o-" + id);
   o("hoehe").textContent = nf0.format(c.hoehe) + " km";
@@ -849,7 +922,10 @@ function renderResults(){
 
   const ex = [];
   ex.push("<b>Frequenzanmeldung</b> bei der Bundesnetzagentur, die sie an die ITU weitergibt. Vorlauf etwa 2 Jahre – als Erstes erledigen.");
-  ex.push("<b>Startplatz buchen</b> bei einem Mitflug-Anbieter, 12 bis 18 Monate vor dem Start.");
+  ex.push(R.B.deep ? "<b>Mitflug ins tiefe All</b>: Plätze auf Mond- und Planetenmissionen sind selten – Raumfahrtagenturen schreiben sie gelegentlich für kleine Satelliten aus." : "<b>Startplatz buchen</b> bei einem Mitflug-Anbieter, 12 bis 18 Monate vor dem Start.");
+  if (c.boden === "dsn") ex.push("<b>Zeit auf den Großantennen</b> (ESA Estrack oder NASA Deep Space Network) früh anfragen – sie ist knapp und wird vergeben.");
+  if (c.sonne !== "none") ex.push("<b>Sonnensegel testen</b>: Das Entfalten der dünnen Folie vorher oft am Boden üben – das ist der heikelste Moment der Mission.");
+  if (c.nutz_labor) ex.push("<b>Proben für das Labor</b> erst kurz vor dem Start einsetzen; Startanbieter verlangen dafür einen Sicherheitsnachweis.");
   if (c.funk_uhf && c.boden !== "netz") ex.push("<b>Amateurfunk-Koordination</b> (IARU), wenn du im Amateurfunkband sendest – kostenlos, verlangt aber offene, unverschlüsselte Funkprotokolle. Für deine Sendestation brauchst du ein Amateurfunkzeugnis (Prüfung bei der Bundesnetzagentur).");
   if (c.boden === "satnogs") ex.push("<b>SatNOGS</b>: Satellit beim offenen SatNOGS-Netz der Libre Space Foundation eintragen und die Funkdaten-Beschreibung veröffentlichen, damit die Stationen ihn dekodieren können.");
   if (c.bauweise === "selbst") ex.push("<b>Offene Baupläne</b> nutzen, z. B. von LibreCube oder anderen Open-Source-CubeSat-Projekten. Nur bei Akku, Solarzellen und Funk lohnt es sich, Teile mit Flugerfahrung zu kaufen.");
@@ -995,6 +1071,7 @@ function init3d(){
 
   TEX.cell = cellCanvas(); TEX.foil = foilCanvas();
   V.ok = true;
+  initEditor();
   new ResizeObserver(resize).observe(view); resize();
   requestAnimationFrame(loop);
 }
@@ -1036,17 +1113,31 @@ function dish(R, depth, m){
 }
 
 /* ---------- Satellit bauen ---------- */
+function customPart(t, m, sc){
+  const g = new THREE.Group();
+  const white = new THREE.MeshStandardMaterial({color:0xe9ecef, metalness:0.2, roughness:0.5});
+  if (t === "kasten") g.add(box(0.4*sc, 0.4*sc, 0.4*sc, white));
+  else if (t === "zylinder") g.add(cyl(0.2*sc, 0.2*sc, 0.5*sc, white));
+  else if (t === "kugel") g.add(mesh(new THREE.SphereGeometry(0.25*sc, 32, 20), new THREE.MeshStandardMaterial({color:0xc4c9d0, metalness:0.85, roughness:0.25})));
+  else if (t === "antenne"){ const a = cyl(0.012*sc, 0.012*sc, 1.5*sc, m.tape, 8); a.position.y = 0.75*sc; g.add(a); const b = mesh(new THREE.SphereGeometry(0.03*sc, 12, 8), m.alu); b.position.y = 1.5*sc; g.add(b); }
+  else if (t === "schuessel"){ const d = dish(0.6*sc, 0.2*sc, white); d.rotation.x = -Math.PI/2; d.position.z = 0.05*sc; g.add(d); const f = cyl(0.02*sc, 0.02*sc, 0.5*sc, m.alu, 8); f.rotation.x = Math.PI/2; f.position.z = 0.3*sc; g.add(f); }
+  else if (t === "panel"){ const cm = cellMat(1, 1.5), back = new THREE.MeshStandardMaterial({color:0x30343b, metalness:0.4, roughness:0.5}); g.add(mesh(new THREE.BoxGeometry(1*sc, 1.5*sc, 0.03*sc), [back, back, back, back, cm, cm])); }
+  else if (t === "teleskop"){ const tb = cyl(0.2*sc, 0.2*sc, 1.2*sc, white); tb.rotation.x = Math.PI/2; tb.position.z = 0.6*sc; g.add(tb); const gl = cyl(0.17*sc, 0.17*sc, 0.02, m.glass); gl.rotation.x = Math.PI/2; gl.position.z = 1.0*sc; g.add(gl); }
+  return g;
+}
 function buildSat(c){
   const F = FORMATE[c.format], cube = F.cube, [W,H,D] = F.d, m = M();
   const g = new THREE.Group(), outer = new THREE.Group(), inner = new THREE.Group();
   g.add(outer, inner);
   const innen = V.mode === "innen";
   const bodyMats = [];
+  const P = (key, label, obj) => { obj.userData.part = key; obj.userData.label = label; outer.add(obj); return obj; };
+  const grp = () => new THREE.Group();
   const faceMat = (w, h, cells) => { const mm = cells ? cellMat(w, h) : coatMat(c.haut, w, h); bodyMats.push(mm); return mm; };
   const pq = F.cls === "p";
   const inset = cube ? 0.94 : 1;
   const mats = [faceMat(D, H, c.koerper), faceMat(D, H, c.koerper), faceMat(W, D, false), faceMat(W, D, false), faceMat(W, H, c.koerper), faceMat(W, H, c.koerper)];
-  const body = mesh(new THREE.BoxGeometry(W*inset, H*0.985, D*inset), mats); outer.add(body);
+  const body = mesh(new THREE.BoxGeometry(W*inset, H*0.985, D*inset), mats); body.userData.body = true; outer.add(body);
   if (cube){
     const rw = pq ? 0.035 : 0.085, railMat = m.alu; bodyMats.push(railMat);
     [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([sx,sz]) => { const r = box(rw, H + 0.07, rw, railMat); r.position.set(sx*(W/2 - rw/2), 0, sz*(D/2 - rw/2)); outer.add(r); });
@@ -1064,23 +1155,24 @@ function buildSat(c){
   }
   if (innen){ bodyMats.forEach(mm => { mm.transparent = true; mm.opacity = 0.16; mm.depthWrite = false; }); }
 
-  /* Solarflügel */
+  /* Solarflügel: je Flügel eine Gruppe am Scharnier */
   const nSeg = c.fluegel > 0 ? c.segmente : 0;
   const backMat = new THREE.MeshStandardMaterial({color:0x30343b, metalness:0.4, roughness:0.5});
   const addWing = (axis, sign) => {
     const along = cube ? (axis === "x" ? D : W) : 6, tall = cube ? H*0.96 : 8, gap = cube ? 0.05 : 0.15;
-    const start = (axis === "x" ? W : D)/2 + (cube ? 0.06 : 1.4);
-    if (!cube){ const boom = cyl(0.08, 0.08, 1.4, m.alu, 10); boom.rotation.z = Math.PI/2; if (axis === "z") boom.rotation.set(Math.PI/2, 0, 0);
-      const p = (axis === "x" ? W : D)/2 + 0.7; boom.position[axis] = sign*p; outer.add(boom); }
+    const half = (axis === "x" ? W : D)/2, start = cube ? 0.06 : 1.4;
+    const wg = grp(); wg.position[axis] = sign*half;
+    if (!cube){ const boom = cyl(0.08, 0.08, 1.4, m.alu, 10); if (axis === "x") boom.rotation.z = Math.PI/2; else boom.rotation.x = Math.PI/2; boom.position[axis] = sign*0.7; wg.add(boom); }
     for (let i = 0; i < nSeg; i++){
       const cm = cellMat(along, tall), cm2 = cellMat(along, tall);
       const off = sign*(start + i*(along + gap) + along/2);
       let p;
       if (axis === "x"){ p = mesh(new THREE.BoxGeometry(along, tall, 0.03), [backMat, backMat, backMat, backMat, cm, cm2]); p.position.set(off, 0, 0); }
       else { p = mesh(new THREE.BoxGeometry(0.03, tall, along), [cm, cm2, backMat, backMat, backMat, backMat]); p.position.set(0, 0, off); }
-      outer.add(p);
-      if (cube){ const hg = cyl(0.025, 0.025, tall*0.3, m.alu, 8); const hp = sign*(start + i*(along + gap) - gap/2); if (axis === "x") hg.position.set(hp, 0, 0); else hg.position.set(0, 0, hp); outer.add(hg); }
+      wg.add(p);
+      if (cube){ const hg = cyl(0.025, 0.025, tall*0.3, m.alu, 8); hg.position[axis] = sign*(start + i*(along + gap) - gap/2); wg.add(hg); }
     }
+    P("fluegel-" + axis + (sign > 0 ? "+" : "-"), "Solarflügel", wg);
   };
   if (c.fluegel >= 2){ addWing("x", 1); addWing("x", -1); }
   if (c.fluegel === 4){ addWing("z", 1); addWing("z", -1); }
@@ -1089,31 +1181,38 @@ function buildSat(c){
   const sc = pq ? 0.5 : cube ? 1 : 3.2;
   const front = [];
   const lens = (r, len, extra) => {
-    const gg = new THREE.Group();
+    const gg = grp();
     const barrel = cyl(r, r*1.05, len, m.black); barrel.rotation.x = Math.PI/2; barrel.position.z = len/2; gg.add(barrel);
     const glass = cyl(r*0.78, r*0.78, 0.02, m.glass); glass.rotation.x = Math.PI/2; glass.position.z = len + 0.005; gg.add(glass);
     const ringM = cyl(r*1.12, r*1.12, 0.04, m.alu); ringM.rotation.x = Math.PI/2; ringM.position.z = 0.02; gg.add(ringM);
     if (extra){ const b = box(r*2.4, r*2.4, 0.08, m.dark); b.position.z = 0.04; gg.add(b); }
     return gg;
   };
-  if (c.nutz_cam) front.push({o:lens(0.2*sc, 0.16*sc), s:0.5*sc});
-  if (c.nutz_multi) front.push({o:lens(0.34*sc, 0.4*sc, true), s:0.85*sc});
-  if (c.nutz_hyper) front.push({o:lens(0.42*sc, 0.75*sc, true), s:1.05*sc});
+  if (c.nutz_cam) front.push({k:"cam", l:NUTZ.cam.name, o:lens(0.2*sc, 0.16*sc), s:0.5*sc});
+  if (c.nutz_multi) front.push({k:"multi", l:NUTZ.multi.name, o:lens(0.34*sc, 0.4*sc, true), s:0.85*sc});
+  if (c.nutz_hyper) front.push({k:"hyper", l:NUTZ.hyper.name, o:lens(0.42*sc, 0.75*sc, true), s:1.05*sc});
   if (c.nutz_iot){
     class Helix extends THREE.Curve{ getPoint(t, tg){ tg = tg || new THREE.Vector3(); const a = t*Math.PI*2*6; return tg.set(0.1*sc*Math.cos(a), 0.1*sc*Math.sin(a), t*0.55*sc); } }
-    const gg = new THREE.Group(); gg.add(mesh(new THREE.TubeGeometry(new Helix(), 120, 0.012*sc, 6), m.copper));
+    const gg = grp(); gg.add(mesh(new THREE.TubeGeometry(new Helix(), 120, 0.012*sc, 6), m.copper));
     const base = cyl(0.16*sc, 0.16*sc, 0.03, m.white); base.rotation.x = Math.PI/2; gg.add(base);
-    front.push({o:gg, s:0.38*sc});
+    front.push({k:"iot", l:NUTZ.iot.name, o:gg, s:0.38*sc});
   }
-  if (c.funk_s){ const gg = new THREE.Group(); const b = box(0.5*sc, 0.5*sc, 0.03, m.white); b.position.z = 0.015; gg.add(b); const p = box(0.3*sc, 0.3*sc, 0.012, m.copper); p.position.z = 0.035; gg.add(p); front.push({o:gg, s:0.55*sc}); }
-  if (c.funk_x && cube){ const gg = new THREE.Group(); const b = box(0.8, 0.42, 0.03, m.white); b.position.z = 0.015; gg.add(b);
-    for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++){ const p = box(0.13, 0.13, 0.012, m.copper); p.position.set(-0.3 + i*0.2, -0.1 + j*0.2, 0.035); gg.add(p); }
-    front.push({o:gg, s:0.85}); }
-  if (c.funk_laser){ const gg = new THREE.Group(); const fork = box(0.42*sc, 0.1*sc, 0.2*sc, m.alu); fork.position.z = 0.1*sc; gg.add(fork);
+  if (c.nutz_labor){
+    const gg = grp(), s2 = 0.55*sc;
+    const b = box(s2*1.4, s2, s2*0.5, new THREE.MeshStandardMaterial({color:0xdfe3e8, metalness:0.3, roughness:0.45})); b.position.z = s2*0.25; gg.add(b);
+    const win = cyl(s2*0.3, s2*0.3, 0.02, new THREE.MeshStandardMaterial({color:0x9fe7b4, emissive:0x2c9a4e, emissiveIntensity:0.7, roughness:0.2}), 32); win.rotation.x = Math.PI/2; win.position.set(-s2*0.3, 0, s2*0.51); gg.add(win);
+    const rim = mesh(new THREE.TorusGeometry(s2*0.3, s2*0.04, 10, 32), m.alu); rim.position.set(-s2*0.3, 0, s2*0.52); gg.add(rim);
+    for (let i = 0; i < 3; i++){ const led = box(s2*0.12, s2*0.06, 0.02, new THREE.MeshStandardMaterial({color:0x7fd0ff, emissive:0x2f8fd0, emissiveIntensity:0.8})); led.position.set(s2*0.35, s2*(0.2 - i*0.2), s2*0.51); gg.add(led); }
+    front.push({k:"labor", l:NUTZ.labor.name, o:gg, s:s2*1.4});
+  }
+  if (c.funk_s){ const gg = grp(); const b = box(0.5*sc, 0.5*sc, 0.03, m.white); b.position.z = 0.015; gg.add(b); const p = box(0.3*sc, 0.3*sc, 0.012, m.copper); p.position.z = 0.035; gg.add(p); front.push({k:"sband", l:"S-Band-Antenne", o:gg, s:0.55*sc}); }
+  if (c.funk_x && cube){ const gg = grp(); const b = box(0.8*sc, 0.42*sc, 0.03, m.white); b.position.z = 0.015; gg.add(b);
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++){ const p = box(0.13*sc, 0.13*sc, 0.012, m.copper); p.position.set((-0.3 + i*0.2)*sc, (-0.1 + j*0.2)*sc, 0.035); gg.add(p); }
+    front.push({k:"xband", l:"X-Band-Antenne", o:gg, s:0.85*sc}); }
+  if (c.funk_laser){ const gg = grp(); const fork = box(0.42*sc, 0.1*sc, 0.2*sc, m.alu); fork.position.z = 0.1*sc; gg.add(fork);
     const tube = cyl(0.15*sc, 0.15*sc, 0.42*sc, m.white); tube.rotation.x = Math.PI/2.6; tube.position.z = 0.3*sc; gg.add(tube);
     const gl = cyl(0.12*sc, 0.12*sc, 0.02, m.glass); gl.rotation.x = Math.PI/2.6; gl.position.set(0, 0.1*sc, 0.5*sc); gg.add(gl);
-    front.push({o:gg, s:0.5*sc}); }
-  // Raster auf der Frontfläche
+    front.push({k:"laser", l:"Laserfunk-Terminal", o:gg, s:0.5*sc}); }
   if (front.length){
     const cols = W >= 2 ? 2 : 1, rows = Math.ceil(front.length/cols);
     const cellH = H*0.92/rows, cellW = W*0.92/cols;
@@ -1122,48 +1221,100 @@ function buildSat(c){
       const k = Math.min(1, 0.88*Math.min(cellH, cellW)/it.s);
       it.o.scale.setScalar(k);
       it.o.position.set(-W*0.46 + cellW*(col + 0.5), H*0.46 - cellH*(row + 0.5), D/2);
-      outer.add(it.o);
+      P(it.k, it.l, it.o);
     });
   }
+  /* Rückseite (-Z, zeigt ins All): Teleskop, Labor, Sternsensor, Detektor */
+  const back = [];
+  if (c.stern){ const gg = grp(); const b = cyl(0.13*sc, 0.13*sc, 0.2*sc, m.dark); b.rotation.x = Math.PI/2; b.position.z = -0.1*sc; gg.add(b);
+    const baf = cyl(0.24*sc, 0.14*sc, 0.3*sc, m.black, 24); baf.rotation.x = -Math.PI/2; baf.position.z = -0.35*sc; gg.add(baf);
+    gg.rotation.y = 0.45; back.push({k:"stern", l:STERN.name, o:gg, fixed:[W*0.3, H*0.38]}); }
+  if (c.nutz_sci){ const gg = grp(); const b = box(0.42*sc, 0.34*sc, 0.1*sc, m.dark); b.position.z = -0.05*sc; gg.add(b);
+    for (let i = 0; i < 5; i++){ const s3 = box(0.34*sc, 0.025*sc, 0.02, m.alu); s3.position.set(0, -0.12*sc + i*0.06*sc, -0.105*sc); gg.add(s3); }
+    back.push({k:"sci", l:NUTZ.sci.name, o:gg}); }
+  const flow = back.filter(b => !b.fixed);
+  flow.forEach((b, i) => { b.o.position.set(flow.length > 1 && W >= 1.5 ? (i % 2 ? W*0.24 : -W*0.24) : 0, H*0.2 - (flow.length > 1 && W < 1.5 ? i*H*0.5/(flow.length) : (W >= 1.5 ? Math.floor(i/2)*H*0.45 : 0)), -D/2); P(b.k, b.l, b.o); });
+  back.filter(b => b.fixed).forEach(b => { b.o.position.set(b.fixed[0], b.fixed[1], -D/2); P(b.k, b.l, b.o); });
+
+  /* Teleskop: Rohr nach oben (entlang der Längsachse) */
+  let topUsed = 0;
+  if (c.nutz_teleskop){
+    const gg = grp(), r = cube ? Math.min(W, D)*0.38 : 1.4, L = cube ? Math.min(H*0.6, 2) : 3;
+    const tube = cyl(r, r, L, m.white, 40); tube.position.y = L/2; gg.add(tube);
+    const inside = cyl(r*0.93, r*0.93, 0.02, m.black, 40); inside.position.y = L - 0.01; gg.add(inside);
+    const mir = cyl(r*0.8, r*0.8, 0.02, m.glass, 40); mir.position.y = 0.06; gg.add(mir);
+    const shade = box(r*2.1, L*0.45, 0.02, m.white); shade.position.set(0, L*0.95, -r*1.02); gg.add(shade);
+    const ring = mesh(new THREE.TorusGeometry(r*1.01, r*0.05, 10, 40), m.alu); ring.rotation.x = Math.PI/2; ring.position.y = L; gg.add(ring);
+    gg.position.set(0, H/2, 0); P("teleskop", NUTZ.teleskop.name, gg); topUsed = L*1.2;
+  }
   /* X-Band-Schüssel (Kleinsatellit) */
-  if (c.funk_x && !cube){ const dm = m.white.clone(); const d = dish(1.3, 0.45, dm); d.rotation.x = -Math.PI/2; d.position.set(W*0.3, -H*0.32, D/2 + 0.9); outer.add(d);
-    const st = cyl(0.08, 0.08, 0.9, m.alu); st.rotation.x = Math.PI/2; st.position.set(W*0.3, -H*0.32, D/2 + 0.45); outer.add(st); }
+  if (c.funk_x && !cube){ const gg = grp(); gg.position.set(W*0.3, -H*0.32, D/2); const d = dish(1.3, 0.45, m.white.clone()); d.rotation.x = -Math.PI/2; d.position.z = 0.9; gg.add(d);
+    const st = cyl(0.08, 0.08, 0.9, m.alu); st.rotation.x = Math.PI/2; st.position.z = 0.45; gg.add(st); P("xdish", "X-Band-Schüssel", gg); }
   /* Transponder-Reflektor */
   if (c.nutz_relay){
     const R_ = cube ? 1.5 : 3.0, dm = new THREE.MeshStandardMaterial({color:0xd9dde3, metalness:0.6, roughness:0.35});
-    const d = dish(R_, R_*0.32, dm); d.rotation.x = -Math.PI/2;
-    if (cube){ d.position.set(0, H/2 + R_ + 0.2, 0.25); const boom = cyl(0.03, 0.03, R_ + 0.3, m.alu, 8); boom.position.set(0, H/2 + (R_ + 0.3)/2, 0); outer.add(boom); }
-    else { d.position.set(-W*0.05, H*0.15, D/2 + 1.6); const st = cyl(0.12, 0.12, 1.6, m.alu); st.rotation.x = Math.PI/2; st.position.set(-W*0.05, H*0.15, D/2 + 0.8); outer.add(st); }
-    outer.add(d);
-    const feed = cyl(0.06*sc, 0.12*sc, 0.35*sc, m.dark); feed.rotation.x = Math.PI/2; feed.position.copy(d.position).add(new THREE.Vector3(0, 0, R_*0.9)); outer.add(feed);
+    const gg = grp(), d = dish(R_, R_*0.32, dm); d.rotation.x = -Math.PI/2;
+    if (cube){ gg.position.set(0, H/2, 0); d.position.set(0, R_ + 0.2, 0.25); const boom = cyl(0.03, 0.03, R_ + 0.3, m.alu, 8); boom.position.set(0, (R_ + 0.3)/2, 0); gg.add(boom); }
+    else { gg.position.set(-W*0.05, H*0.15, D/2); d.position.set(0, 0, 1.6); const st = cyl(0.12, 0.12, 1.6, m.alu); st.rotation.x = Math.PI/2; st.position.set(0, 0, 0.8); gg.add(st); }
+    gg.add(d);
+    const feed = cyl(0.06*sc, 0.12*sc, 0.35*sc, m.dark); feed.rotation.x = Math.PI/2; feed.position.copy(d.position).add(new THREE.Vector3(0, 0, R_*0.9)); gg.add(feed);
+    P("relay", NUTZ.relay.name, gg);
   }
-  /* UHF-Antennen (Rollmaßband-Antennen) */
+  /* UHF-Antennen */
   if (c.funk_uhf){
-    const L = cube ? 1.7 : 5;
-    [[1,0],[-1,0],[0,1],[0,-1]].forEach(([sx,sz]) => { const a = box(sx ? L : 0.03*sc, 0.006, sz ? L : 0.03*sc, m.tape);
-      a.position.set(sx*(W/2 + L/2), H/2 - 0.08*sc, sz*(D/2 + L/2)); outer.add(a); });
+    const L = cube ? 1.7 : 5, gg = grp(); gg.position.set(0, H/2 - 0.08*sc, 0);
+    [[1,0],[-1,0],[0,1],[0,-1]].forEach(([sx,sz]) => { const a = box(sx ? L : 0.03*sc, 0.006, sz ? L : 0.03*sc, m.tape); a.position.set(sx*(W/2 + L/2), 0, sz*(D/2 + L/2)); gg.add(a); });
+    P("uhf", "UHF-Antennen", gg);
   }
-  /* Rückseite (-Z): Sternsensor, Detektor */
-  if (c.stern){ const gg = new THREE.Group(); const b = cyl(0.13*sc, 0.13*sc, 0.2*sc, m.dark); b.rotation.x = Math.PI/2; b.position.z = -0.1*sc; gg.add(b);
-    const baf = cyl(0.24*sc, 0.14*sc, 0.3*sc, m.black, 24); baf.material = m.black; baf.rotation.x = -Math.PI/2; baf.position.z = -0.35*sc; gg.add(baf);
-    gg.rotation.y = 0.45; gg.position.set(W*0.25, H*0.32, -D/2); outer.add(gg); }
-  if (c.nutz_sci){ const gg = new THREE.Group(); const b = box(0.42*sc, 0.34*sc, 0.1*sc, m.dark); b.position.z = -0.05*sc; gg.add(b);
-    for (let i = 0; i < 5; i++){ const s = box(0.34*sc, 0.025*sc, 0.02, m.alu); s.position.set(0, -0.12*sc + i*0.06*sc, -0.105*sc); gg.add(s); }
-    gg.position.set(-W*0.2, -H*0.15, -D/2); outer.add(gg); }
   /* Unterseite (-Y): Antrieb, Bremssegel */
   if (c.antrieb !== "none"){
-    const gg = new THREE.Group(), big = c.antrieb === "chem" ? 1.25 : 1;
+    const gg = grp(), big = c.antrieb === "chem" ? 1.25 : 1;
     const noz = cyl(0.04*sc, 0.14*sc*big, 0.26*sc*big, c.antrieb === "elek" ? m.dark : m.alu); noz.position.y = -0.13*sc*big; gg.add(noz);
     if (c.antrieb === "elek"){ const ring = mesh(new THREE.TorusGeometry(0.11*sc, 0.02*sc, 10, 32), m.blue); ring.rotation.x = Math.PI/2; ring.position.y = -0.26*sc; gg.add(ring); }
-    gg.position.set(0, -H/2 - (cube ? 0.035 : 0.5), 0); outer.add(gg);
-    if (!cube){ [[1,1],[-1,1],[1,-1],[-1,-1]].forEach(([a,b]) => { const t = cyl(0.03*sc, 0.07*sc, 0.15*sc, m.alu); t.position.set(a*W*0.4, -H/2 - 0.1, b*D*0.4); outer.add(t); }); }
+    if (!cube){ [[1,1],[-1,1],[1,-1],[-1,-1]].forEach(([a,b]) => { const t = cyl(0.03*sc, 0.07*sc, 0.15*sc, m.alu); t.position.set(a*W*0.4, 0.4, b*D*0.4); gg.add(t); }); }
+    gg.position.set(0, -H/2 - (cube ? 0.035 : 0.5), 0); P("antrieb", ANTRIEB[c.antrieb].name, gg);
   }
-  if (c.segel){ const s = box(0.45*sc, 0.2*sc, 0.45*sc, m.sail); s.position.set(-W*0.25, -H/2 - 0.1*sc - (cube ? 0.035 : 0), D*0.18); outer.add(s); }
+  if (c.segel){ const s4 = box(0.45*sc, 0.2*sc, 0.45*sc, m.sail); s4.position.set(-W*0.25, -H/2 - 0.1*sc - (cube ? 0.035 : 0), D*0.18); P("segel", SEGEL.name, s4); }
+  /* Sonnensegel: quadratische Folie auf vier Auslegern über der Oberseite */
+  if (c.sonne && c.sonne !== "none"){
+    const A = (SONNE[c.sonne].area[F.cls] != null ? SONNE[c.sonne].area[F.cls] : SONNE[c.sonne].area.c);
+    const side = Math.min(Math.sqrt(A)*10, Math.max(W, H, D)*3.5), gg = grp(); gg.position.set(0, H/2 + 0.12*sc + topUsed, 0);
+    const foil = new THREE.MeshStandardMaterial({color:0xd6deea, metalness:0.5, roughness:0.22, emissive:0x1c2636, side:THREE.DoubleSide, transparent:true, opacity:0.9});
+    const half = side/2;
+    for (let q = 0; q < 4; q++){
+      const geo = new THREE.BufferGeometry(), a0 = q*Math.PI/2, a1 = a0 + Math.PI/2, rr = half*Math.SQRT2*0.98;
+      const v = [0.15*Math.cos(a0 + Math.PI/4), 0, 0.15*Math.sin(a0 + Math.PI/4), rr*Math.cos(a0), 0, rr*Math.sin(a0), rr*Math.cos(a1), -side*0.012, rr*Math.sin(a1)];
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(v, 3)); geo.computeVertexNormals();
+      gg.add(mesh(geo, foil));
+      const boom = cyl(0.02*sc + side*0.0015, 0.02*sc + side*0.0015, rr, m.alu, 6); boom.rotation.z = Math.PI/2; boom.rotation.y = -a0; boom.position.set(Math.cos(a0)*rr/2, 0.01, Math.sin(a0)*rr/2); gg.add(boom);
+    }
+    gg.rotation.y = Math.PI/4;
+    P("sonne", SONNE[c.sonne].name, gg);
+  }
+
+  /* Eigene Teile und manuelle Änderungen */
+  const man = c.manuell || {};
+  (man.x || []).forEach(x => {
+    if (!EXTRA[x.t]) return;
+    const o = customPart(x.t, m, 1);
+    o.position.fromArray(x.p || [0, 0, 0]); o.rotation.fromArray((x.r || [0, 0, 0]).slice(0, 3)); o.scale.fromArray(x.s || [1, 1, 1]);
+    o.userData.extra = x.id; P("x-" + x.id, "Eigenes Teil: " + EXTRA[x.t].name, o);
+  });
+  outer.children.forEach(o => {
+    if (!o.userData.part || o.userData.extra) return;
+    o.userData.def = {p:o.position.clone(), r:o.rotation.clone(), s:o.scale.clone()};
+    const d = (man.d || {})[o.userData.part];
+    if (d){
+      if (d.p) o.position.add(new THREE.Vector3().fromArray(d.p));
+      if (d.r) o.rotation.set(o.rotation.x + d.r[0], o.rotation.y + d.r[1], o.rotation.z + d.r[2]);
+      if (d.s) o.scale.multiply(new THREE.Vector3().fromArray(d.s));
+    }
+  });
 
   /* Innenleben */
   if (innen){
     const Rr = compute(c);
-    const cap = F.U*(cube ? 0.8 : 0.7);
+    const cap = Rr.volMax;
     const fw = W*0.78, fd = D*0.78; let y = -H/2 + 0.06;
     Rr.parts.filter(p => p.internal && p.vol > 0).sort((a,b) => Object.keys(CAT).indexOf(a.cat) - Object.keys(CAT).indexOf(b.cat)).forEach(p => {
       const hh = Math.max(0.03, p.vol/cap*(H - 0.12));
@@ -1175,6 +1326,7 @@ function buildSat(c){
       y += hh;
     });
   }
+  g.userData.outer = outer;
   return g;
 }
 function disposeTree(o){ o.traverse(n => { if (n.geometry) n.geometry.dispose(); if (n.material){ (Array.isArray(n.material) ? n.material : [n.material]).forEach(mm => { if (mm.map) mm.map.dispose(); mm.dispose(); }); } }); }
@@ -1203,9 +1355,11 @@ function applyHeat(on){
 
 function rebuild3d(force){
   if (!V.ok) return;
+  if (ED.tc) ED.tc.detach();
   if (satRoot){ satScene.remove(satRoot); applyHeat(false); disposeTree(satRoot); }
   satRoot = buildSat(R.c);
   satScene.add(satRoot);
+  if (V.mode === "bauen" && ED.sel){ const o = satRoot.userData.outer.children.find(x => x.userData.part === ED.sel); if (o) ED.tc.attach(o); else ED.sel = null; updateBuildbar(); }
   if (V.heat) applyHeat(true);
   const bb = new THREE.Box3().setFromObject(satRoot), sz = bb.getSize(new THREE.Vector3());
   satRoot.userData.radius = sz.length()/2;
@@ -1227,9 +1381,11 @@ function fitModel(){
 }
 function updateInfo(){
   const [W,H,D] = R.F.d, info = document.getElementById("vpInfo");
-  if (V.mode === "orbit"){ info.innerHTML = "Erde und Bahn nicht maßstabsgetreu · Satellit stark vergrößert"; return; }
-  const span = R.c.fluegel ? " · Spannweite <b>" + nf0.format(satRoot ? satRoot.userData.radius*2*10 : 0) + " cm</b>" : "";
-  info.innerHTML = "<b>" + nf0.format(W*10) + " × " + nf0.format(D*10) + " × " + nf0.format(H*10) + " cm</b> · <b>" + kg(R.mass) + "</b>" + span + " · ziehen zum Drehen";
+  if (V.mode === "orbit"){ info.innerHTML = (R.B.deep ? "Flugbahn stark vereinfacht" : "Erde und Bahn nicht maßstabsgetreu") + " · Satellit stark vergrößert"; return; }
+  const sA = R.c.sonne && R.c.sonne !== "none" ? (SONNE[R.c.sonne].area[R.F.cls] != null ? SONNE[R.c.sonne].area[R.F.cls] : SONNE[R.c.sonne].area.c) : 0;
+  const sailTxt = sA ? " · Sonnensegel <b>" + nf1.format(Math.sqrt(sA)) + " × " + nf1.format(Math.sqrt(sA)) + " m</b>" + (Math.sqrt(sA)*10 > Math.max(...R.F.d)*3.5 ? " (verkleinert gezeigt)" : "") : "";
+  const span = sA ? sailTxt : R.c.fluegel ? " · Spannweite <b>" + nf0.format(satRoot ? satRoot.userData.radius*2*10 : 0) + " cm</b>" : "";
+  info.innerHTML = "<b>" + nf0.format(W*10) + " × " + nf0.format(D*10) + " × " + nf0.format(H*10) + " cm</b> · <b>" + kg(R.mass) + "</b>" + span + (V.mode === "bauen" ? " · Teil antippen, dann an den farbigen Griffen ziehen" : " · ziehen zum Drehen");
 }
 
 /* ---------- Orbit ---------- */
@@ -1273,7 +1429,11 @@ function fitOrbit(){
 /* ---------- Ansichtsmodus ---------- */
 function setMode(mode){
   if (V.testOrbit && mode !== "orbit") return;
+  if (V.heat) toggleHeat(false);
+  if (mode !== "bauen") selectPart(null);
   const prev = V.mode; V.mode = mode;
+  document.getElementById("buildbar").hidden = mode !== "bauen";
+  if (V.ok) controls.autoRotate = controls.autoRotate && mode === "modell";
   document.querySelectorAll("[data-mode]").forEach(b => b.classList.toggle("on", b.dataset.mode === mode));
   document.getElementById("hud").hidden = mode !== "orbit";
   if (!V.ok){ updateLegend(); return; }
@@ -1295,7 +1455,7 @@ function updateLegend(){
   const lg = document.getElementById("legend");
   if (V.heat){
     lg.hidden = false;
-    lg.innerHTML = '<div class="heatbar"><div class="bar"></div><div class="ends"><span>Schattenseite ≈ ' + nf0.format(R.tShadowSide) + ' °C</span><span>Sonnenseite ≈ ' + nf0.format(R.tSunSide) + ' °C</span></div></div>';
+    lg.innerHTML = '<div class="heatbar"><div class="bar"></div><div class="ends"><span>Schattenseite ≈ ' + nf0.format(R.tShadowSide) + ' °C</span><span>Sonnenseite ≈ ' + nf0.format(R.tSunSide) + ' °C</span></div><button type="button" data-heatoff>Wärmebild ausschalten</button></div>';
   } else if (V.mode === "innen"){
     const used = new Set(R.parts.filter(p => p.internal && p.vol > 0).map(p => p.cat));
     lg.hidden = false;
@@ -1378,6 +1538,90 @@ function loop(ts){
   requestAnimationFrame(loop);
 }
 
+/* ---------- Selbst bauen ---------- */
+const ED = {tc:null, sel:null, down:null, onGizmo:false};
+function initEditor(){
+  const btn = document.querySelector('[data-mode="bauen"]');
+  if (!THREE.TransformControls){ btn.hidden = true; return; }
+  ED.tc = new THREE.TransformControls(camera, renderer.domElement);
+  ED.tc.setSize(0.9);
+  ED.tc.addEventListener("dragging-changed", e => { controls.enabled = !e.value; });
+  ED.tc.addEventListener("objectChange", storeSel);
+  ED.tc.addEventListener("mouseUp", commitManual);
+  satScene.add(ED.tc);
+  canvas.addEventListener("pointerdown", e => { ED.down = [e.clientX, e.clientY]; ED.onGizmo = !!ED.tc.axis; });
+  canvas.addEventListener("pointerup", e => {
+    if (V.mode !== "bauen" || !ED.down) return;
+    const dx = e.clientX - ED.down[0], dy = e.clientY - ED.down[1]; ED.down = null;
+    if (dx*dx + dy*dy > 36 || ED.onGizmo) return;
+    const rect = canvas.getBoundingClientRect();
+    const v = new THREE.Vector2((e.clientX - rect.left)/rect.width*2 - 1, -(e.clientY - rect.top)/rect.height*2 + 1);
+    const rc = new THREE.Raycaster(); rc.setFromCamera(v, camera);
+    const hits = rc.intersectObject(satRoot.userData.outer, true);
+    for (const h of hits){
+      let o = h.object; while (o && !o.userData.part && o.parent && o.parent !== satRoot.userData.outer) o = o.parent;
+      if (o && o.userData.part){ selectPart(o); return; }
+      if (h.object.userData.body) break;
+    }
+    selectPart(null);
+  });
+  const add = document.getElementById("bbAdd");
+  Object.entries(EXTRA).forEach(([k,x]) => { const b = document.createElement("button"); b.type = "button"; b.textContent = x.name; b.addEventListener("click", () => addExtra(k)); add.appendChild(b); });
+  const all = document.createElement("button"); all.type = "button"; all.textContent = "Alles zurücksetzen"; all.addEventListener("click", () => { MANUAL = {d:{}, x:[]}; ED.sel = null; update(false); }); add.appendChild(all);
+  document.getElementById("bbTools").addEventListener("click", e => {
+    const t = e.target.closest("[data-tm]"); if (!t) return;
+    ED.tc.setMode(t.dataset.tm);
+    document.querySelectorAll("[data-tm]").forEach(b => b.classList.toggle("on", b === t));
+  });
+  document.getElementById("bbReset").addEventListener("click", () => {
+    const o = ED.tc.object; if (!o) return;
+    if (o.userData.extra){ const x = MANUAL.x.find(q => q.id === o.userData.extra); if (x){ x.r = [0, 0, 0]; x.s = x.s0 || [1, 1, 1]; } }
+    else delete MANUAL.d[o.userData.part];
+    update(false);
+  });
+  document.getElementById("bbDel").addEventListener("click", () => {
+    const o = ED.tc.object; if (!o || !o.userData.extra) return;
+    MANUAL.x = MANUAL.x.filter(q => q.id !== o.userData.extra); ED.sel = null; update(false);
+  });
+  updateBuildbar();
+}
+function selectPart(o){
+  if (!ED.tc) return;
+  if (o){ ED.sel = o.userData.part; ED.tc.attach(o); } else { ED.sel = null; ED.tc.detach(); }
+  updateBuildbar();
+}
+function updateBuildbar(){
+  const o = ED.tc && ED.tc.object, sel = document.getElementById("bbSel");
+  if (!sel) return;
+  sel.innerHTML = o ? "<b>" + esc(o.userData.label) + "</b> <small>· " + (o.userData.extra ? "eigenes Teil, zählt in Masse und Kosten" : "eingebautes Teil – Position frei wählbar") + "</small>"
+                    : "Tippe ein Teil am Modell an, um es zu verschieben, zu drehen oder zu vergrößern. <small>Oder bau unten eigene Teile an.</small>";
+  document.querySelectorAll("#bbTools button").forEach(b => b.disabled = !o);
+  document.getElementById("bbDel").disabled = !(o && o.userData.extra);
+}
+function storeSel(){
+  const o = ED.tc.object; if (!o) return;
+  const r3 = v => Math.round(v*1000)/1000;
+  if (o.userData.extra){
+    const x = MANUAL.x.find(q => q.id === o.userData.extra); if (!x) return;
+    x.p = o.position.toArray().map(r3); x.r = [o.rotation.x, o.rotation.y, o.rotation.z].map(r3); x.s = o.scale.toArray().map(v => r3(Math.max(0.05, Math.abs(v))));
+  } else {
+    const d0 = o.userData.def; if (!d0) return;
+    MANUAL.d[o.userData.part] = {p:o.position.clone().sub(d0.p).toArray().map(r3), r:[o.rotation.x - d0.r.x, o.rotation.y - d0.r.y, o.rotation.z - d0.r.z].map(r3),
+      s:[o.scale.x/d0.s.x, o.scale.y/d0.s.y, o.scale.z/d0.s.z].map(v => r3(Math.max(0.05, Math.abs(v))))};
+  }
+}
+function commitManual(){
+  const c = readForm(); R = compute(c); renderResults(); updateInfo(); updateBuildbar(); save(c);
+}
+function addExtra(t){
+  const F = R.F, sc = F.cls === "p" ? 0.5 : F.cube ? 1 : 3.2, n = MANUAL.x.length;
+  const id = Date.now().toString(36) + n;
+  const [W,H] = F.d;
+  MANUAL.x.push({id, t, p:[(n % 3 - 1)*W*0.4, H/2 + 0.35*sc + Math.floor(n/3)*0.6*sc, 0], r:[0, 0, 0], s:[sc, sc, sc], s0:[sc, sc, sc]});
+  ED.sel = "x-" + id;
+  update(false);
+}
+
 /* ---------- Tests ---------- */
 const prog = document.getElementById("vpProg");
 function progress(step, text){ if (!step){ prog.hidden = true; return; } prog.hidden = false; prog.innerHTML = "<b>" + step + "</b><span>" + text + "</span>"; }
@@ -1422,7 +1666,7 @@ async function runAll(){
   } finally { btn.disabled = false; btn.textContent = "Alles testen"; }
 }
 function toggleHeat(on){
-  V.heat = on; document.getElementById("bHeat").setAttribute("aria-pressed", on ? "true" : "false");
+  V.heat = on; const hb = document.getElementById("bHeat"); hb.setAttribute("aria-pressed", on ? "true" : "false"); hb.textContent = on ? "Wärmebild aus" : "Wärmebild";
   if (V.ok){ applyHeat(on); if (on && V.mode === "orbit") heatMat.uniforms.sunDir.value.set(1, 0, 0); }
   updateLegend();
 }
@@ -1436,17 +1680,22 @@ function parseWishes(text){
   const t = " " + text.toLowerCase() + " ";
   const has = re => re.test(t);
   const nutz = [];
+  const labor = has(/labor|bakterien|kristall|schwerelos|pflanzen (im all|im weltraum|wachsen|züchten|keimen)|im all wachsen|experimente? im all/);
+  if (labor) nutz.push("labor");
+  if (has(/teleskop|sterne|galax|exoplanet|astronom|nebel beobachten|planeten beobachten/)) nutz.push("teleskop");
   if (has(/hyperspek|mineral/)) nutz.push("hyper");
-  else if (has(/multispek|pflanz|landwirt|vegetation|feld|wald|ernte|dürre/)) nutz.push("multi");
+  else if (!labor && has(/multispek|pflanz|landwirt|vegetation|feld|wald|ernte|dürre/)) nutz.push("multi");
   if (!nutz.length && has(/kamera|foto|bild|aufnahm|selfie|erde sehen|von oben|video/)) nutz.push("cam");
   if (has(/iot|sensor|schiff|ais\b|tracking|tier|wetterstation|lora/)) nutz.push("iot");
-  if (has(/strahlung|teilchen|wissenschaft|messen|messung|experiment|schule|unterricht|forschung/)) nutz.push("sci");
+  if (has(/strahlung|teilchen|messen|messung|schule|unterricht/) || (!labor && !nutz.includes("teleskop") && has(/wissenschaft|forschung|experiment/))) nutz.push("sci");
   if (has(/fernseh|\btv\b|internet|telefon|transponder|relais|repeater für|kommunikationssatellit/)) nutz.push("relay");
   let funk = "uhf";
   if (nutz.includes("multi") || nutz.includes("hyper")) funk = "x";
   else if (nutz.includes("cam") || has(/video|viele daten|hochauflös/)) funk = "s";
   let bahn = null;
-  if (has(/geostation|\bgeo\b|steht still/)) bahn = "geo";
+  if (has(/mond/)) bahn = "mond";
+  else if (has(/mars|asteroid|komet|tiefen weltraum|durch den weltraum|durchs all|sonnensystem|erkunden|erforschen|interplanetar|zu anderen planeten/)) bahn = "tief";
+  else if (has(/geostation|\bgeo\b|steht still/)) bahn = "geo";
   else if (has(/gps-bahn|\bmeo\b|mittlere bahn/)) bahn = "meo";
   else if (has(/dämmerung|immer sonne/)) bahn = "dd";
   else if (has(/\biss\b/)) bahn = "leo";
@@ -1462,8 +1711,10 @@ function parseWishes(text){
   else if (has(/bausatz|kit\b/)) bauweise = "bausatz";
   else if (has(/profi|kaufteile|zuverlässig|fertig kaufen/)) bauweise = "kauf";
   const what = nutz.map(x => NUTZ[x].name).join(" und ");
-  return {titel:"", nutzlast:nutz, funk, bahn, jahre: yr ? Number(yr[1]) : null, budget, maxkg, bauweise,
-    verstanden: nutz.length ? "Dein Satellit bekommt: " + what + "." : "Ein einfacher Satellit, der Funksignale sendet und Messwerte überträgt.",
+  const sonne = has(/sonnensegel|lichtsegel|solar ?sail|mit (sonnen)?licht fliegen/) ? "klein" : null;
+  return {titel:"", nutzlast:nutz, funk, bahn, sonne, jahre: yr ? Number(yr[1]) : null, budget, maxkg, bauweise,
+    verstanden: (bahn === "mond" ? "Dein Satellit fliegt zum Mond" : bahn === "tief" ? "Dein Satellit reist durchs Sonnensystem" : "") + (sonne ? (bahn ? " – mit einem Sonnensegel" : "Dein Satellit fliegt mit einem Sonnensegel") : "") + (bahn || sonne ? ". " : "") +
+      (nutz.length ? "An Bord: " + what + "." : (bahn || sonne ? "Er sendet Funksignale und Messwerte." : "Ein einfacher Satellit, der Funksignale sendet und Messwerte überträgt.")),
     realismus: (nutz.includes("relay") || bahn === "geo") ? "Ein Kommunikationssatellit in hoher Bahn kostet Millionen. Für ein Hobbyprojekt ist ein Amateurfunk-Relais in niedriger Bahn realistischer." : null};
 }
 function cleanWishes(w, fallback){
@@ -1476,6 +1727,7 @@ function cleanWishes(w, fallback){
   o.budget = Number(w.budget) > 0 ? Number(w.budget) : o.budget;
   o.maxkg = Number(w.maxkg) > 0 ? Number(w.maxkg) : o.maxkg;
   o.bauweise = BAUWEISE[w.bauweise] ? w.bauweise : o.bauweise;
+  if (w.sonnensegel === true) o.sonne = "klein"; else if (w.sonnensegel === false) o.sonne = null;
   if (typeof w.titel === "string" && w.titel.trim()) o.titel = w.titel.trim().slice(0, 40);
   if (typeof w.verstanden === "string" && w.verstanden.trim()) o.verstanden = w.verstanden.trim().slice(0, 400);
   o.realismus = typeof w.realismus === "string" && w.realismus.trim() ? w.realismus.trim().slice(0, 300) : null;
@@ -1498,51 +1750,51 @@ function repair(c, R){
     if (c.fluegel === 2){ c.fluegel = 4; c.segmente = 1; return "Vier Solarflügel statt zwei."; }
     if (c.lage !== "rw"){ c.lage = "rw"; return "Reaktionsräder, die die Flügel genau zur Sonne drehen."; }
     if (["leo","sso"].includes(c.bahn) && !c._bahnFix){ c.bahn = "dd"; return "Dämmerungsbahn gewählt – dort ist fast immer Sonne."; }
-    return null;
   }
   if (bad("akku")){
     const need = R.E_ecl/(R.h >= 2000 ? 0.55 : 0.28);
     const step = k === "p" ? 1 : k === "c" ? 5 : 50;
     const nb = Math.min(maxBat, Math.max(c.batterie + step, Math.ceil(need/step)*step));
     if (nb > c.batterie){ c.batterie = nb; return "Akku auf " + nf0.format(nb) + " Wh vergrößert, damit er den Erdschatten gut übersteht."; }
-    return null;
   }
   if (bad("lage")){
     if (c.lage === "none"){ c.lage = "mtq"; return "Magnetspulen und Sonnensensoren, damit Antennen und Nutzlast grob zur Erde zeigen."; }
     if (c.lage === "mtq" && !c.stern && R.needAcc >= 5){ c.stern = true; return "Sternsensor ergänzt für genauere Ausrichtung."; }
     if (c.lage !== "rw"){ c.lage = "rw"; return "Reaktionsräder für genaue Ausrichtung."; }
     if (!c.stern){ c.stern = true; return "Sternsensor ergänzt für sehr genaue Ausrichtung."; }
-    return null;
+  }
+  if (bad("ziel")){
+    if (c.lage === "none"){ c.lage = "mtq"; return "Magnetspulen, damit das Sonnensegel zur Sonne gedreht werden kann."; }
+    if (c.sonne === "none"){ c.sonne = "klein"; return "Sonnensegel eingebaut – es fliegt mit Sonnenlicht, ohne Treibstoff."; }
+    if (c.sonne === "klein"){ c.sonne = "gross"; return "Größeres Sonnensegel für mehr Schub."; }
+    if (c.antrieb === "none"){ c.antrieb = "elek"; return "Elektrischer Antrieb ergänzt das Segel."; }
+    if (c.jahre < 6){ c.jahre++; return "Mission auf " + c.jahre + " Jahre verlängert – das Segel braucht Zeit."; }
   }
   if (bad("funk") === "fail"){
+    if (R.B.deep && c.boden !== "dsn"){ c.boden = "dsn"; return "Weltraum-Funknetz mit Großantennen – nur die hören so weit draußen."; }
     if (!c.funk_uhf && !c.funk_s && !c.funk_x){ c.funk_uhf = true; return "UHF-Funk für Befehle eingebaut."; }
-    if (c.boden === "eigen" && !c.funk_x && R.k !== "s"){ c.boden = "satnogs"; return "SatNOGS-Netz dazugenommen – mehr Empfangszeit, kostenlos."; }
+    if (c.boden === "eigen" && !c.funk_x && R.k !== "s" && !R.B.deep){ c.boden = "satnogs"; return "SatNOGS-Netz dazugenommen – mehr Empfangszeit, kostenlos."; }
     if (!c.funk_s && !c.funk_x){ c.funk_s = true; return "S-Band-Funk ergänzt, UHF ist für diese Datenmenge zu langsam."; }
-    if (!c.funk_x){ c.funk_x = true; c.boden = "eigen"; return "X-Band-Funk für große Datenmengen (mit eigener Parabolantenne)."; }
-    if (c.boden !== "netz"){ c.boden = "netz"; return "Gemietetes Bodennetz für mehr Kontaktzeit."; }
-    return null;
+    if (!c.funk_x){ c.funk_x = true; if (!R.B.deep) c.boden = "eigen"; return "X-Band-Funk für große Datenmengen (mit eigener Parabolantenne)."; }
+    if (c.boden !== "netz" && !R.B.deep){ c.boden = "netz"; return "Gemietetes Bodennetz für mehr Kontaktzeit."; }
   }
   if (bad("waerme")){
     if (!c.heizung){ c.heizung = true; return "Akkuheizung eingebaut."; }
     if (R.tHot > 40 && c.haut !== "weiss"){ c.haut = "weiss"; return "Weißer Lack, damit er sich nicht überhitzt."; }
     if (R.tCold < 5 && c.haut !== "mli"){ c.haut = "mli"; return "Goldfolie als Isolierung gegen die Kälte im Erdschatten."; }
     if (R.tCold < 0 && c.haut === "mli" && !c._schwarz){ c.haut = "schwarz"; c._schwarz = true; return "Schwarze Oberfläche, die mehr Sonnenwärme aufnimmt."; }
-    if (bad("waerme") === "warn") return null;
-    return null;
   }
   if (bad("leben") === "fail"){
-    if (R.h >= 2000){ if (c.antrieb !== "elek"){ c.antrieb = "elek"; return "Elektrischer Antrieb, um die Bahn zu halten und am Ende zu verlassen."; } return null; }
-    if (R.L_nat < c.jahre){ if (c.hoehe < 650){ c.hoehe += 50; return "Bahn auf " + c.hoehe + " km angehoben – sonst verglüht er vor Missionsende."; } if (c.antrieb === "none"){ c.antrieb = "kalt"; return "Kaltgas-Antrieb hält die Bahn."; } return null; }
+    if (R.h >= 2000){ if (c.antrieb !== "elek"){ c.antrieb = "elek"; return "Elektrischer Antrieb, um die Bahn zu halten und am Ende zu verlassen."; } }
+    if (R.L_nat < c.jahre){ if (c.hoehe < 650){ c.hoehe += 50; return "Bahn auf " + c.hoehe + " km angehoben – sonst verglüht er vor Missionsende."; } if (c.antrieb === "none"){ c.antrieb = "kalt"; return "Kaltgas-Antrieb hält die Bahn."; } }
     const lower = Object.assign({}, c, {hoehe:c.hoehe - 50});
     if (c.hoehe - 50 >= 400 && compute(lower).L_nat >= c.jahre){ c.hoehe -= 50; return "Bahn auf " + c.hoehe + " km gesenkt – so verglüht er rechtzeitig von selbst (Weltraummüll-Regel)."; }
     if (!c.segel){ c.segel = true; return "Bremssegel eingebaut, damit er nach der Mission schnell verglüht."; }
     if (c.hoehe > 450){ c.hoehe -= 50; return "Bahn auf " + c.hoehe + " km gesenkt."; }
-    return null;
   }
   if (bad("strahlung")){
     if (c.obc === "std"){ c.obc = "red"; return "Zweiter Bordcomputer als Reserve gegen Strahlungsschäden."; }
     if (c.obc === "red"){ c.obc = "rad"; return "Strahlenfester Bordcomputer."; }
-    return null;
   }
   if (bad("start") === "warn" && c.segmente > 1){ c.segmente--; return "Solarflügel etwas kürzer, damit er beim Start steifer ist."; }
   return null;
@@ -1555,8 +1807,8 @@ function designFor(w, format, bauweise){
   const c = {titel:w.titel || (w.nutzlast.length ? NUTZ[w.nutzlast[0]].name.split(/[ -]/)[0] + "-Satellit" : "Funkbake"), bahn, hoehe:500, jahre:w.jahre || 2, format,
     koerper:true, fluegel:0, segmente:1, batterie: cls === "p" ? 4 : cls === "c" ? 15 : 400,
     funk_uhf:true, funk_s:w.funk === "s", funk_x:w.funk === "x", funk_laser:false,
-    boden: w.funk === "x" ? "eigen" : "satnogs", lage: optical || nutz.has("relay") ? "mtq" : "none", stern:false,
-    antrieb: ["geo","meo"].includes(bahn) ? "elek" : "none", segel:false, obc:"std", haut:"weiss", heizung:true, bauweise,
+    boden: BAHNEN[bahn].deep ? "dsn" : w.funk === "x" ? "eigen" : "satnogs", lage: optical || nutz.has("relay") || nutz.has("teleskop") || w.sonne ? "mtq" : "none", stern:false,
+    antrieb: ["geo","meo"].includes(bahn) ? "elek" : "none", segel:false, sonne:w.sonne || "none", obc:"std", haut:"weiss", heizung:true, bauweise,
     budget:w.budget || 0, maxkg:w.maxkg || 0, _bahnFix:!!w.bahn};
   NUTZ_KEYS.forEach(x => c["nutz_" + x] = nutz.has(x));
   const log = [];
@@ -1587,9 +1839,10 @@ const aiOut = document.getElementById("ai-out");
 function aiPrompt(text, budget, maxkg){
   return "Du hilfst Hobby-Satellitenbauern, die meist ein sehr kleines Budget haben. Lies die Beschreibung und antworte NUR mit einem JSON-Objekt dieser Form:\n" +
     '{"titel": "kurzer Missionsname, höchstens 30 Zeichen",\n' +
-    ' "nutzlast": ["cam" | "multi" | "hyper" | "iot" | "sci" | "relay", ...]  (leere Liste, wenn er nur funken soll),\n' +
+    ' "nutzlast": ["cam" | "multi" | "hyper" | "iot" | "sci" | "teleskop" | "labor" | "relay", ...]  (leere Liste, wenn er nur funken soll),\n' +
     ' "funk": "uhf" | "s" | "x"  (die kleinste ausreichende Funkverbindung: uhf für Funkbaken und kleine Datenmengen, s für Fotos, x für große Bilddaten),\n' +
-    ' "bahn": "leo" | "sso" | "dd" | "meo" | "geo" | null,\n' +
+    ' "bahn": "leo" | "sso" | "dd" | "meo" | "geo" | "mond" | "tief" | null,\n' +
+    ' "sonnensegel": true | false (true, wenn er mit einem Sonnensegel fliegen soll),\n' +
     ' "jahre": Zahl 1-15 oder null,\n' +
     ' "budget": Euro-Betrag oder null (nur wenn genannt),\n' +
     ' "maxkg": Kilogramm oder null (nur wenn genannt),\n' +
@@ -1597,8 +1850,8 @@ function aiPrompt(text, budget, maxkg){
     ' "verstanden": "1-2 einfache Sätze auf Deutsch in Du-Form: was der Satellit tun soll",\n' +
     ' "realismus": null oder "1 Satz, falls der Wunsch mit Hobby-Budget kaum machbar ist, und was stattdessen ginge"}\n\n' +
     "Nutzlasten: cam = einfache Farbkamera; multi = Multispektralkamera (Pflanzen, Landwirtschaft); hyper = Hyperspektralkamera (Mineralien); " +
-    "iot = Empfänger für Sensoren, Schiffe (AIS) oder Tiersender; sci = Strahlungs- oder Messsensor, Wissenschaft, Schule; relay = Kommunikations-Transponder (Fernsehen, Internet).\n" +
-    "Bahnen: leo = niedrig wie die ISS; sso = sonnensynchron (Standard für Kameras); dd = Dämmerungsbahn; meo = wie GPS; geo = geostationär. null, wenn nichts dafür spricht.\n" +
+    "iot = Empfänger für Sensoren, Schiffe (AIS) oder Tiersender; sci = Strahlungs- oder Messsensor, Wissenschaft, Schule; teleskop = Weltraumteleskop für Sterne, Galaxien, Planeten; labor = Weltraumlabor für Experimente mit Pflanzen, Bakterien oder Kristallen; relay = Kommunikations-Transponder (Fernsehen, Internet).\n" +
+    "Bahnen: leo = niedrig wie die ISS; sso = sonnensynchron (Standard für Kameras); dd = Dämmerungsbahn; meo = wie GPS; geo = geostationär; mond = Flug zum Mond; tief = Reise durchs Sonnensystem (Asteroid, Mars, das All erkunden). null, wenn nichts dafür spricht.\n" +
     (budget ? "Budget laut Eingabefeld: " + budget + " Euro.\n" : "") + (maxkg ? "Höchstgewicht laut Eingabefeld: " + maxkg + " kg.\n" : "") +
     '\nBeschreibung:\n"""\n' + text.slice(0, 2000) + '\n"""';
 }
@@ -1675,7 +1928,7 @@ if (window.claude && typeof window.claude.use === "function"){
 /* =====================================================================
    Verkabelung
    ===================================================================== */
-const STORE = "satellitenwerkstatt.v2";
+const STORE = "satellitenwerkstatt.v3";
 function save(c){ try { localStorage.setItem(STORE, JSON.stringify(c)); } catch(e){} }
 function load(){ try { const s = JSON.parse(localStorage.getItem(STORE)); if (s && FORMATE[s.format] && BAHNEN[s.bahn]) return Object.assign({}, PRESETS.bake.c, s); } catch(e){} return null; }
 
@@ -1708,10 +1961,13 @@ form.addEventListener("input", e => { if (e.target.id !== "ai-text") update(fals
 form.addEventListener("submit", e => e.preventDefault());
 document.getElementById("presets").addEventListener("click", e => {
   const b = e.target.closest("[data-preset]"); if (!b) return;
-  writeForm(PRESETS[b.dataset.preset].c); update(true);
+  const pr = PRESETS[b.dataset.preset];
+  if (pr.wish){ const w = parseWishes(pr.wish); w.titel = pr.label; writeForm(plan(w).best.c); } else writeForm(pr.c);
+  update(true);
 });
 document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
 document.getElementById("bHeat").addEventListener("click", () => toggleHeat(!V.heat));
+document.getElementById("legend").addEventListener("click", e => { if (e.target.closest("[data-heatoff]")) toggleHeat(false); });
 document.getElementById("bShake").addEventListener("click", async () => {
   if (V.shake || V.testOrbit) return;
   if (V.mode === "orbit") setMode("modell");
