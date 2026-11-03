@@ -422,6 +422,8 @@ const capOf = (r, bahn) => RAKETEN[r] && RAKETEN[r].leo ? RAKETEN[r].leo*(BAHN_F
 function cheapestRocket(massKg, bahn){
   return ["klein","mittel","gross","schwer"].find(r => capOf(r, bahn) >= massKg) || "schwer";
 }
+const ST_NUTZ = ["cam","multi","hyper","iot","sci","teleskop","relay"]; // Nutzlasten, die außen an einer Station sitzen können
+const SCHWENK = {name:"Schwenkplattform für Nutzlasten", sub:"richtet Kameras und Teleskop unabhängig von der Station auf 0,01° genau aus", mass:800, power:500, cost:60e6};
 const KERN = {name:"Kernmodul", sub:"Steuerung, Lageregelung, Funk und Triebwerke zur Bahnhaltung · 80 m³", mass:22000, vol:80, power:8000, cost:1.2e9, ports:1};
 const MODULE = {
   wohn:     {name:"Wohnmodul", sub:"Schlafkabinen, Küche, Sportgeräte · 100 m³", mass:20000, vol:100, power:2000, cost:450e6},
@@ -519,7 +521,7 @@ const PRESETS = {
   teleskop: {label:"Weltraumteleskop", sub:"beobachtet Sterne und Galaxien", wish:"Ein Teleskop, das Sterne und Galaxien beobachtet"},
   rueckkehr: {label:"Rückkehrkapsel", sub:"Experimente kommen zurück", wish:"Ein Satellit mit Weltraumlabor, der die Proben in einer Kapsel zurück zur Erde bringt"},
   ministation: {label:"Mini-Raumstation", sub:"für 2 Astronauten", wish:"Eine kleine Raumstation für 2 Astronauten"},
-  forschstation: {label:"Forschungsstation", sub:"6 Personen, Labor, Kuppel", wish:"Eine Forschungsstation mit Labor und Aussichtskuppel für 6 Astronauten"},
+  forschstation: {label:"Forschungsstation", sub:"6 Personen, Labor, Kuppel, Teleskop", wish:"Eine Forschungsstation mit Labor, Aussichtskuppel, Erdbeobachtungskamera und Teleskop für 6 Astronauten"},
   mondstation: {label:"Mondstation", sub:"4 Personen, mit Gewächshaus", wish:"Eine Raumstation am Mond für 4 Astronauten mit Gewächshaus"},
   voyager: {label:"Wie Voyager", sub:"verlässt das Sonnensystem", wish:"Wie Voyager das Sonnensystem verlassen, mit goldener Schallplatte und Teilchenmessgerät"},
   sonne2: {label:"Asteroidenjäger", sub:"Landung auf einem Asteroiden", wish:"Zu einem Asteroiden fliegen, landen und Bodenproben untersuchen"},
@@ -569,6 +571,12 @@ function computeStation(c){
   const pressMass = parts.reduce((s,p) => s + (p.vol > 0 ? p.mass : 0), 0);
   if (c.schild) add("waerme", "Trümmerschutz (Whipple-Schilde)", pressMass*0.04, 0, 0, 200e6, 1);
   if (c.strahl) add("waerme", "Strahlenschutz-Wände aus Wasser", 8000, 0, 0, 150e6, 1);
+  const sNutz = ST_NUTZ.filter(x => c["nutz_" + x]);
+  if (sNutz.length){
+    add("struktur", "Außenplattform für Nutzlasten (" + sNutz.length + " Stellplätze)", 1500, 0, 300, 80e6, 1);
+    sNutz.forEach(x => { const st = tierOf(c, x), T = TIER[st], v = NUTZ[x].s; add("nutz", "Außen: " + NUTZ[x].name + " – " + T.name + ": " + TIERINFO[x][st - 1], v[0]*T.mass, 0, v[2]*T.power, v[3]*T.cost, 1); });
+    if (c.schwenk) add("lage", SCHWENK.name, SCHWENK.mass, 0, SCHWENK.power, SCHWENK.cost, 1);
+  }
   const xs = (c.manuell && Array.isArray(c.manuell.x)) ? c.manuell.x : [];
   let A_extra = 0;
   xs.forEach(x => { const E = EXTRA[x.t]; if (!E) return; const s3 = (x.s || [1,1,1]).map(v => Math.max(0.05, Math.abs(+v) || 1)); const t = E.f(s3); add("eigen", "Eigenes Teil: " + E.name, t[0], 0, 0, t[3], 1); if (E.solar) A_extra += E.solar(s3); });
@@ -628,6 +636,20 @@ function computeStation(c){
       "Winzige Meteoriten und Weltraumschrott fliegen mit bis zu 15 km/s. Ohne Schutzschilde kann schon ein erbsengroßes Teil ein Modul durchschlagen.",
       c.schild ? "" : "Whipple-Schilde (mehrlagige Schutzbleche) anbringen.");
   }
+  if (sNutz.length){
+    const accS = c.schwenk ? 0.01 : 0.5;
+    const needS = sNutz.reduce((mn, x) => Math.min(mn, NUTZ[x].point*TIER[tierOf(c, x)].point), 180);
+    const bad = sNutz.filter(x => NUTZ[x].point*TIER[tierOf(c, x)].point < accS);
+    T_("nutzlage", "Ausrichtung der Nutzlasten", bad.length ? "fail" : needS < accS*2 ? "warn" : "ok", "kann " + degStr(accS) + " · braucht " + (needS >= 180 ? "–" : degStr(needS)),
+      (bad.length ? bad.map(x => NUTZ[x].name + " muss auf " + degStr(NUTZ[x].point*TIER[tierOf(c, x)].point) + " genau zeigen").join(", ") + ". " : "") +
+      "Eine Raumstation schwankt durch Crew-Bewegungen, andockende Raumschiffe und Triebwerke um etwa ±0,5°." + (c.schwenk ? " Die Schwenkplattform gleicht das aus und hält die Geräte auf 0,01° genau." : ""),
+      bad.length || needS < accS*2 ? (c.schwenk ? "Eine niedrigere Nutzlast-Stufe braucht weniger Genauigkeit." : "Eine Schwenkplattform für die Nutzlasten einbauen.") : "");
+    const gb = sNutz.reduce((s2, x) => s2 + NUTZ[x].data.s*TIER[tierOf(c, x)].data, 0);
+    const down = deep ? 50 : 2700;
+    T_("nutzdaten", "Nutzlast-Daten", gb <= down*0.7 ? "ok" : gb <= down ? "warn" : "fail", dataStr(gb) + " / " + dataStr(down) + " am Tag",
+      "Die Außen-Nutzlasten erzeugen " + dataStr(gb) + " am Tag. " + (deep ? "Vom Mond gehen etwa " + dataStr(down) + " am Tag zur Erde." : "Über Relaissatelliten kann die Station fast rund um die Uhr funken – etwa " + dataStr(down) + " am Tag.") + (c.crew ? " Die Crew kann die Geräte warten und austauschen – ein großer Vorteil gegenüber Satelliten." : ""),
+      gb <= down*0.7 ? "" : "Eine niedrigere Nutzlast-Stufe erzeugt weniger Daten.");
+  }
   const far = deep && c.bahn !== "mond";
   T_("bahn", "Erreichbarkeit", far ? "fail" : deep ? "warn" : "ok", far ? "zu weit weg" : deep ? "Mondbahn" : "Erdumlaufbahn",
     far ? "So weit draußen kann keine Crew regelmäßig ausgetauscht und nichts nachgeliefert werden – eine Reise dauert Monate bis Jahre." :
@@ -664,7 +686,7 @@ function computeStation(c){
   return {station:true, c, F, B, cube:false, k:"st", h, T, fe, parts, dry:mass, harness:0, mass, massRes:mass*1.1, vol, volMax:Math.max(1, crew*30), volUnit:" m³",
     P_sun, P_gen, P_cons, ratio, dod, E_ecl, sim, emptyAt, minSoc, contact:0, downGB:1, needGB:1, best:1, bestKey:null, acc:1, needAcc:180, f1:20, fReq:10, L_nat:Infinity,
     tHot:22, tCold:18, tSunSide:120, tShadowSide:-150, tests, P_rtg:0, hw, once, run, totalOnce, totalRun, total, fullTotal:CM.full, bau:CM.bau, launch, BW:BAUWEISE.kauf, funkKeys:[], nutzKeys:[],
-    nSeg:0, A_wing:0, A_body:0, dose:doseYr, tol:1, crew, ports, vehicles, cool, needT, capT, nLaunch};
+    sNutz, nSeg:0, A_wing:0, A_body:0, dose:doseYr, tol:1, crew, ports, vehicles, cool, needT, capT, nLaunch};
 }
 function compute(c){
   if (c.format === "ST") return computeStation(c);
@@ -1064,7 +1086,7 @@ function optRadio(key, obj, hintKey){
 }
 function nutzChecks(){
   return '<div class="opts">' + Object.entries(NUTZ).map(([v,o]) =>
-    '<div class="nutz-item"><label class="opt"><input type="checkbox" name="nutz_' + v + '" id="f-nutz_' + v + '"><span><span class="opt-name">' + esc(o.name) + '</span><span class="opt-sub">' + esc(o.sub) + '</span></span><span class="opt-hint" data-hint="nutz_' + v + '"></span></label>' +
+    '<div class="nutz-item"' + (ST_NUTZ.includes(v) ? "" : ' data-group="sat"') + '><label class="opt"><input type="checkbox" name="nutz_' + v + '" id="f-nutz_' + v + '"><span><span class="opt-name">' + esc(o.name) + '</span><span class="opt-sub">' + esc(o.sub) + '</span></span><span class="opt-hint" data-hint="nutz_' + v + '"></span></label>' +
     (TIERINFO[v] ? '<div class="tiers" data-tiers="' + v + '" role="radiogroup" aria-label="Stufe für ' + esc(o.name) + '">' + [1,2,3].map(n =>
       '<label><input type="radio" name="stufe_' + v + '" value="' + n + '" id="f-stufe_' + v + '-' + n + '"><span><b>' + TIER[n].name + '</b><small>' + TIER[n].q + '</small><em data-tierprice="' + v + ':' + n + '"></em></span></label>').join("") +
       '<p class="tier-info" data-tierinfo="' + v + '"></p></div>' : '') + '</div>').join("") + '</div>';
@@ -1140,7 +1162,8 @@ form.innerHTML =
     '<div class="field"><span class="lbl">Antrieb</span>' + optRadio("antrieb", ANTRIEB) + '</div>' + check1("segel", SEGEL) + check1("swingby", SWING) +
     '<div class="field"><span class="lbl">Sonnensegel</span>' + optRadio("sonne", SONNE) + '</div>' +
   '</div>' +
-  '<div class="sec" data-group="sat"><h2>Nutzlast</h2>' + nutzChecks() + '</div>' +
+  '<div class="sec"><h2>Nutzlast</h2><p class="note" data-group="st">Bei einer Raumstation sitzen die Nutzlasten außen auf Plattformen. Die Crew kann sie warten und austauschen.</p>' + nutzChecks() +
+    '<div data-group="st">' + check1("schwenk", SCHWENK) + '</div></div>' +
   '<div class="sec" data-group="sat"><h2>Bordcomputer & Wärme</h2>' + optRadio("obc", OBC) +
     '<div class="field"><span class="lbl">Oberfläche</span>' + optRadio("haut", HAUT) + '</div>' + check1("heizung", {name:HEIZ.name, sub:"hält den Akku im Erdschatten über 5 °C"}) +
   '</div>';
@@ -1150,7 +1173,7 @@ document.getElementById("presets").innerHTML = Object.entries(PRESETS).map(([k,p
 
 const NUMS = ["hoehe","jahre","segmente","batterie","fluegel"];
 const STNUMS = ["crew","fluege", ...Object.keys(MODULE).map(k => "m_" + k)];
-const BOOLS = ["koerper","stern","segel","heizung","rtg","swingby","schild","strahl", ...Object.keys(FUNK).map(x => "funk_" + x), ...Object.keys(NUTZ).map(x => "nutz_" + x)];
+const BOOLS = ["koerper","stern","segel","heizung","rtg","swingby","schild","strahl","schwenk", ...Object.keys(FUNK).map(x => "funk_" + x), ...Object.keys(NUTZ).map(x => "nutz_" + x)];
 const RADIOS = ["bahn","format","fluegel","boden","lage","antrieb","obc","haut","bauweise","sonne","start","leben","rakete"];
 let MANUAL = {d:{}, x:[]};
 let KOSTEN = "alles";
@@ -1223,7 +1246,7 @@ function refreshHints(c, R){
   Object.keys(TIERINFO).forEach(k => {
     const box = form.querySelector('[data-tiers="' + k + '"]'); if (!box) return;
     box.hidden = !c["nutz_" + k];
-    const t = R.station ? null : tupOf(NUTZ[k], R.k), st = tierOf(c, k);
+    const t = tupOf(NUTZ[k], R.station ? "s" : R.k), st = tierOf(c, k);
     box.querySelectorAll("[data-tierprice]").forEach(n => { const lv = +n.dataset.tierprice.split(":")[1]; n.textContent = t ? eur(t[3]*TIER[lv].cost*R.BW.f) : ""; });
     box.querySelector("[data-tierinfo]").textContent = TIERINFO[k][st - 1] + " · " + (st === 1 ? "leichter und sparsamer" : st === 3 ? "schwerer, braucht mehr Strom und genauere Ausrichtung" : "ausgewogen");
     const hint = form.querySelector('[data-hint="nutz_' + k + '"]'); if (hint && t) hint.innerHTML = kg(t[0]*TIER[st].mass).replace(" kg","&nbsp;kg") + "<br>" + eur(t[3]*TIER[st].cost*R.BW.f).replace(" €","&nbsp;€");
@@ -1269,7 +1292,7 @@ function renderResults(){
     const f = Math.min(1, val/max), cls = val > max ? "fail" : val > max*0.9 ? "warn" : "";
     return '<div class="bud"><span>' + name + '</span><span class="val">' + txt + '</span><div class="track"><div class="fill ' + cls + '" style="width:' + (f*100).toFixed(1) + '%"></div></div></div>';
   };
-  const tons = v => nf1.format(v/1000) + " t";
+  const tons = v => v < 1000 ? kg(v) : nf1.format(v/1000) + " t";
   if (R.station) document.getElementById("budgets").innerHTML =
     (R.crew ? bud("Lebensraum", R.volMax, Math.max(R.vol, 1), nf0.format(R.vol) + " m³ für " + R.crew + " Personen") : "") +
     bud("Stromverbrauch", R.P_cons, Math.max(R.P_gen, 1), nf1.format(R.P_cons/1000) + " von " + nf1.format(R.P_gen/1000) + " kW") +
@@ -1586,6 +1609,30 @@ function buildStation(c){
   // Kuppel ohne Knoten: am Kernmodul
   for (let i = cnt("kuppel") - kuppelLeft; i < cnt("kuppel"); i++){ const cg = new THREE.Group(); const base = cyl(10, 12, 6, ringM, 7); cg.add(base); const dome = mesh(new THREE.SphereGeometry(10, 7, 6, 0, Math.PI*2, 0, Math.PI/2), new THREE.MeshStandardMaterial({color:0x223355, metalness:0.9, roughness:0.1})); dome.position.y = 3; cg.add(dome);
     cg.position.set(-30 + i*20, -(r0 + 4), 0); cg.rotation.x = Math.PI; P("kuppel-" + i, MODULE.kuppel.name, cg); }
+  // Außenplattformen für Nutzlasten: zur Erde (+Z) und ins All (-Z)
+  const sN = ST_NUTZ.filter(x => c["nutz_" + x]);
+  if (sN.length){
+    const plat = (sign, items, key) => {
+      if (!items.length) return;
+      const pg = new THREE.Group(), w2 = Math.max(40, items.length*22);
+      const plate = box(w2, 26, 2, new THREE.MeshStandardMaterial({color:0xb7bcc3, metalness:0.6, roughness:0.4})); pg.add(plate);
+      [-1, 1].forEach(sx => { const st = box(3, 3, 10, ringM); st.position.set(sx*w2*0.35, 0, -sign*6); pg.add(st); });
+      items.forEach((x, i) => {
+        const ts = TIER[tierOf(c, x)].size, o = new THREE.Group(), xi = -w2/2 + 11 + i*22;
+        if (x === "teleskop"){ const tb = cyl(6*ts, 6*ts, 26*ts, new THREE.MeshStandardMaterial({color:0xf2f2ef, roughness:0.5}), 32); tb.rotation.x = Math.PI/2; tb.position.z = 13*ts; o.add(tb); const gl = cyl(5.2*ts, 5.2*ts, 0.3, m.glass, 32); gl.rotation.x = Math.PI/2; gl.position.z = 26*ts; o.add(gl); }
+        else if (x === "relay"){ const d = dish(10, 3, new THREE.MeshStandardMaterial({color:0xd9dde3, metalness:0.6, roughness:0.35})); d.rotation.x = -Math.PI/2; d.position.z = 6; o.add(d); const ms = cyl(0.8, 0.8, 6, ringM, 8); ms.rotation.x = Math.PI/2; ms.position.z = 3; o.add(ms); }
+        else if (x === "iot"){ const b = cyl(4, 4, 1, m.white); b.rotation.x = Math.PI/2; o.add(b); const a = cyl(0.6, 0.6, 12, m.copper, 8); a.rotation.x = Math.PI/2; a.position.z = 6; o.add(a); }
+        else if (x === "sci"){ const b = box(12, 9, 5, m.dark); b.position.z = 2.5; o.add(b); }
+        else { const r = (x === "cam" ? 3 : x === "multi" ? 4.5 : 5.5)*ts; const bl = box(r*2.6, r*2.6, 3, m.dark); bl.position.z = 1.5; o.add(bl); const ba = cyl(r, r, r*1.6, m.black); ba.rotation.x = Math.PI/2; ba.position.z = 3 + r*0.8; o.add(ba); const gl = cyl(r*0.8, r*0.8, 0.3, m.glass); gl.rotation.x = Math.PI/2; gl.position.z = 3 + r*1.6; o.add(gl); }
+        o.position.set(xi, 0, 1); pg.add(o);
+      });
+      if (sign < 0) pg.rotation.y = Math.PI;
+      pg.position.set(-42, 0, sign*(r0 + 14));
+      P(key, "Außenplattform (" + items.map(x => NUTZ[x].name).join(", ") + ")" + (c.schwenk ? " mit Schwenkplattform" : ""), pg);
+    };
+    plat(1, sN.filter(x => x !== "teleskop"), "plattform-erde");
+    plat(-1, sN.filter(x => x === "teleskop"), "plattform-all");
+  }
   // Andockstelle am Kernmodul + angedockte Raumschiffe
   const kp = port(new THREE.Vector3(0, 1, 0)); kp.position.set(0, r0 + 2, 30); kern.add(kp);
   ports.unshift({mod:kern, dir:new THREE.Vector3(0,1,0), r:r0 + 2, off:new THREE.Vector3(0, 0, 30)});
@@ -2486,9 +2533,17 @@ function parseWishes(text){
   const familie = has(/cubesat/) ? "c" : has(/pocketqube/) ? "p" : null;
   const station = has(/raum ?station|weltraumstation|mondstation|forschungsstation|wohnstation|station (für|mit|am|im|um)|astronaut|besatzung|menschen (im all|leben|wohnen)|wohnen im all|leben im all/);
   const cm = t.match(/(\d{1,2})\s*(astronaut|personen|menschen|leute|crew|besatzung)/);
-  if (station) return {station:true, titel:"", nutzlast:[], bahn: bahn === "mond" ? "mond" : null, jahre: yr ? Number(yr[1]) : null, budget, maxkg,
+  const stNutz = [];
+  if (station){
+    if (has(/multispek|landwirt|vegetation/)) stNutz.push("multi"); else if (has(/hyperspek|mineral/)) stNutz.push("hyper"); else if (has(/kamera|foto|erdbeobacht|bilder der erde/)) stNutz.push("cam");
+    if (has(/teleskop|sterne|galax|astronom/)) stNutz.push("teleskop");
+    if (has(/strahlung|teilchen|messgerät/)) stNutz.push("sci");
+    if (has(/schiff|iot|sensoren|ais\b/)) stNutz.push("iot");
+    if (has(/fernseh|internet|relais|transponder/)) stNutz.push("relay");
+  }
+  if (station) return {station:true, titel:"", nutzlast:stNutz, bahn: bahn === "mond" ? "mond" : null, jahre: yr ? Number(yr[1]) : null, budget, maxkg,
     crew: cm ? Math.min(12, Number(cm[1])) : 4, labor: has(/labor|forsch|experiment|wissenschaft/), kuppel: has(/kuppel|aussicht|fenster|blick/), gruen: has(/gewächshaus|pflanzen|gemüse|selbstversorg/),
-    verstanden: "Eine Raumstation" + (bahn === "mond" ? " in der Umlaufbahn um den Mond" : " in der Erdumlaufbahn") + " für " + (cm ? Number(cm[1]) : 4) + " Personen" + (has(/labor|forsch|experiment/) ? ", mit Labor" : "") + (has(/kuppel|aussicht|fenster/) ? " und Aussichtskuppel" : "") + ".",
+    verstanden: "Eine Raumstation" + (bahn === "mond" ? " in der Umlaufbahn um den Mond" : " in der Erdumlaufbahn") + " für " + (cm ? Number(cm[1]) : 4) + " Personen" + (has(/labor|forsch|experiment/) ? ", mit Labor" : "") + (has(/kuppel|aussicht|fenster/) ? " und Aussichtskuppel" : "") + (stNutz.length ? ". Außen: " + stNutz.map(x => NUTZ[x].name).join(", ") : "") + ".",
     realismus: "Eine Raumstation kostet Milliarden – so etwas bauen Raumfahrtagenturen oder große Firmen, kein Hobbyteam."};
   const stufe = has(/stufe ?3|super ?gut|beste|hochauflösend|profi-?qualität|sehr gut/) ? 3 : has(/stufe ?1|einfach(e|er|es)? (kamera|teleskop|version)|billige (kamera|version)|schlecht/) ? 1 : null;
   return {titel:"", nutzlast:nutz, funk, bahn, sonne, familie, stufe, jahre: yr ? Number(yr[1]) : null, budget, maxkg, bauweise,
@@ -2639,6 +2694,7 @@ function repairStation(c, R){
     if (!c.strahl){ c.strahl = true; return "Strahlenschutz-Wände aus Wasser um die Schlafkabinen."; }
     if (BAHNEN[c.bahn].h == null && c.hoehe > 400){ c.hoehe -= 50; return "Bahn auf " + c.hoehe + " km gesenkt – dort ist die Strahlung schwächer."; }
   }
+  if (bad("nutzlage") && !c.schwenk){ c.schwenk = true; return "Schwenkplattform, damit Kameras und Teleskop trotz schwankender Station genau zielen."; }
   if (bad("truemmer") && !c.schild){ c.schild = true; return "Whipple-Schilde gegen Mikrometeoriten angebracht."; }
   return null;
 }
@@ -2646,6 +2702,7 @@ function designStation(w){
   const crew = w.crew != null ? w.crew : 4;
   const c = Object.assign({}, PRESETS.bake.c, {titel:w.titel || (w.bahn === "mond" ? "Mondstation" : "Raumstation"), format:"ST", bauweise:"kauf", start:"kauf",
     rakete:"gross", bahn: w.bahn === "mond" ? "mond" : "leo", hoehe:420, jahre:w.jahre || 10, crew, leben: w.gruen ? "zu" : "teil", schild:true, strahl: w.bahn === "mond", fluege:2,
+    ...Object.fromEntries(ST_NUTZ.map(x => ["nutz_" + x, (w.nutzlast || []).includes(x)])), schwenk:false,
     m_wohn: crew > 0 ? 1 : 0, m_wohnauf:0, m_labor: w.labor ? 1 : 0, m_knoten:1, m_lager: crew > 3 ? 1 : 0, m_kuppel: w.kuppel ? 1 : 0, m_solar:1, m_radiator:1,
     budget:w.budget || 0, maxkg:0});
   const log = []; let Rr = compute(c);
@@ -2801,6 +2858,7 @@ function movesFor(c, opts){
     Object.keys(LEBEN).forEach(k => k !== c.leben && put(x => x.leben = k));
     if (c.fluege < 12) put(x => x.fluege++); if (c.fluege > 0) put(x => x.fluege--);
     put(x => x.schild = !x.schild); put(x => x.strahl = !x.strahl);
+    if (ST_NUTZ.some(x => c["nutz_" + x])) put(x => x.schwenk = !x.schwenk);
     if (!BAHNEN[c.bahn].h){ if (c.hoehe > 350) put(x => x.hoehe -= 50); if (c.hoehe < 600) put(x => x.hoehe += 50); }
     return out;
   }
@@ -2868,7 +2926,7 @@ function improveSearch(c0, goals, opts){
 const FIELD_LABEL = {rakete:"Rakete", format:"Bauform", bahn:"Umlaufbahn", boden:"Bodenstation", lage:"Lageregelung", antrieb:"Antrieb", obc:"Bordcomputer", haut:"Oberfläche", bauweise:"Bauweise", sonne:"Sonnensegel", start:"Start", leben:"Lebenserhaltung",
   hoehe:"Bahnhöhe", jahre:"Missionsdauer", segmente:"Felder je Flügel", batterie:"Akku", fluegel:"Solarflügel", crew:"Besatzung", fluege:"Frachtflüge pro Jahr"};
 const FIELD_DICT = {rakete:RAKETEN, format:FORMATE, bahn:BAHNEN, boden:BODEN, lage:LAGE, antrieb:ANTRIEB, obc:OBC, haut:HAUT, bauweise:BAUWEISE, sonne:SONNE, leben:LEBEN, start:{kauf:{name:"Startplatz kaufen"}, foerder:{name:"Förderprogramm"}}};
-const BOOL_LABEL = Object.assign({koerper:"Solarzellen am Gehäuse", stern:STERN.name, segel:SEGEL.name, heizung:HEIZ.name, rtg:RTG.name, swingby:SWING.name, schild:"Trümmerschutz", strahl:"Strahlenschutz-Wände"},
+const BOOL_LABEL = Object.assign({schwenk:SCHWENK.name, koerper:"Solarzellen am Gehäuse", stern:STERN.name, segel:SEGEL.name, heizung:HEIZ.name, rtg:RTG.name, swingby:SWING.name, schild:"Trümmerschutz", strahl:"Strahlenschutz-Wände"},
   Object.fromEntries(Object.entries(FUNK).map(([k,f]) => ["funk_" + k, f.name])), Object.fromEntries(Object.entries(NUTZ).map(([k,n]) => ["nutz_" + k, n.name])));
 function describeChanges(a, b){
   const out = [];
