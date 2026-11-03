@@ -261,6 +261,7 @@ td .dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right
       <button type="button" data-mode="innen">Innenleben</button>
       <button type="button" data-mode="orbit">Im Orbit</button>
       <button type="button" data-mode="bauen">Selbst bauen</button>
+      <button type="button" data-mode="rakete">Start</button>
     </div>
     <div class="vp-tools vp-tr" role="group" aria-label="Einzeltests">
       <button type="button" id="bShake">Rütteltest</button>
@@ -268,6 +269,10 @@ td .dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right
     </div>
     <div class="vp-progress" id="vpProg" hidden></div>
     <div class="vp-bottom">
+      <div class="buildbar" id="launchbar" hidden>
+        <div class="bb-sel" id="lbInfo"></div>
+        <div class="bb-row"><button type="button" id="lbGo" class="on">Starten!</button><button type="button" id="lbReset">Zurück auf die Rampe</button></div>
+      </div>
       <div class="buildbar" id="buildbar" hidden>
         <div class="bb-sel" id="bbSel"></div>
         <div class="bb-row" id="bbTools" role="group" aria-label="Werkzeug">
@@ -403,6 +408,20 @@ const HAUT = {
   mli:     {name:"Goldfolie (MLI)", sub:"mehrlagige Isolierung, dämpft Temperatursprünge", a:0.4, e:0.65, damp:0.18, c:[0.08,0,0,4000], s:[4,0,0,60000]}
 };
 /* Raumstation: Module (Masse kg, Druckvolumen m³, Leistung W, Preis €) */
+/* Raketen: Nutzlast in niedrige Bahn (kg) und Preis; je weiter das Ziel, desto weniger passt hinein */
+const RAKETEN = {
+  mitflug: {name:"Mitflug", sub:"dein Satellit fliegt mit vielen anderen auf einer großen Rakete – am günstigsten, aber Termin und Bahn bestimmt der Hauptkunde", leo:null, price:null, h:70, d:3.7},
+  klein:   {name:"Eigene Kleinrakete", sub:"z. B. Electron: bis 300 kg, eigene Bahn und eigener Termin", leo:300, price:7e6, h:18, d:1.2},
+  mittel:  {name:"Mittelgroße Rakete", sub:"z. B. Vega-C: bis 2,3 t", leo:2300, price:40e6, h:35, d:3},
+  gross:   {name:"Große Rakete", sub:"z. B. Falcon 9 oder Ariane 6: bis 22 t", leo:22800, price:70e6, h:68, d:3.7},
+  schwer:  {name:"Schwerlastrakete", sub:"z. B. Falcon Heavy: bis 60 t, auch weit hinaus ins Sonnensystem", leo:60000, price:150e6, h:70, d:3.7, booster:true}
+};
+const BAHN_FAKTOR = {leo:1, sso:0.8, dd:0.8, meo:0.35, geo:0.3, mond:0.25, tief:0.2, mars:0.2, venus:0.2, jupiter:0.08, interstellar:0.05};
+const MITFLUG_OK = {leo:"ok", sso:"ok", dd:"ok", meo:"selten", geo:"selten", mond:"selten", tief:"selten", mars:"selten", venus:"selten", jupiter:"nein", interstellar:"nein"};
+const capOf = (r, bahn) => RAKETEN[r] && RAKETEN[r].leo ? RAKETEN[r].leo*(BAHN_FAKTOR[bahn] || 1) : Infinity;
+function cheapestRocket(massKg, bahn){
+  return ["klein","mittel","gross","schwer"].find(r => capOf(r, bahn) >= massKg) || "schwer";
+}
 const KERN = {name:"Kernmodul", sub:"Steuerung, Lageregelung, Funk und Triebwerke zur Bahnhaltung · 80 m³", mass:22000, vol:80, power:8000, cost:1.2e9, ports:1};
 const MODULE = {
   wohn:     {name:"Wohnmodul", sub:"Schlafkabinen, Küche, Sportgeräte · 100 m³", mass:20000, vol:100, power:2000, cost:450e6},
@@ -578,8 +597,10 @@ function computeStation(c){
   const tests = [];
   const T_ = (id, name, status, val, text, fix) => tests.push({id, name, status, val, text, fix});
   const tt = v => nf1.format(v/1000) + " t";
-  T_("masse", "Startgewicht je Modul", heaviest <= 25000 ? "ok" : "fail", tt(heaviest) + " / 25 t",
-    "Die Station wird in Teilen gestartet: jedes Modul mit einer eigenen Schwerlastrakete und im All zusammengebaut. Das schwerste Modul wiegt " + tt(heaviest) + ", eine Rakete bringt höchstens 25 t in die Umlaufbahn. Insgesamt wiegt die Station " + tt(mass) + ".", "");
+  const srk = c.rakete && RAKETEN[c.rakete] && c.rakete !== "mitflug" ? c.rakete : "gross", scap = capOf(srk, c.bahn);
+  T_("masse", "Startgewicht je Modul", heaviest <= scap ? "ok" : "fail", tt(heaviest) + " / " + tt(scap),
+    "Die Station wird in Teilen gestartet: jedes Modul mit einer eigenen Rakete (" + RAKETEN[srk].name + ") und im All zusammengebaut. Das schwerste Modul wiegt " + tt(heaviest) + ", die Rakete bringt " + (BAHN_FAKTOR[c.bahn] < 1 ? "zu diesem Ziel " : "") + "höchstens " + tt(scap) + ". Insgesamt wiegt die Station " + tt(mass) + "." + (c.rakete === "mitflug" ? " Module können nicht als Mitflieger starten." : ""),
+    heaviest <= scap ? "" : "Eine größere Rakete wählen.");
   if (crew > 0){
     const pp = vol/crew;
     T_("platz", "Lebensraum", pp >= 30 ? "ok" : pp >= 20 ? "warn" : "fail", nf0.format(pp) + " m³ pro Person",
@@ -617,12 +638,12 @@ function computeStation(c){
   /* Kosten */
   const hw = parts.reduce((s,p) => s + p.cost, 0);
   const nLaunch = 1 + Object.entries(MODULE).reduce((s,[k,m]) => s + (k === "solar" || k === "radiator" ? Math.ceil(cnt(k)/3) : k === "kuppel" ? 0 : cnt(k)), 0);
-  const launchPer = 90e6*(deep ? 3 : 1);
+  const launchPer = RAKETEN[srk].price;
   const launch = nLaunch*launchPer;
   const once = [], run = [];
   once.push({name:"Integration und Tests am Boden", cost:hw*0.1, build:true});
   once.push({name:"Zusammenbau im All (Roboterarm, Außeneinsätze)", cost:hw*0.05, build:true});
-  once.push({name:nLaunch + " Starts mit Schwerlastraketen à " + eur(launchPer), cost:launch});
+  once.push({name:nLaunch + " Starts mit " + RAKETEN[srk].name + " à " + eur(launchPer), cost:launch});
   once.push({name:"Kontrollzentrum am Boden", cost:300e6});
   once.push({name:"Zulassung, Versicherung, Raumfahrtgesetze", cost:50e6});
   if (crew > 0) once.push({name:"Ausbildung von " + crew*2 + " Astronautinnen und Astronauten", cost:crew*2*20e6});
@@ -962,10 +983,12 @@ function compute(c){
   once.push({name:"Testmodell (zweites Exemplar für Bodentests" + (c.rtg ? ", RTG wird durch eine elektrische Attrappe ersetzt" : "") + ")", cost:hwBase*BW.em, build:true});
   once.push({name:"Umwelttests: Rütteltisch, Thermal-Vakuum" + (c.bauweise === "kauf" ? ", EMV" : " (z. B. an einer Hochschule)"), cost:F.test*BW.test, build:true});
   const freeStart = c.start === "foerder";
-  const launch = freeStart ? 0 : cube ? F.launch*B.x : Math.max(400000, 6500*mass)*B.x + 25000;
+  const rk = c.rakete && RAKETEN[c.rakete] ? c.rakete : "mitflug", RK = RAKETEN[rk];
+  const launch = freeStart ? 0 : rk !== "mitflug" ? RK.price : cube ? F.launch*B.x : Math.max(400000, 6500*mass)*B.x + 25000;
   if (c.nutz_rueckkehr) once.push({name:"Bergung der Kapsel: Landegenehmigung und Suchteam", cost: !cube ? 400000 : {bastler:5000, selbst:15000, bausatz:30000, kauf:60000}[c.bauweise] || 60000});
   if (deep) once.push({name:"Bahnberechnung und Flugplanung " + (c.bahn === "mond" ? "zum Mond" : "durchs Sonnensystem") + (c.swingby && B.swing ? " mit Swing-by" : ""), cost: (cube ? 25000*BW.test : 300000)*(c.swingby && B.swing ? 2 : 1)});
   if (freeStart) once.push({name:"Start über ein Förderprogramm (kostenlos, Bewerbung nötig)", cost:0});
+  else if (rk !== "mitflug") once.push({name:"Start mit eigener Rakete: " + RK.name + " (" + RK.sub.split(":")[0] + ")", cost:launch});
   else once.push({name:"Start als Mitflieger" + (k === "p" ? " (inkl. PocketQube-Ausstoßer)" : cube ? " (inkl. Ausstoßbehälter)" : " (inkl. Trennring)"), cost:launch});
   const amateur = cube && c.bauweise !== "kauf" && c.boden !== "netz" && c.boden !== "dsn" && funkKeys.length > 0 && funkKeys.every(x => x === "uhf" || x === "s" || x === "lora");
   once.push({name: amateur ? "Amateurfunk-Koordination (kostenlos), Registrierung, Haftpflicht" : "Frequenzanmeldung, Zulassung, Haftpflicht", cost: amateur ? (c.bauweise === "bastler" ? 500 : 3000) : cube ? 12000 : 120000 + 0.03*(hw + launch)});
@@ -986,6 +1009,25 @@ function compute(c){
   run.push({name:(c.bauweise === "kauf" ? "Missionsbetrieb: Überwachung, Steuerung" : "Betrieb: du steuerst selbst – Server, Strom, Internet") + " (" + yrs + " J.)", cost:(opsYr || 25000)*yrs});
   const CM = costMode(c, hw, once, run, subOnce + (subOnce - (hw - hwBase))*0.15, run.reduce((s,x) => s + x.cost, 0));
   const totalOnce = CM.totalOnce, totalRun = CM.totalRun, total = CM.total;
+
+  /* Rakete */
+  {
+    const mf = MITFLUG_OK[c.bahn] || "ok", cap = capOf(rk, c.bahn);
+    let st = "ok", val, txt, fix = "";
+    if (freeStart){ val = "Mitflug (Förderung)"; txt = "Dein Satellit fliegt kostenlos als Mitflieger auf einer Rakete, die das Förderprogramm bestimmt."; if (mf === "nein"){ st = "fail"; txt += " Dorthin gibt es aber keine Mitflüge."; fix = "Eine eigene Rakete wählen."; } }
+    else if (rk === "mitflug"){
+      val = mf === "nein" ? "kein Mitflug" : mf === "selten" ? "Mitflug selten" : "Mitflug";
+      st = mf === "nein" ? "fail" : mf === "selten" ? "warn" : "ok";
+      txt = mf === "nein" ? "Zu diesem Ziel fliegen keine anderen Satelliten mit – dafür braucht es eine eigene Rakete mit genug Schwung." : mf === "selten" ? "Mitflüge zu diesem Ziel gibt es nur selten, etwa wenn eine größere Mission Platz frei hat. Die Wartezeit kann Jahre dauern." : "Dein Satellit fliegt in einem Ausstoßbehälter mit vielen anderen auf einer großen Rakete. Das ist am günstigsten, aber Starttermin und Bahn bestimmt der Hauptkunde.";
+      fix = st === "ok" ? "" : "Eine eigene Rakete wählen – die günstigste passende wäre: " + RAKETEN[cheapestRocket(massRes, c.bahn)].name + ".";
+    } else {
+      val = (cap >= 1000 ? nf1.format(cap/1000) + " t" : nf0.format(cap) + " kg") + " möglich";
+      st = massRes <= cap ? "ok" : "fail";
+      txt = RK.name + " (" + RK.sub.split(":")[0] + ") bringt " + (BAHN_FAKTOR[c.bahn] < 1 ? "zu diesem Ziel noch " : "") + (cap >= 1000 ? nf1.format(cap/1000) + " t" : nf0.format(cap) + " kg") + ". Dein Satellit wiegt mit Reserve " + kg(massRes) + ". Mit eigener Rakete bestimmst du Bahn und Termin selbst.";
+      fix = st === "fail" ? "Eine größere Rakete wählen." : (mf === "ok" && massRes < cap*0.05 ? "Tipp: Als Mitflieger wäre der Start viel günstiger." : "");
+    }
+    T_("rakete", "Rakete", st, val, txt, fix);
+  }
 
   /* Budget und Wunschgewicht */
   if (c.budget > 0){
@@ -1064,6 +1106,7 @@ form.innerHTML =
     '<div class="field"><span class="lbl">Umlaufbahn</span>' + optRadio("bahn", BAHNEN, "none") + '</div>' +
     range("hoehe", "Bahnhöhe", 300, 1200, 10, "km") +
     range("jahre", "Missionsdauer", 1, 50, 1, "Jahre") +
+    '<div class="field"><span class="lbl">Rakete</span>' + optRadio("rakete", RAKETEN, "none") + '</div>' +
     '<div data-group="sat">' + seg("start", [["kauf","Startplatz kaufen","Mitflug-Anbieter"],["foerder","Förderprogramm","kostenlos, Bewerbung"]], "Start ins All") + '</div>' +
   '</div>' +
   '<div class="sec"><h2>Bauform <i id="dimLine"></i></h2>' +
@@ -1108,7 +1151,7 @@ document.getElementById("presets").innerHTML = Object.entries(PRESETS).map(([k,p
 const NUMS = ["hoehe","jahre","segmente","batterie","fluegel"];
 const STNUMS = ["crew","fluege", ...Object.keys(MODULE).map(k => "m_" + k)];
 const BOOLS = ["koerper","stern","segel","heizung","rtg","swingby","schild","strahl", ...Object.keys(FUNK).map(x => "funk_" + x), ...Object.keys(NUTZ).map(x => "nutz_" + x)];
-const RADIOS = ["bahn","format","fluegel","boden","lage","antrieb","obc","haut","bauweise","sonne","start","leben"];
+const RADIOS = ["bahn","format","fluegel","boden","lage","antrieb","obc","haut","bauweise","sonne","start","leben","rakete"];
 let MANUAL = {d:{}, x:[]};
 let KOSTEN = "alles";
 try { if (localStorage.getItem("satellitenwerkstatt.kosten") === "bau") KOSTEN = "bau"; } catch(e){}
@@ -1134,7 +1177,7 @@ function batteryRange(fmt){
   if (k === "p"){ b.min = 2; b.max = 40; b.step = 1; } else if (k === "c"){ b.min = 10; b.max = 250; b.step = 5; } else { b.min = 200; b.max = 5000; b.step = 50; }
 }
 function writeForm(c){
-  c = Object.assign({sonne:"none", boden:"eigen", bauweise:"selbst", start:"kauf", leben:"teil", crew:4, fluege:4, m_wohn:1, m_wohnauf:0, m_labor:1, m_knoten:1, m_lager:1, m_kuppel:0, m_solar:2, m_radiator:2, schild:true, strahl:false}, c);
+  c = Object.assign({rakete: c.format === "ST" ? "gross" : "mitflug", sonne:"none", boden:"eigen", bauweise:"selbst", start:"kauf", leben:"teil", crew:4, fluege:4, m_wohn:1, m_wohnauf:0, m_labor:1, m_knoten:1, m_lager:1, m_kuppel:0, m_solar:2, m_radiator:2, schild:true, strahl:false}, c);
   MANUAL = c.manuell && typeof c.manuell === "object" ? JSON.parse(JSON.stringify({d:c.manuell.d || {}, x:c.manuell.x || []})) : {d:{}, x:[]};
   const el = form.elements;
   el.titel.value = c.titel;
@@ -1185,6 +1228,8 @@ function refreshHints(c, R){
     box.querySelector("[data-tierinfo]").textContent = TIERINFO[k][st - 1] + " · " + (st === 1 ? "leichter und sparsamer" : st === 3 ? "schwerer, braucht mehr Strom und genauere Ausrichtung" : "ausgewogen");
     const hint = form.querySelector('[data-hint="nutz_' + k + '"]'); if (hint && t) hint.innerHTML = kg(t[0]*TIER[st].mass).replace(" kg","&nbsp;kg") + "<br>" + eur(t[3]*TIER[st].cost*R.BW.f).replace(" €","&nbsp;€");
   });
+  Object.keys(RAKETEN).forEach(k => { const n = form.querySelector('label:has(#f-rakete-' + k + ') .opt-hint'); if (!n) return;
+    const cap = capOf(k, c.bahn); n.innerHTML = k === "mitflug" ? (MITFLUG_OK[c.bahn] === "nein" ? "nicht möglich" : MITFLUG_OK[c.bahn] === "selten" ? "selten" : "") : eur(RAKETEN[k].price).replace(" €","&nbsp;€") + "<br>" + (cap >= 1000 ? nf1.format(cap/1000) + "&nbsp;t" : nf0.format(cap) + "&nbsp;kg"); });
   const o = id => document.getElementById("o-" + id);
   o("hoehe").textContent = nf0.format(c.hoehe) + " km";
   o("jahre").textContent = c.jahre + (c.jahre === 1 ? " Jahr" : " Jahre");
@@ -1929,16 +1974,19 @@ function applyHeat(on){
 function rebuild3d(force){
   if (!V.ok) return;
   if (ED.tc) ED.tc.detach();
+  if (V.mode === "rakete" && LV.root && LV.t < 0){ setTimeout(() => { if (V.mode === "rakete" && LV.t < 0) buildRocket(); }, 0); }
   if (satRoot){ satScene.remove(satRoot); applyHeat(false); disposeTree(satRoot); }
   satRoot = buildSat(R.c);
   satScene.add(satRoot);
+  if (V.mode === "rakete") satRoot.visible = false;
   V.stowed = satRoot.userData.stowed || [];
   if (V.mode === "bauen" && ED.sel){ const o = satRoot.userData.outer.children.find(x => x.userData.part === ED.sel); if (o) ED.tc.attach(o); else ED.sel = null; updateBuildbar(); }
   if (V.heat) applyHeat(true);
   const bb = new THREE.Box3().setFromObject(satRoot), sz = bb.getSize(new THREE.Vector3());
   satRoot.userData.radius = sz.length()/2;
   satRoot.userData.center = bb.getCenter(new THREE.Vector3());
-  if (V.mode !== "orbit"){
+  if (V.mode === "rakete"){ /* Kamera bleibt bei der Rakete */ }
+  else if (V.mode !== "orbit"){
     const rad = satRoot.userData.radius;
     if (force || Math.abs(rad - V.lastFit)/Math.max(V.lastFit, 0.01) > 0.2) fitModel();
   } else placeOrbit(V.orbitT);
@@ -1954,6 +2002,7 @@ function fitModel(){
   controls.target.copy(ctr); controls.minDistance = rad*0.6; controls.maxDistance = rad*12; controls.update();
 }
 function updateInfo(){
+  if (V.mode === "rakete") return;
   const [W,H,D] = R.F.d, info = document.getElementById("vpInfo");
   if (V.mode === "orbit" && R.B.interstellar){ info.innerHTML = "In Wahrheit fliegt er geradeaus aus dem Sonnensystem hinaus – die Sonne ist hier stark vergrößert"; return; }
   if (V.mode === "orbit"){ info.innerHTML = (R.B.deep ? "Umlaufbahn um " + ({mond:"den Mond", mars:"den Mars", venus:"die Venus", tief:"den Asteroiden", jupiter:"den Jupiter"}[R.c.bahn] || "das Ziel") + ", stark vereinfacht" + (R.B.interstellar ? "" : "") : "Erde und Bahn nicht maßstabsgetreu") + " · Satellit stark vergrößert"; return; }
@@ -2050,13 +2099,17 @@ function setMode(mode){
   if (V.testOrbit && mode !== "orbit") return;
   if (V.heat) toggleHeat(false);
   if (mode !== "bauen") selectPart(null);
+  const prev0 = V.mode;
   const prev = V.mode; V.mode = mode;
   document.getElementById("buildbar").hidden = mode !== "bauen";
+  document.getElementById("launchbar").hidden = mode !== "rakete";
+  if (V.ok && prev0 === "rakete" && mode !== "rakete") leaveRocket();
   if (V.ok) controls.autoRotate = controls.autoRotate && mode === "modell";
   document.querySelectorAll("[data-mode]").forEach(b => b.classList.toggle("on", b.dataset.mode === mode));
   document.getElementById("hud").hidden = mode !== "orbit";
   if (!V.ok){ updateLegend(); return; }
   earthGroup.visible = mode === "orbit";
+  if (mode === "rakete"){ if (orbitLine){ bgScene.remove(orbitLine); orbitLine = null; } sunLight.position.set(6, 8, 10); sunLight.intensity = 1.6; hemi.intensity = 0.75; controls.autoRotate = false; buildRocket(); updateLegend(); document.getElementById("vpInfo").innerHTML = "Rakete und Nutzlast · ziehen zum Drehen · dein Satellit ist vergrößert und gelb markiert"; return; }
   if (mode === "orbit"){
     applyPlanet(); buildOrbitLine(); rebuild3d(); fitOrbit();
     drawSoc();
@@ -2138,6 +2191,7 @@ function loop(ts){
     clouds.rotation.y += dt*0.01;
     if (ts - hudTick > 90){ hudTick = ts; updateHud(V.orbitT, ecl); drawSoc(V.orbitT); }
   }
+  if (V.mode === "rakete" && LV.t >= 0) launchStep(dt);
   if (V.shake && satRoot){
     const p = (ts - V.shake.start)/V.shake.dur;
     if (p >= 1){ satRoot.position.set(0, 0, 0); const d = V.shake.done; V.shake = null; d && d(); }
@@ -2155,6 +2209,87 @@ function loop(ts){
   if (V.mode !== "orbit") renderer.clearDepth();
   renderer.render(satScene, camera);
   requestAnimationFrame(loop);
+}
+
+/* ---------- Rakete und Start ---------- */
+const LV = {root:null, parts:null, t:-1, sky:null};
+function buildRocket(){
+  if (LV.root){ satScene.remove(LV.root); disposeTree(LV.root); }
+  const c = R.c, rk = R.station ? (c.rakete && c.rakete !== "mitflug" ? c.rakete : "gross") : (c.start === "foerder" ? "mitflug" : (c.rakete || "mitflug"));
+  const K = RAKETEN[rk], Hh = K.h, Dd = K.d, root = new THREE.Group();
+  const white = new THREE.MeshStandardMaterial({color:0xf2f2ef, roughness:0.55, metalness:0.1});
+  const dark = new THREE.MeshStandardMaterial({color:0x2b2f35, roughness:0.6, metalness:0.3});
+  const glassy = new THREE.MeshStandardMaterial({color:0xf2f2ef, roughness:0.4, transparent:true, opacity:0.28, depthWrite:false, side:THREE.DoubleSide});
+  const h1 = Hh*0.62, h2 = Hh*0.2, hf = Hh*0.18;
+  const s1 = new THREE.Group(), s2 = new THREE.Group(), fair = new THREE.Group(), pay = new THREE.Group();
+  const st1 = cyl(Dd/2, Dd/2, h1, white, 32); st1.position.y = h1/2; s1.add(st1);
+  const band = cyl(Dd/2*1.01, Dd/2*1.01, Hh*0.015, dark, 32); band.position.y = h1*0.98; s1.add(band);
+  for (let i = 0; i < (Dd > 2 ? 9 : 1); i++){ const a = i/9*Math.PI*2, e = cyl(Dd*0.06, Dd*0.11, Hh*0.03, dark, 12); e.position.set(i ? Math.cos(a)*Dd*0.3 : 0, -Hh*0.015, i ? Math.sin(a)*Dd*0.3 : 0); s1.add(e); }
+  if (K.booster) [-1, 1].forEach(sg => { const b = cyl(Dd/2, Dd/2, h1, white, 32); b.position.set(sg*Dd*1.05, h1/2, 0); s1.add(b); const nc = cyl(0.01, Dd/2, Dd, white, 32); nc.position.set(sg*Dd*1.05, h1 + Dd/2, 0); s1.add(nc); });
+  const st2 = cyl(Dd/2, Dd/2, h2, white, 32); st2.position.y = h2/2; s2.add(st2);
+  const en2 = cyl(Dd*0.12, Dd*0.3, Hh*0.04, dark, 16); en2.position.y = -Hh*0.02; s2.add(en2);
+  s2.position.y = h1;
+  // Verkleidung aus zwei Hälften
+  const fr = Dd*0.55;
+  [0, 1].forEach(i => {
+    const half = new THREE.Group();
+    const cylH = mesh(new THREE.CylinderGeometry(fr, fr, hf*0.6, 32, 1, true, i*Math.PI, Math.PI), glassy); cylH.position.y = hf*0.3; half.add(cylH);
+    const cone = mesh(new THREE.CylinderGeometry(0.05, fr, hf*0.4, 32, 1, true, i*Math.PI, Math.PI), glassy); cone.position.y = hf*0.8; half.add(cone);
+    half.userData.dir = i ? 1 : -1; fair.add(half);
+  });
+  fair.position.y = h1 + h2;
+  // Nutzlast: dein Satellit (vergrößert) – beim Mitflug mit anderen Satelliten auf einem Ring
+  const satModel = buildSat(c), bb = new THREE.Box3().setFromObject(satModel), size = bb.getSize(new THREE.Vector3()).length() || 1;
+  const want = fr*(R.station ? 1.1 : 0.8), k = want/size;
+  satModel.scale.setScalar(k); satModel.position.y = hf*0.35; pay.add(satModel);
+  const glow = mesh(new THREE.TorusGeometry(fr*0.62, fr*0.03, 8, 40), new THREE.MeshBasicMaterial({color:0xffc94a})); glow.rotation.x = Math.PI/2; glow.position.y = hf*0.35; pay.add(glow);
+  if (rk === "mitflug" && !R.station){
+    const ring = cyl(fr*0.9, fr*0.9, hf*0.08, dark, 32); ring.position.y = hf*0.06; pay.add(ring);
+    for (let i = 0; i < 10; i++){ const a = i/10*Math.PI*2, o = box(fr*0.18, fr*0.28, fr*0.18, new THREE.MeshStandardMaterial({color:[0xb0b6bf,0xd8b45a,0x6f7c95][i % 3], roughness:0.6})); o.position.set(Math.cos(a)*fr*0.7, hf*0.25, Math.sin(a)*fr*0.7); pay.add(o); }
+  }
+  pay.position.y = h1 + h2;
+  const ground = mesh(new THREE.CylinderGeometry(Hh*3, Hh*3, 0.5, 48), new THREE.MeshStandardMaterial({color:0x3d4a35, roughness:1})); ground.position.y = -Hh*0.03 - 0.25;
+  const pad = cyl(Dd*3, Dd*3.2, Hh*0.02, new THREE.MeshStandardMaterial({color:0x8a8f96, roughness:0.9}), 32); pad.position.y = -Hh*0.03;
+  const tower = box(Dd*0.8, Hh*1.05, Dd*0.8, new THREE.MeshStandardMaterial({color:0xa23b2c, roughness:0.7, wireframe:true})); tower.position.set(-Dd*2.4, Hh*0.5, 0);
+  const plume = mesh(new THREE.ConeGeometry(Dd*0.7, Hh*0.5, 24, 1, true), new THREE.MeshBasicMaterial({color:0xffa53a, transparent:true, opacity:0.85, depthWrite:false})); plume.rotation.x = Math.PI; plume.position.y = -Hh*0.27; plume.visible = false; s1.add(plume);
+  const plume2 = mesh(new THREE.ConeGeometry(Dd*0.35, Hh*0.2, 20, 1, true), new THREE.MeshBasicMaterial({color:0x9fd2ff, transparent:true, opacity:0.8, depthWrite:false})); plume2.rotation.x = Math.PI; plume2.position.y = -Hh*0.12; plume2.visible = false; s2.add(plume2);
+  const stack = new THREE.Group(); stack.add(s1, s2, fair, pay);
+  root.add(ground, pad, tower, stack);
+  LV.root = root; LV.parts = {stack, s1, s2, fair, pay, plume, plume2, ground, pad, tower, H:Hh, rk, satModel};
+  LV.t = -1; satScene.add(root);
+  if (satRoot) satRoot.visible = false;
+  const capTxt = R.station ? " · jeder Start bringt ein Modul, die Station wird im All zusammengebaut" : rk === "mitflug" ? " · Mitflug mit etwa 10 anderen Satelliten" : " · bringt bis zu " + nf1.format(capOf(rk, c.bahn)/1000).replace(",0","") + " t zu deinem Ziel";
+  document.getElementById("lbInfo").innerHTML = "<b>" + esc(K.name) + "</b> <small>· " + esc(K.sub.split(" – ")[0]) + " · " + nf0.format(Hh) + " m hoch" + capTxt + "</small>";
+  // Kamera
+  const dist = Hh*2.3; camera.near = 0.2; camera.far = 8000; camera.updateProjectionMatrix();
+  camera.position.set(Hh*0.9, Hh*0.6, dist); controls.target.set(0, Hh*0.5, 0); progress(); controls.minDistance = 3; controls.maxDistance = Hh*6; controls.update();
+}
+function leaveRocket(){
+  progress();
+  if (LV.root){ satScene.remove(LV.root); disposeTree(LV.root); LV.root = null; }
+  LV.t = -1; if (satRoot) satRoot.visible = true;
+  renderer.setClearColor(new THREE.Color(getComputedStyle(view).backgroundColor || "#101823"), 1);
+}
+function launchStep(dt){
+  const P_ = LV.parts; if (!P_ || LV.t < 0) return;
+  LV.t += dt; const t = LV.t, Hh = P_.H;
+  const alt = t < 1 ? 0 : Math.pow(t - 1, 2.2)*Hh*0.35;
+  P_.stack.position.y = alt; P_.stack.rotation.z = -Math.min(0.5, Math.max(0, t - 3)*0.06);
+  P_.plume.visible = t > 0.2 && t < 6.5; P_.plume.scale.setScalar(0.9 + Math.random()*0.25);
+  const sep = t > 6.5;
+  if (sep){ P_.s1.position.y -= dt*Hh*0.6*(t - 6.5); P_.s1.rotation.x += dt*0.6; P_.plume2.visible = t < 11; P_.plume2.scale.setScalar(0.9 + Math.random()*0.2); }
+  if (t > 8.5){ P_.fair.children.forEach(h => { h.position.x += h.userData.dir*dt*Hh*0.08; h.rotation.z -= h.userData.dir*dt*0.5; }); }
+  if (t > 10.5){ P_.pay.position.y += dt*Hh*0.05; P_.pay.rotation.y += dt*0.3; }
+  const target = new THREE.Vector3().setFromMatrixPosition(P_.pay.matrixWorld);
+  controls.target.lerp(target, 0.15);
+  const camOff = new THREE.Vector3(Hh*0.6, -Hh*0.1, Hh*(t > 9 ? 0.5 : 1.1));
+  camera.position.lerp(target.clone().add(camOff), 0.04);
+  const sky = Math.max(0, 1 - alt/(Hh*40));
+  renderer.setClearColor(new THREE.Color().setRGB(0.06 + 0.38*sky, 0.09 + 0.55*sky, 0.14 + 0.78*sky), 1);
+  P_.ground.visible = P_.pad.visible = P_.tower.visible = alt < Hh*60;
+  const msg = t < 1 ? "Zündung – 3, 2, 1 …" : t < 6.5 ? "Abheben! Die erste Stufe schiebt mit voller Kraft" : t < 8.5 ? "Stufentrennung – die erste Stufe fällt zurück" : t < 10.5 ? "Die Nutzlastverkleidung öffnet sich – wir sind im All" : "Dein Satellit wird ausgesetzt!";
+  progress(t < 13 ? "Start" : "Geschafft", t < 13 ? msg : "Dein Satellit ist im All. Schau ihn dir unter »Im Orbit« an.");
+  if (t > 16){ LV.t = -2; }
 }
 
 /* ---------- Selbst bauen ---------- */
@@ -2388,6 +2523,12 @@ function repair(c, R){
   const k = R.k, maxBat = k === "p" ? 40 : k === "c" ? 250 : 5000;
   // Bauform zu klein oder zu schwer: nicht reparierbar
   if (bad("masse") === "fail" || bad("volumen") === "fail" || bad("wunschmasse") === "fail") return null;
+  if (bad("rakete") === "fail" || (bad("rakete") === "warn" && c.start !== "foerder")){
+    const nr = c.start === "foerder" ? null : cheapestRocket(R.massRes, c.bahn);
+    if (c.start === "foerder" && bad("rakete") === "fail"){ c.start = "kauf"; c.rakete = cheapestRocket(R.massRes, c.bahn); return "Eigene Rakete statt Förder-Mitflug – dorthin fliegt kein Mitflug."; }
+    if (nr && nr !== c.rakete && bad("rakete") === "warn" && (c.rakete || "mitflug") === "mitflug" && RAKETEN[nr].price <= R.launch*1.3){ c.rakete = nr; return RAKETEN[nr].name + " gewählt – kaum teurer als ein seltener Mitflug, dafür mit eigenem Termin und eigener Bahn."; }
+    if (nr && nr !== c.rakete && bad("rakete") === "fail"){ c.rakete = nr; return RAKETEN[nr].name + " gewählt – " + (c.rakete === "mitflug" ? "" : "dorthin gibt es keinen Mitflug oder er ist zu klein."); }
+  }
   if (bad("start") === "fail"){ if (c.segmente > 1){ c.segmente--; return "Kürzere Solarflügel, damit er beim Start nicht zu stark schwingt."; } if (c.fluegel === 4){ c.fluegel = 2; return "Nur zwei Solarflügel – das macht ihn steifer."; } return null; }
   if (bad("energie") || (bad("akku") && R.emptyAt >= 0)){
     if ((R.B.au || 1) > 3 && !c.rtg){ c.rtg = true; return "Radionuklidbatterie eingebaut – so weit draußen liefert die Sonne kaum Strom."; }
@@ -2484,6 +2625,7 @@ function repairStation(c, R){
   const bad = id => { const t = R.tests.find(x => x.id === id); return t && t.status !== "ok" ? t.status : null; };
   const cap = k => (c["m_" + k] || 0) < 6;
   if (bad("bahn") === "fail"){ c.bahn = "leo"; c.hoehe = 420; return "Erdumlaufbahn gewählt – nur dort kann die Crew regelmäßig wechseln."; }
+  if (bad("masse") === "fail" && c.rakete !== "schwer"){ c.rakete = c.rakete === "gross" ? "schwer" : "gross"; return RAKETEN[c.rakete].name + " gewählt, damit auch das schwerste Modul hineinpasst."; }
   if (bad("platz") && cap("wohnauf")){ c.m_wohnauf = (c.m_wohnauf || 0) + 1; return "Aufblasbares Wohnmodul ergänzt – viel Platz für die Crew bei wenig Gewicht."; }
   if (bad("andocken") && cap("knoten")){ c.m_knoten = (c.m_knoten || 0) + 1; return "Knotenmodul mit vier weiteren Andockstellen ergänzt."; }
   if (bad("energie") && cap("solar")){ c.m_solar = (c.m_solar || 0) + 1; return "Weiteres Solarflügel-Paar angebaut."; }
@@ -2503,7 +2645,7 @@ function repairStation(c, R){
 function designStation(w){
   const crew = w.crew != null ? w.crew : 4;
   const c = Object.assign({}, PRESETS.bake.c, {titel:w.titel || (w.bahn === "mond" ? "Mondstation" : "Raumstation"), format:"ST", bauweise:"kauf", start:"kauf",
-    bahn: w.bahn === "mond" ? "mond" : "leo", hoehe:420, jahre:w.jahre || 10, crew, leben: w.gruen ? "zu" : "teil", schild:true, strahl: w.bahn === "mond", fluege:2,
+    rakete:"gross", bahn: w.bahn === "mond" ? "mond" : "leo", hoehe:420, jahre:w.jahre || 10, crew, leben: w.gruen ? "zu" : "teil", schild:true, strahl: w.bahn === "mond", fluege:2,
     m_wohn: crew > 0 ? 1 : 0, m_wohnauf:0, m_labor: w.labor ? 1 : 0, m_knoten:1, m_lager: crew > 3 ? 1 : 0, m_kuppel: w.kuppel ? 1 : 0, m_solar:1, m_radiator:1,
     budget:w.budget || 0, maxkg:0});
   const log = []; let Rr = compute(c);
@@ -2663,6 +2805,7 @@ function movesFor(c, opts){
     return out;
   }
   const B = BAHNEN[c.bahn];
+  Object.keys(RAKETEN).forEach(r => { if (r !== (c.rakete || "mitflug")) put(x => x.rakete = r); });
   ["bauweise","boden","lage","antrieb","haut","obc"].forEach(f => {
     const dict = {bauweise:BAUWEISE, boden:BODEN, lage:LAGE, antrieb:ANTRIEB, haut:HAUT, obc:OBC}[f];
     if (f === "bauweise" && !(opts.goals || []).includes("kosten")) return;
@@ -2722,9 +2865,9 @@ function improveSearch(c0, goals, opts){
   }
   return {c, R:Rc, log};
 }
-const FIELD_LABEL = {format:"Bauform", bahn:"Umlaufbahn", boden:"Bodenstation", lage:"Lageregelung", antrieb:"Antrieb", obc:"Bordcomputer", haut:"Oberfläche", bauweise:"Bauweise", sonne:"Sonnensegel", start:"Start", leben:"Lebenserhaltung",
+const FIELD_LABEL = {rakete:"Rakete", format:"Bauform", bahn:"Umlaufbahn", boden:"Bodenstation", lage:"Lageregelung", antrieb:"Antrieb", obc:"Bordcomputer", haut:"Oberfläche", bauweise:"Bauweise", sonne:"Sonnensegel", start:"Start", leben:"Lebenserhaltung",
   hoehe:"Bahnhöhe", jahre:"Missionsdauer", segmente:"Felder je Flügel", batterie:"Akku", fluegel:"Solarflügel", crew:"Besatzung", fluege:"Frachtflüge pro Jahr"};
-const FIELD_DICT = {format:FORMATE, bahn:BAHNEN, boden:BODEN, lage:LAGE, antrieb:ANTRIEB, obc:OBC, haut:HAUT, bauweise:BAUWEISE, sonne:SONNE, leben:LEBEN, start:{kauf:{name:"Startplatz kaufen"}, foerder:{name:"Förderprogramm"}}};
+const FIELD_DICT = {rakete:RAKETEN, format:FORMATE, bahn:BAHNEN, boden:BODEN, lage:LAGE, antrieb:ANTRIEB, obc:OBC, haut:HAUT, bauweise:BAUWEISE, sonne:SONNE, leben:LEBEN, start:{kauf:{name:"Startplatz kaufen"}, foerder:{name:"Förderprogramm"}}};
 const BOOL_LABEL = Object.assign({koerper:"Solarzellen am Gehäuse", stern:STERN.name, segel:SEGEL.name, heizung:HEIZ.name, rtg:RTG.name, swingby:SWING.name, schild:"Trümmerschutz", strahl:"Strahlenschutz-Wände"},
   Object.fromEntries(Object.entries(FUNK).map(([k,f]) => ["funk_" + k, f.name])), Object.fromEntries(Object.entries(NUTZ).map(([k,n]) => ["nutz_" + k, n.name])));
 function describeChanges(a, b){
@@ -2740,7 +2883,7 @@ function describeChanges(a, b){
   return out;
 }
 const ALLOWED = {
-  radio: {format:Object.keys(FORMATE), bahn:Object.keys(BAHNEN), boden:Object.keys(BODEN), lage:Object.keys(LAGE), antrieb:Object.keys(ANTRIEB), obc:Object.keys(OBC), haut:Object.keys(HAUT), bauweise:Object.keys(BAUWEISE), sonne:Object.keys(SONNE), start:["kauf","foerder"], leben:Object.keys(LEBEN)},
+  radio: {rakete:Object.keys(RAKETEN), format:Object.keys(FORMATE), bahn:Object.keys(BAHNEN), boden:Object.keys(BODEN), lage:Object.keys(LAGE), antrieb:Object.keys(ANTRIEB), obc:Object.keys(OBC), haut:Object.keys(HAUT), bauweise:Object.keys(BAUWEISE), sonne:Object.keys(SONNE), start:["kauf","foerder"], leben:Object.keys(LEBEN)},
   num: {...Object.fromEntries(Object.keys(TIERINFO).map(k => ["stufe_" + k, [1,3]])), ...Object.fromEntries(Object.keys(FUNK).map(k => ["stufe_f_" + k, [1,3]])), stufe_solar:[1,3], hoehe:[300,1200], jahre:[1,50], fluegel:[0,4], segmente:[1,3], batterie:[2,5000], crew:[0,12], fluege:[0,12], ...Object.fromEntries(Object.keys(MODULE).map(k => ["m_" + k, [0,6]]))},
   bool: Object.keys(BOOL_LABEL)
 };
@@ -2894,6 +3037,8 @@ document.getElementById("bShake").addEventListener("click", async () => {
   setTimeout(() => progress(), 3500);
 });
 document.getElementById("bTest").addEventListener("click", runAll);
+document.getElementById("lbGo").addEventListener("click", () => { if (!V.ok) return; if (LV.t !== -1) buildRocket(); LV.t = 0; });
+document.getElementById("lbReset").addEventListener("click", () => { if (!V.ok) return; buildRocket(); progress(); });
 
 writeForm(load() || PRESETS.bake.c);
 init3d();
