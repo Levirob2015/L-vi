@@ -374,8 +374,8 @@ const STERN = {name:"Sternsensor", sub:"misst die eigene Lage auf 0,01° genau",
 const ANTRIEB = {
   none: {name:"Kein Antrieb", sub:"die Bahn lässt sich nicht mehr ändern", c:[0,0,0,0], s:[0,0,0,0], dv:{c:0,s:0}},
   kalt: {name:"Kaltgas", sub:"einfach und sicher · 15 m/s (Klein: 40 m/s)", c:[0.6,1.0,0.5,45000], s:[20,25,10,350000], dv:{c:15,s:40}},
-  chem: {name:"Chemisch (grüner Treibstoff)", sub:"kräftig · 60 m/s (Klein: 200 m/s)", c:[1.2,1.5,0.8,120000], s:[60,50,20,1200000], dv:{c:60,s:200}},
-  elek: {name:"Elektrisch (Ionentriebwerk)", sub:"sparsam, aber stromhungrig · 150 m/s (Klein: 1.500 m/s)", c:[0.9,1.2,6,95000], s:[30,30,150,900000], dv:{c:150,s:1500}}
+  chem: {name:"Chemisch (grüner Treibstoff)", sub:"viel Schub für schnelle Manöver in Minuten, verbraucht den Treibstoff aber schnell · 60 m/s (Klein: 200 m/s)", c:[1.2,1.5,0.8,120000], s:[60,50,20,1200000], dv:{c:60,s:200}},
+  elek: {name:"Elektrisch (Ionentriebwerk)", sub:"sehr wenig Schub, Manöver dauern Wochen – kommt mit seinem Treibstoff aber rund zehnmal weiter als chemisch · 1.000 m/s (Klein: 1.500 m/s) · braucht viel Strom", c:[0.9,1.2,6,95000], s:[30,30,150,900000], dv:{c:1000,s:1500}}
 };
 const SONNE = {
   none:  {name:"Kein Sonnensegel", sub:"", c:[0,0,0,0], s:[0,0,0,0], area:{p:0,c:0,s:0}},
@@ -919,7 +919,7 @@ function compute(c){
       const need = c.bahn === "mond" ? (kr === "s" ? 1000 : 900) : (kr === "s" ? 4000 : 3000);
       st = dvHave >= need ? "ok" : "fail"; val = nf0.format(dvHave) + " / " + nf0.format(need) + " m/s";
       txt = "Für den Rückflug " + (c.bahn === "mond" ? "vom Mond" : "aus dem tiefen Weltraum") + " muss der Satellit erst Kurs auf die Erde nehmen – das braucht etwa " + nf0.format(need) + " m/s. Dann taucht die Kapsel mit rund 40.000 km/h in die Atmosphäre ein.";
-      fix = dvHave >= need ? "" : "Ein kräftiger chemischer Antrieb mit viel Treibstoff – in einem Kleinsatelliten. Oder die Kapsel kehrt aus einer Erdumlaufbahn zurück.";
+      fix = dvHave >= need ? "" : "Ein Ionentriebwerk – es schafft die meiste Geschwindigkeitsänderung, braucht für den Rückflug aber Monate. Oder die Kapsel kehrt aus einer Erdumlaufbahn zurück.";
     } else if (c.lage === "none"){
       st = "fail"; val = "nicht steuerbar";
       txt = "Vor dem Bremsmanöver muss die Kapsel genau ausgerichtet sein – sonst bremst der Motor in die falsche Richtung und der Hitzeschild trifft schief auf die Luft.";
@@ -2368,11 +2368,10 @@ function repair(c, R){
     if (R.B.swing && !c.swingby){ c.swingby = true; return "Swing-by an Planeten – holt Schwung wie Voyager und spart Treibstoff."; }
     if (R.B.interstellar && c.jahre < 35){ c.jahre = 40; return "Mission auf 40 Jahre gestellt – so lange dauert der Weg in den interstellaren Raum."; }
     if (R.B.interstellar && c.antrieb === "none"){ c.antrieb = "elek"; return "Elektrischer Antrieb für die Kurskorrekturen."; }
-    if (R.B.interstellar && c.antrieb === "elek" && R.k !== "c"){ c.antrieb = "chem"; return "Chemischer Antrieb für die Kurskorrekturen."; }
     if (c.lage === "none"){ c.lage = "mtq"; return "Magnetspulen, damit das Sonnensegel zur Sonne gedreht werden kann."; }
     if (c.sonne === "none"){ c.sonne = "klein"; return "Sonnensegel eingebaut – es fliegt mit Sonnenlicht, ohne Treibstoff."; }
     if (c.sonne === "klein"){ c.sonne = "gross"; return "Größeres Sonnensegel für mehr Schub."; }
-    if (c.antrieb === "none"){ c.antrieb = "elek"; return "Elektrischer Antrieb ergänzt das Segel."; }
+    if (c.antrieb !== "elek"){ c.antrieb = "elek"; return "Ionentriebwerk eingebaut – es kommt mit seinem Treibstoff viel weiter als ein chemischer Antrieb."; }
     if (c.jahre < 6){ c.jahre++; return "Mission auf " + c.jahre + " Jahre verlängert – das Segel braucht Zeit."; }
   }
   if (bad("funk") === "fail"){
