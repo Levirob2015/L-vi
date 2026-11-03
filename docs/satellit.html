@@ -414,13 +414,14 @@ const RAKETEN = {
   klein:   {name:"Eigene Kleinrakete", sub:"z. B. Electron: bis 300 kg, eigene Bahn und eigener Termin", leo:300, price:7e6, h:18, d:1.2},
   mittel:  {name:"Mittelgroße Rakete", sub:"z. B. Vega-C: bis 2,3 t", leo:2300, price:40e6, h:35, d:3},
   gross:   {name:"Große Rakete", sub:"z. B. Falcon 9 oder Ariane 6: bis 22 t", leo:22800, price:70e6, h:68, d:3.7},
-  schwer:  {name:"Schwerlastrakete", sub:"z. B. Falcon Heavy: bis 60 t, auch weit hinaus ins Sonnensystem", leo:60000, price:150e6, h:70, d:3.7, booster:true}
+  schwer:  {name:"Schwerlastrakete", sub:"z. B. Falcon Heavy: bis 60 t, auch weit hinaus ins Sonnensystem", leo:60000, price:150e6, h:70, d:3.7, booster:true},
+  super:   {name:"Superschwere Rakete", sub:"z. B. SLS oder Starship: über 100 t – für große Stationsmodule zum Mond", leo:120000, price:600e6, h:110, d:9}
 };
 const BAHN_FAKTOR = {leo:1, sso:0.8, dd:0.8, meo:0.35, geo:0.3, mond:0.25, tief:0.2, mars:0.2, venus:0.2, jupiter:0.08, interstellar:0.05};
 const MITFLUG_OK = {leo:"ok", sso:"ok", dd:"ok", meo:"selten", geo:"selten", mond:"selten", tief:"selten", mars:"selten", venus:"selten", jupiter:"nein", interstellar:"nein"};
 const capOf = (r, bahn) => RAKETEN[r] && RAKETEN[r].leo ? RAKETEN[r].leo*(BAHN_FAKTOR[bahn] || 1) : Infinity;
 function cheapestRocket(massKg, bahn){
-  return ["klein","mittel","gross","schwer"].find(r => capOf(r, bahn) >= massKg) || "schwer";
+  return ["klein","mittel","gross","schwer","super"].find(r => capOf(r, bahn) >= massKg) || "super";
 }
 const ST_NUTZ = ["cam","multi","hyper","iot","sci","teleskop","relay"]; // Nutzlasten, die außen an einer Station sitzen können
 const SCHWENK = {name:"Schwenkplattform für Nutzlasten", sub:"richtet Kameras und Teleskop unabhängig von der Station auf 0,01° genau aus", mass:800, power:500, cost:60e6};
@@ -2680,7 +2681,7 @@ function repairStation(c, R){
   const bad = id => { const t = R.tests.find(x => x.id === id); return t && t.status !== "ok" ? t.status : null; };
   const cap = k => (c["m_" + k] || 0) < 6;
   if (bad("bahn") === "fail"){ c.bahn = "leo"; c.hoehe = 420; return "Erdumlaufbahn gewählt – nur dort kann die Crew regelmäßig wechseln."; }
-  if (bad("masse") === "fail" && c.rakete !== "schwer"){ c.rakete = c.rakete === "gross" ? "schwer" : "gross"; return RAKETEN[c.rakete].name + " gewählt, damit auch das schwerste Modul hineinpasst."; }
+  if (bad("masse") === "fail" && c.rakete !== "super"){ c.rakete = {mitflug:"gross", klein:"gross", mittel:"gross", gross:"schwer", schwer:"super"}[c.rakete] || "gross"; return RAKETEN[c.rakete].name + " gewählt, damit auch das schwerste Modul hineinpasst."; }
   if (bad("platz") && cap("wohnauf")){ c.m_wohnauf = (c.m_wohnauf || 0) + 1; return "Aufblasbares Wohnmodul ergänzt – viel Platz für die Crew bei wenig Gewicht."; }
   if (bad("andocken") && cap("knoten")){ c.m_knoten = (c.m_knoten || 0) + 1; return "Knotenmodul mit vier weiteren Andockstellen ergänzt."; }
   if (bad("energie") && cap("solar")){ c.m_solar = (c.m_solar || 0) + 1; return "Weiteres Solarflügel-Paar angebaut."; }
