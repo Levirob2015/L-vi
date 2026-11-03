@@ -1,0 +1,1603 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Klickbare Vorschau des LoginShield-Dashboards: Angriff ausloesen und zusehen, wie die Sperre zuschnappt.">
+<meta name="color-scheme" content="light dark">
+<title>LoginShield Leitstand</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="LoginShield">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#eef1f4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0c1017" media="(prefers-color-scheme: dark)">
+<!-- PNG, nicht SVG: iOS ignoriert ein SVG hier still und nimmt
+     stattdessen ein Bildschirmfoto der Seite als Symbol. -->
+<link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAIAAACyr5FlAAACh0lEQVR42u3d23UUQBBDQWdEaA6cIHAC5oAfu5bU1edGoKn/efn1+lt6txcTCA5l4/jjvuPgcHA4OOCAAw444IADDjjggAMOOOCAAw444HBwODgcHHDAAQcccMABBxxwwAEHHHDAAYeDw8Hh4IADDjjggAMOOOCAAw444IADDjgcHA4OBwcccMABBxxwwAEHHHDAAQcccMABBxwODgeHgwMOOOCAAw444IADDjjggAMOOHY+APS0LTLggAMOOOCAAw444HBwODjggAMOOOCAAw44+CADDjjggAMOOOBwh3DwUSEDDjjggAMOOBZw8JEvAw444ICjCwcf4TLggCMVBx/JMuCAAw44GnHwESsDDjiycfCRKQMOOOJx8BEoAw44GnDwkSYDDjhKcPARJQMOOHpw8BH1FnDA0YPjso+0h0jEcdNH4CvAAUcbjms+Mp8gF8cdH7H7wwFHJ44LPpLHT8ex7SN8eTjgaMax6iN/9g4cez4qNq/BseSjZfAmHBs+itaGA44VHO0+uqbuw9Hro27nShyNPhpHbsXR5aN04WIcLT5654UDjlEc+T6qt63HkeyjfdgFHJk+BlYdwZHmY2PSHRw5Pmb2nMKR4GNpzDUcP+tjbMlBHD/lY2/GTRzP9zG54SyOZ/pYHXAZx3N8DK83juPRPran28fxOB/zu53A8QgfF0a7guMbidyZ6xaOr/s4tdU5HF/xcW2oizg+5+PgSkdxfNTHzYnu4vh/H2f3OY3jn0SOLwPHX32YBQ7BITgEh+AQHIJDcAgOwSE4JDgEh+AQHIJDcAgOwSE4BIcEh+AQHIJDcAgOwSE4BIfgkOAQHIJDcAgOwSE4BIfgEByCQ4JDH+gNOS7mvXnQzaoAAAAASUVORK5CYII=">
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; }
+img, svg, canvas { display: block; max-width: 100%; }
+button, input, select { font: inherit; color: inherit; }
+</style>
+<style>
+/* ---------- Token: helles Thema (Grundzustand) ---------- */
+:root {
+  --paper:      #eef1f4;
+  --surface:    #ffffff;
+  --surface-2:  #f7f9fb;
+  --ink:        #10151c;
+  --muted:      #5a6672;
+  --faint:      #8b97a3;
+  --line:       #d7dee5;
+  --line-soft:  #e6ebf0;
+
+  --accent:     #1b4de4;
+  --accent-ink: #ffffff;
+  --accent-dim: rgba(27, 77, 228, .10);
+
+  --crit:       #c42b1c;
+  --crit-dim:   rgba(196, 43, 28, .10);
+  --warn:       #b26a00;
+  --warn-dim:   rgba(178, 106, 0, .12);
+  --ok:         #0a7d4f;
+  --ok-dim:     rgba(10, 125, 79, .10);
+
+  --grid:       rgba(16, 21, 28, .07);
+  --shadow:     0 1px 2px rgba(16, 21, 28, .05), 0 8px 24px rgba(16, 21, 28, .06);
+
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", "Cascadia Mono",
+          Menlo, Consolas, "Liberation Mono", monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* ---------- Token: dunkles Thema ---------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper:      #0c1017;
+    --surface:    #131a23;
+    --surface-2:  #182029;
+    --ink:        #e6ecf2;
+    --muted:      #93a1af;
+    --faint:      #6b7986;
+    --line:       #253040;
+    --line-soft:  #1d2632;
+
+    --accent:     #5b8bff;
+    --accent-ink: #071020;
+    --accent-dim: rgba(91, 139, 255, .14);
+
+    --crit:       #ff6b5e;
+    --crit-dim:   rgba(255, 107, 94, .14);
+    --warn:       #e0a03c;
+    --warn-dim:   rgba(224, 160, 60, .14);
+    --ok:         #3fbf7f;
+    --ok-dim:     rgba(63, 191, 127, .13);
+
+    --grid:       rgba(230, 236, 242, .08);
+    --shadow:     0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .3);
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper:      #0c1017;
+  --surface:    #131a23;
+  --surface-2:  #182029;
+  --ink:        #e6ecf2;
+  --muted:      #93a1af;
+  --faint:      #6b7986;
+  --line:       #253040;
+  --line-soft:  #1d2632;
+
+  --accent:     #5b8bff;
+  --accent-ink: #071020;
+  --accent-dim: rgba(91, 139, 255, .14);
+
+  --crit:       #ff6b5e;
+  --crit-dim:   rgba(255, 107, 94, .14);
+  --warn:       #e0a03c;
+  --warn-dim:   rgba(224, 160, 60, .14);
+  --ok:         #3fbf7f;
+  --ok-dim:     rgba(63, 191, 127, .13);
+
+  --grid:       rgba(230, 236, 242, .08);
+  --shadow:     0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .3);
+}
+
+/* ---------- Grundlagen ---------- */
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  /* Als Home-Bildschirm-App auf dem iPad reicht die Seite bis unter die
+     Statusleiste - diese Bereiche freihalten. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 20px 72px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* ---------- Störungshinweis ---------- */
+.alert {
+  background: var(--crit-dim);
+  color: var(--ink);
+  border-bottom: 2px solid var(--crit);
+  padding: 12px 20px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.alert strong { color: var(--crit); }
+.alert[hidden] { display: none; }
+
+/* ---------- Kopfleiste ---------- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-right: auto;
+}
+
+.brand strong {
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+}
+
+.brand span {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ok);
+  background: var(--ok-dim);
+  border: 1px solid transparent;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .dot { animation: pulse 2.4s ease-in-out infinite; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: .45; transform: scale(.82); }
+  }
+}
+
+/* ---------- Buttons ---------- */
+button {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  letter-spacing: .01em;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 7px 13px;
+  cursor: pointer;
+  /* Verhindert die 300ms-Verzoegerung beim Antippen auf Touchgeraeten. */
+  touch-action: manipulation;
+  transition: border-color .15s, color .15s, background .15s;
+}
+
+/* Auf Touchgeraeten brauchen die Flaechen mehr Hoehe, sonst geht ein
+   Tippen leicht daneben. */
+@media (pointer: coarse) {
+  button { min-height: 46px; padding: 11px 16px; font-size: 13.5px; }
+  /* Auch die kleinen Filterknoepfe: 44 Punkte ist Apples Mindestmass,
+     darunter tippt man mit dem Daumen zuverlaessig daneben. Die 38
+     hier waren die einzige Ausnahme - und damit die einzige Stelle,
+     an der das Ausprobieren auf dem iPhone haken konnte. */
+  button.tiny { min-height: 44px; padding: 10px 14px; }
+}
+
+button:active { transform: translateY(1px); }
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-ink);
+  filter: brightness(1.08);
+}
+
+button.danger:hover:not(:disabled) {
+  border-color: var(--crit);
+  color: var(--crit);
+}
+
+button.tiny {
+  font-size: 11.5px;
+  padding: 4px 10px;
+}
+
+/* ---------- Abschnitte ---------- */
+.intro {
+  padding: 36px 0 8px;
+  max-width: 62ch;
+}
+
+h1 {
+  font-family: var(--mono);
+  font-size: clamp(24px, 3.4vw, 32px);
+  line-height: 1.2;
+  letter-spacing: -.025em;
+  margin: 0 0 12px;
+  text-wrap: balance;
+}
+
+.intro p { margin: 0 0 10px; color: var(--muted); }
+.intro strong { color: var(--ink); font-weight: 600; }
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin: 0 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.eyebrow::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line-soft);
+}
+
+section.block { margin-top: 40px; }
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--surface-2);
+}
+
+.panel-head h2 {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0;
+  font-weight: 600;
+}
+
+.panel-head .spacer { flex: 1; }
+.panel-body { padding: 16px 18px; }
+.panel-body.flush { padding: 0; }
+
+/* ---------- Steuerleiste ---------- */
+.controls {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.controls .hint {
+  font-size: 13px;
+  color: var(--muted);
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* ---------- Kennzahlen ---------- */
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  background: var(--line-soft);
+}
+
+.kpi {
+  background: var(--surface);
+  padding: 15px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.kpi .label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.kpi .value {
+  font-family: var(--mono);
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -.03em;
+  font-variant-numeric: tabular-nums;
+  transition: color .3s;
+}
+
+.kpi.is-crit .value { color: var(--crit); }
+.kpi.is-warn .value { color: var(--warn); }
+.kpi.is-ok   .value { color: var(--ok); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .kpi .value.bump { animation: bump .45s ease-out; }
+  @keyframes bump {
+    0%   { transform: scale(1); }
+    35%  { transform: scale(1.18); }
+    100% { transform: scale(1); }
+  }
+}
+
+/* ---------- Diagramm ---------- */
+.chart-wrap { position: relative; }
+canvas { display: block; width: 100%; height: 132px; }
+
+.chart-foot {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+  padding-top: 8px;
+}
+
+/* ---------- Tabellen ---------- */
+.scroll { overflow-x: auto; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-weight: 600;
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+}
+
+td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+tbody tr:last-child td { border-bottom: none; }
+
+.ip {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.dim { color: var(--muted); }
+
+.empty {
+  padding: 22px 18px;
+  color: var(--faint);
+  font-size: 13.5px;
+}
+
+/* Schweregrad-Streifen links an der Zeile */
+tr.sev td:first-child {
+  border-left: 3px solid transparent;
+  padding-left: 11px;
+}
+tr.sev-crit td:first-child { border-left-color: var(--crit); }
+tr.sev-warn td:first-child { border-left-color: var(--warn); }
+
+@media (prefers-reduced-motion: no-preference) {
+  tr.enter { animation: slide-in .35s ease-out; }
+  @keyframes slide-in {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: none; }
+  }
+}
+
+/* ---------- Chips ---------- */
+.chip {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.chip-fail { color: var(--crit); background: var(--crit-dim); }
+.chip-ok   { color: var(--ok);   background: var(--ok-dim); }
+.chip-trap { color: var(--warn); background: var(--warn-dim); }
+.chip-deny { color: var(--muted); background: var(--accent-dim); }
+.chip-datei { color: var(--crit); background: var(--crit-dim); }
+
+/* Die Meldung, wie sie im Betrieb aufs Telefon geht. */
+.meldung {
+  position: fixed;
+  z-index: 40;
+  right: calc(16px + env(safe-area-inset-right));
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  left: auto;
+  width: min(340px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-shadow: var(--shadow);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.meldung[hidden] { display: none; }
+.meldung.krit { border-left-color: var(--crit); }
+.meldung-kopf {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.meldung strong { font-size: 14px; }
+.meldung span#meldung-text { color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) {
+  .meldung { animation: meldung-auf .25s ease-out; }
+  @keyframes meldung-auf {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: none; }
+  }
+}
+@media (max-width: 560px) {
+  .meldung { left: calc(12px + env(safe-area-inset-left)); right: calc(12px + env(safe-area-inset-right)); width: auto; }
+}
+.chip-wache { color: var(--warn); background: var(--warn-dim); }
+
+/* ---------- Ereignisstrom ---------- */
+.stream {
+  max-height: 340px;
+  overflow-y: auto;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.ev {
+  display: grid;
+  grid-template-columns: 68px 108px 132px 1fr;
+  gap: 12px;
+  padding: 7px 18px;
+  border-bottom: 1px solid var(--line-soft);
+  align-items: center;
+}
+
+.ev:last-child { border-bottom: none; }
+.ev .t { color: var(--faint); font-variant-numeric: tabular-nums; }
+.ev .msg { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .ev.enter { animation: slide-in .3s ease-out; }
+}
+
+@media (max-width: 640px) {
+  .ev { grid-template-columns: 60px 96px; row-gap: 4px; }
+  .ev .msg { grid-column: 1 / -1; }
+}
+
+/* ---------- Köder-Datei ---------- */
+.decoy {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+@media (max-width: 780px) {
+  .decoy { grid-template-columns: 1fr; }
+}
+
+pre {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.65;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  color: var(--muted);
+}
+
+pre b { color: var(--ink); font-weight: 600; }
+pre .bait { color: var(--warn); font-weight: 600; }
+pre .cmd { color: var(--accent); }
+
+.traps { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+
+.traps li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.traps .n {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--warn);
+  background: var(--warn-dim);
+  border-radius: 5px;
+  padding: 2px 7px;
+  line-height: 1.5;
+}
+
+.traps h3 {
+  margin: 0 0 2px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.traps p { margin: 0; font-size: 13.5px; color: var(--muted); }
+
+/* ---------- Fußbereich ---------- */
+.note {
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--faint);
+  max-width: 68ch;
+}
+
+.steps { display: grid; gap: 10px; }
+
+.step {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.step .k {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  min-width: 74px;
+}
+
+.step .v { font-size: 13.5px; color: var(--muted); }
+a { color: var(--accent); text-underline-offset: 2px; }
+
+.step code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+</style>
+</head>
+<body>
+<noscript>
+  <div class="alert">
+    <strong>JavaScript ist ausgeschaltet.</strong>
+    Diese Seite ist eine bedienbare Vorschau &mdash; ohne JavaScript bleibt
+    sie leer. Bitte im Browser öffnen (nicht in einer Vorschau-Ansicht) und
+    JavaScript zulassen.
+  </div>
+</noscript>
+
+<div class="alert" id="crash" hidden>
+  <strong>Die Vorschau konnte nicht starten.</strong>
+  Vermutlich ist der Browser zu alt. Bitte in einem aktuellen Firefox, Chrome,
+  Edge oder Safari&nbsp;14+ öffnen. Fehler: <span id="crash-msg"></span>
+</div>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <strong>LoginShield</strong>
+      <span>Leitstand</span>
+    </div>
+    <span class="live"><span class="dot"></span>Schutz aktiv</span>
+    <button id="theme" type="button" aria-label="Thema wechseln">Thema</button>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="intro">
+    <h1>So sieht es aus, wenn jemand angreift.</h1>
+    <p>
+      Das ist die Oberfläche von LoginShield mit Beispieldaten &mdash; <strong>bedienbar</strong>,
+      nicht abfotografiert. Löse unten einen Angriff aus und beobachte, wie die
+      Erkennung reagiert: Fehlversuche laufen ein, der Zähler steigt, und beim
+      fünften schnappt die Sperre zu.
+    </p>
+    <p>
+      Die Sperren gelten hier nur in dieser Seite. Auf einem echten Server
+      landet dieselbe Entscheidung zusätzlich in der Firewall.
+    </p>
+  </div>
+
+  <section class="block">
+    <p class="eyebrow">Angriff auslösen</p>
+    <div class="panel">
+      <div class="panel-body">
+        <div class="controls">
+          <button class="primary" id="run-brute" type="button">Brute-Force-Angriff</button>
+          <button id="run-spray" type="button">Password Spraying</button>
+          <button id="run-trap" type="button">Honeypot-Scan</button>
+          <button id="run-upload" type="button">Webshell hochladen</button>
+          <button id="run-einbruch" type="button">Einbruch bemerken</button>
+          <button id="run-wache" type="button">Firewall-Regeln löschen</button>
+          <button class="danger" id="reset" type="button">Zurücksetzen</button>
+          <p class="hint" id="hint">
+            Drei typische Angriffsmuster. Jedes wird anders erkannt &mdash; und
+            der Honeypot braucht dafür nicht einmal einen Login-Versuch.
+          </p>
+        </div>
+      </div>
+
+      <div class="kpis">
+        <div class="kpi is-crit">
+          <span class="label">Fehlversuche</span>
+          <span class="value" id="k-fail">0</span>
+        </div>
+        <div class="kpi">
+          <span class="label">Angreifende IPs</span>
+          <span class="value" id="k-ips">0</span>
+        </div>
+        <div class="kpi is-crit">
+          <span class="label">Aktive Sperren</span>
+          <span class="value" id="k-blocks">0</span>
+        </div>
+        <div class="kpi is-warn">
+          <span class="label">Honeypot-Treffer</span>
+          <span class="value" id="k-trap">0</span>
+        </div>
+        <div class="kpi is-crit">
+          <span class="label">Dateibefunde</span>
+          <span class="value" id="k-datei">0</span>
+        </div>
+        <div class="kpi is-ok">
+          <span class="label">Echte Logins</span>
+          <span class="value" id="k-ok">0</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <p class="eyebrow">Fehlversuche im Zeitverlauf</p>
+    <div class="panel">
+      <div class="panel-body">
+        <div class="chart-wrap">
+          <canvas id="chart" aria-label="Balkendiagramm der Fehlversuche je Stunde"></canvas>
+        </div>
+        <div class="chart-foot">
+          <span>vor 24 Stunden</span>
+          <span id="chart-peak">&nbsp;</span>
+          <span>jetzt</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <p class="eyebrow">Aktive Sperren</p>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Gesperrte Adressen</h2>
+        <div class="spacer"></div>
+        <span class="num dim" id="block-count" style="font-size:12px"></span>
+      </div>
+      <div class="panel-body flush">
+        <div class="scroll" id="blocks-table">
+          <table>
+            <thead>
+              <tr>
+                <th>IP-Adresse</th>
+                <th>Grund</th>
+                <th>Verbleibend</th>
+                <th>Stufe</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="blocks"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="blocks-empty">Keine aktiven Sperren.</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="meldung" id="meldung" hidden aria-live="polite">
+    <div class="meldung-kopf">
+      <span class="meldung-app">LoginShield</span>
+      <span class="meldung-zeit">jetzt</span>
+    </div>
+    <strong id="meldung-titel"></strong>
+    <span id="meldung-text"></span>
+  </div>
+
+  <section class="block">
+    <p class="eyebrow">Nach dem Einbruch</p>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Dateien auf dem Server</h2>
+        <div class="spacer"></div>
+        <span class="num dim" id="datei-zustand" style="font-size:12px"></span>
+      </div>
+      <div class="panel-body">
+        <div class="scroll" id="datei-tabelle" hidden>
+          <table>
+            <thead>
+              <tr>
+                <th>Art</th><th>Datei</th><th class="num">Schwere</th><th>Bedeutung</th>
+              </tr>
+            </thead>
+            <tbody id="dateien"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="datei-leer">
+          Vergleichsgrundlage vorhanden &mdash; nichts hat sich ver&auml;ndert.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <p class="eyebrow">Ereignisse</p>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Live-Protokoll</h2>
+        <div class="spacer"></div>
+        <button class="tiny" id="filter" type="button" data-mode="all">Alle Ereignisse</button>
+      </div>
+      <div class="panel-body flush">
+        <div class="stream" id="stream"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <p class="eyebrow">Die Falle</p>
+    <div class="panel">
+      <div class="panel-body">
+        <div class="decoy">
+          <div>
+            <p style="margin:0 0 12px;color:var(--muted);font-size:13.5px">
+              Ein Angreifer sucht erst nach leichter Beute, bevor er Passwörter
+              probiert. Ruft er <code style="font-family:var(--mono)">/.env</code> ab,
+              bekommt er das hier &mdash; und ist ab diesem Moment gesperrt,
+              ohne es zu merken:
+            </p>
+<pre><span class="cmd">$ curl https://deine-seite.de/.env</span>
+
+APP_ENV=production
+DB_HOST=10.0.0.14
+DB_DATABASE=portal_prod
+DB_USERNAME=<span class="bait">svc_backup</span>
+DB_PASSWORD=<span class="bait">Srv5e751856a91e!</span>
+
+BACKUP_SSH_USER=<span class="bait">svc_backup</span></pre>
+          </div>
+
+          <div>
+            <ul class="traps">
+              <li>
+                <span class="n">1</span>
+                <div>
+                  <h3>Gefälschte Schwachstelle</h3>
+                  <p>
+                    28 Köderpfade, die es nicht gibt, aber die antworten:
+                    <span class="ip">/.env</span>, <span class="ip">/wp-admin</span>,
+                    <span class="ip">/phpmyadmin</span>. Ein Aufruf genügt für 24 Stunden
+                    Sperre. Es gibt keinen harmlosen Grund, diese Pfade abzurufen.
+                  </p>
+                </div>
+              </li>
+              <li>
+                <span class="n">2</span>
+                <div>
+                  <h3>Untergeschobene Zugangsdaten</h3>
+                  <p>
+                    <span class="ip">svc_backup</span> gilt nirgends. Taucht der Name
+                    später am echten Login auf, ist das kein Verdacht, sondern ein
+                    Beweis: derjenige hat die Köderdatei gelesen.
+                  </p>
+                </div>
+              </li>
+              <li>
+                <span class="n">3</span>
+                <div>
+                  <h3>Unsichtbares Formularfeld</h3>
+                  <p>
+                    Ein Eingabefeld, das Menschen nicht sehen. Bots füllen jedes
+                    Feld aus, das sie finden. Wer es ausfüllt, ist keiner.
+                  </p>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <p class="eyebrow">Selbst ausprobieren</p>
+    <div class="panel">
+      <div class="panel-body">
+        <div class="steps">
+          <div class="step">
+            <span class="k">Projekt</span>
+            <span class="v"><a href="https://github.com/Levirob2015/L-vi">github.com/Levirob2015/L-vi</a>
+              &mdash; Branch <code>claude/app-hack-protection-hi30nk</code></span>
+          </div>
+          <div class="step">
+            <span class="k">Demo-App</span>
+            <span class="v"><code>python examples/demo_login_app.py</code> &mdash; echter Login
+              auf Port 8080, dieses Dashboard auf 8787</span>
+          </div>
+          <div class="step">
+            <span class="k">Nur Daten</span>
+            <span class="v"><code>loginshield demo &amp;&amp; loginshield serve</code></span>
+          </div>
+          <div class="step">
+            <span class="k">Firewall</span>
+            <span class="v"><code>sudo loginshield firewall --setup</code> &mdash; danach gilt
+              jede Sperre auch auf Netzwerkebene</span>
+          </div>
+        </div>
+        <p class="note">
+          Alle IP-Adressen auf dieser Seite stammen aus den für Dokumentation
+          reservierten Bereichen (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24).
+          Sie gehören niemandem und führen nirgendwohin.
+        </p>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+// Scheitert unten etwas, soll die Seite das sagen statt still tot zu sein.
+window.onerror = function (message) {
+  var box = document.getElementById("crash");
+  var text = document.getElementById("crash-msg");
+  if (box) { box.hidden = false; }
+  if (text) { text.textContent = String(message); }
+};
+
+(function () {
+  "use strict";
+
+  // Zentral abgefragt und einmal auf Verfuegbarkeit geprueft, damit ein
+  // fehlendes matchMedia nicht die ganze Seite lahmlegt.
+  var supportsQuery = typeof window.matchMedia === "function";
+  var darkQuery = supportsQuery ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  var reduce = supportsQuery && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ---------- Zustand ----------
+  var state = { events: [], blocks: [], hourly: [], ok: 0, filter: "all",
+               dateien: [], meldungen: 0 };
+  var running = false;
+  var timers = [];
+  var seq = 0;
+
+  var ATTACKER = "198.51.100.66";
+  var SPRAYER  = "203.0.113.41";
+  var SCANNER  = "192.0.2.77";
+  var LADER    = "203.0.113.88";
+  var USERS = ["admin", "root", "info", "backup", "postgres", "anna", "ben", "test"];
+
+  function clearTimers() {
+    timers.forEach(clearTimeout);
+    timers = [];
+  }
+
+  function later(fn, ms) {
+    timers.push(setTimeout(fn, ms));
+  }
+
+  // ---------- Startdaten: ein ruhiger Tag mit etwas Grundrauschen ----------
+  function seed() {
+    state.events = [];
+    state.blocks = [];
+    state.dateien = [];
+    state.ok = 0;
+    seq = 0;
+
+    var kasten = document.getElementById("meldung");
+    if (kasten) { kasten.hidden = true; }
+
+    var shape = [1,0,2,1,0,1,3,2,1,4,2,1,0,2,5,3,2,1,3,2,4,2,1,2];
+    state.hourly = shape.slice();
+
+    var now = Date.now();
+    var seeded = [
+      { min: 41, kind: "ok",   ip: "203.0.113.17", user: "anna", msg: "Anmeldung erfolgreich" },
+      { min: 76, kind: "fail", ip: "198.51.100.12", user: "admin", msg: "HTTP 401" },
+      { min: 94, kind: "ok",   ip: "203.0.113.9",  user: "ben",  msg: "Anmeldung erfolgreich" },
+      { min: 128, kind: "fail", ip: "198.51.100.12", user: "root", msg: "HTTP 401" },
+      { min: 163, kind: "ok",   ip: "203.0.113.17", user: "anna", msg: "Anmeldung erfolgreich" }
+    ];
+    seeded.reverse().forEach(function (item) {
+      state.events.push({
+        id: ++seq,
+        ts: now - item.min * 60000,
+        kind: item.kind,
+        ip: item.ip,
+        user: item.user,
+        msg: item.msg,
+        fresh: false
+      });
+    });
+    state.ok = 3;
+  }
+
+  // ---------- Ereignisse ----------
+  function addEvent(kind, ip, user, msg) {
+    state.events.unshift({
+      id: ++seq, ts: Date.now(), kind: kind, ip: ip, user: user, msg: msg, fresh: true
+    });
+    if (state.events.length > 60) { state.events.pop(); }
+    if (kind === "fail") { state.hourly[state.hourly.length - 1] += 1; }
+    if (kind === "ok") { state.ok += 1; }
+    render();
+  }
+
+  function addBlock(ip, reason, seconds, level) {
+    var existing = state.blocks.filter(function (b) { return b.ip === ip; })[0];
+    if (existing) {
+      existing.until = Date.now() + seconds * 1000;
+      existing.reason = reason;
+      existing.level = level;
+    } else {
+      state.blocks.unshift({
+        ip: ip, reason: reason, until: Date.now() + seconds * 1000,
+        level: level, fresh: true
+      });
+    }
+    render();
+  }
+
+  function addDatei(art, pfad, schwere, bedeutung) {
+    state.dateien.unshift({
+      art: art, pfad: pfad, schwere: schwere, bedeutung: bedeutung, fresh: true
+    });
+    render();
+  }
+
+  // Die Meldung, die im Betrieb aufs Telefon geht. Hier als Einblendung,
+  // damit sichtbar wird: Man muss nicht selbst nachsehen.
+  function melden(titel, text, stufe) {
+    var kasten = document.getElementById("meldung");
+    if (!kasten) { return; }
+    state.meldungen += 1;
+    kasten.className = "meldung" + (stufe === "krit" ? " krit" : "");
+    kasten.hidden = false;
+    var kopf = document.getElementById("meldung-titel");
+    var leib = document.getElementById("meldung-text");
+    if (kopf) { kopf.textContent = titel; }
+    if (leib) { leib.textContent = text; }
+    later(function () { kasten.hidden = true; }, reduce ? 3200 : 6500);
+  }
+
+  // ---------- Angriffsabläufe ----------
+  // Die Knoepfe werden bewusst NIE gesperrt. Frueher setzte ein laufender
+  // Ablauf sie auf disabled - brach er ab, blieben sie es fuer immer und
+  // es liess sich gar nichts mehr starten. Jetzt bricht ein Klick den
+  // laufenden Ablauf ab und beginnt neu.
+  function beginn(label) {
+    clearTimers();
+    running = true;
+    document.getElementById("hint").textContent = label;
+  }
+
+  function busy(on, label) {
+    running = on;
+    if (label) { document.getElementById("hint").textContent = label; }
+  }
+
+  function bruteForce() {
+    beginn("Ein Angreifer probiert Passwörter für dasselbe Konto durch …");
+    var step = reduce ? 240 : 720;
+
+    // Der erste Versuch sofort: ein Klick muss immer sichtbar etwas tun.
+    addEvent("fail", ATTACKER, "admin", "Fehlversuch 1 von 5");
+
+    for (var i = 2; i <= 4; i++) {
+      (function (n) {
+        later(function () {
+          addEvent("fail", ATTACKER, "admin", "Fehlversuch " + n + " von 5");
+        }, step * (n - 1));
+      })(i);
+    }
+
+    later(function () {
+      addEvent("fail", ATTACKER, "admin", "Schwelle erreicht – 5 Fehlversuche in 5 Minuten");
+      addBlock(ATTACKER, "brute_force_ip", 900, 0);
+      document.getElementById("hint").textContent =
+        "Gesperrt. Weitere Versuche kommen jetzt gar nicht mehr bis zur Passwortprüfung.";
+    }, step * 4);
+
+    later(function () {
+      addEvent("deny", ATTACKER, "admin", "Abgewiesen – IP gesperrt (HTTP 403)");
+    }, step * 5.4);
+
+    later(function () {
+      addEvent("deny", ATTACKER, "admin", "Abgewiesen – auch mit richtigem Passwort");
+      busy(false);
+    }, step * 6.6);
+  }
+
+  function spraying() {
+    beginn("Eine IP probiert je zwei Passwörter für viele verschiedene Konten …");
+    var step = reduce ? 220 : 640;
+
+    addEvent("fail", SPRAYER, USERS[0], "Fehlversuch – Konto 1 von vielen");
+
+    for (var i = 1; i < 4; i++) {
+      (function (n) {
+        later(function () {
+          addEvent("fail", SPRAYER, USERS[n], "Fehlversuch – Konto " + (n + 1) + " von vielen");
+        }, step * n);
+      })(i);
+    }
+
+    later(function () {
+      addEvent("fail", SPRAYER, USERS[4], "5 verschiedene Konten in 10 Minuten");
+      addBlock(SPRAYER, "credential_spray", 900, 0);
+      document.getElementById("hint").textContent =
+        "Erkannt. Pro Konto waren es nur zwei Versuche – die normale Schwelle hätte das nie ausgelöst.";
+      busy(false);
+    }, step * 4);
+  }
+
+  function honeypot() {
+    beginn("Ein Scanner sucht nach bekannten Schwachstellen …");
+    var step = reduce ? 260 : 780;
+
+    addEvent("trap", SCANNER, "–", "GET /.env – Köderdatei ausgeliefert (HTTP 200)");
+    addBlock(SCANNER, "honeypot_path", 86400, 0);
+
+    later(function () {
+      addEvent("trap", SCANNER, "svc_backup",
+        "Köder-Zugangsdaten am Login benutzt – Beweis, kein Verdacht");
+      document.getElementById("hint").textContent =
+        "Ein einziger Treffer genügt: 24 Stunden Sperre, ohne dass je ein Passwort geraten wurde.";
+      busy(false);
+    }, step * 1.4);
+  }
+
+  // ---------- Darstellung ----------
+  function uploadShell() {
+    beginn("Jemand lädt eine Datei hoch, die wie ein Bild heißt …");
+    var step = reduce ? 260 : 780;
+
+    addEvent("datei", LADER, "gast",
+      "POST /upload – urlaub.jpg (28 KB) angenommen, wird geprüft");
+
+    later(function () {
+      addEvent("datei", LADER, "gast",
+        "Inhalt beginnt mit <?php – .jpg-Datei enthält PHP-Quelltext");
+    }, step);
+
+    later(function () {
+      addEvent("deny", LADER, "gast",
+        "Abgewiesen (HTTP 403) – die Datei erreicht die Anwendung nicht");
+      addBlock(LADER, "malicious_upload", 900, 0);
+      melden("Schadhafter Upload abgewiesen",
+             "urlaub.jpg: PHP-Code in einer Bilddatei · " + LADER, "krit");
+      document.getElementById("hint").textContent =
+        "Geprüft, bevor die Anwendung sie zu sehen bekommt. Eine Webshell, " +
+        "die nie auf der Platte landet, muss auch nicht gefunden werden.";
+      busy(false);
+    }, step * 2);
+  }
+
+  function einbruch() {
+    beginn("Angenommen, es hat doch jemand geschafft – was fällt dann auf?");
+    var step = reduce ? 300 : 900;
+
+    addEvent("wache", "–", "system",
+      "Stündliche Prüfung: 412 Dateien mit der Grundlage verglichen");
+
+    later(function () {
+      addDatei("neu", "/var/www/uploads/bild.php", 10,
+        "neue Skriptdatei in einem Upload-Verzeichnis");
+      addEvent("datei", "–", "system",
+        "Neue Datei gefunden – dort gehören Bilder hin, keine Programme");
+    }, step);
+
+    later(function () {
+      addDatei("geändert", "/var/www/index.php", 9,
+        "Inhalt hat sich seit der Grundlage verändert");
+      addEvent("datei", "–", "system", "index.php wurde nachträglich verändert");
+    }, step * 1.8);
+
+    later(function () {
+      addDatei("gelöscht", "/var/www/README.txt", 6, "Datei ist verschwunden");
+      addEvent("datei", "–", "system",
+        "bild.php enthält eval($_POST[…]) – in Quarantäne verschoben");
+      melden("Schadcode auf dem Server gefunden",
+             "/var/www/uploads/bild.php · liegt jetzt in der Quarantäne", "krit");
+      document.getElementById("hint").textContent =
+        "Neu, geändert, gelöscht: Alle drei Spuren eines Einbruchs fallen auf, " +
+        "weil der Zustand vorher festgehalten wurde. Gelöscht wird nie – die " +
+        "Datei ist Beweismittel.";
+      busy(false);
+    }, step * 2.6);
+  }
+
+  function firewallWache() {
+    beginn("Jemand lädt einen fremden Regelsatz – die Sperren wären weg …");
+    var step = reduce ? 300 : 900;
+
+    addEvent("wache", "–", "system",
+      "nft flush ruleset – die eigenen Firewall-Regeln sind verschwunden");
+
+    later(function () {
+      addEvent("wache", "–", "system",
+        "Wartung: Regeln fehlen, obwohl " + state.blocks.length +
+        " Sperre(n) gelten – werden neu angelegt");
+    }, step);
+
+    later(function () {
+      addEvent("wache", "–", "system",
+        "Regeln wiederhergestellt, Sperren zurückgeschrieben");
+      melden("Firewall-Regeln waren verschwunden",
+             "Neu angelegt. Zwischenzeitlich galten die Sperren nur in der Anwendung.");
+      document.getElementById("hint").textContent =
+        "Der stillste Ausfall überhaupt: Die Liste zeigt weiter Sperren, " +
+        "aufgehalten wird niemand. Deshalb sieht die Wartung alle fünf Minuten nach.";
+      busy(false);
+    }, step * 2);
+  }
+
+  var KINDS = {
+    fail: ["Fehlversuch", "chip-fail"],
+    ok:   ["Erfolg", "chip-ok"],
+    trap: ["Honeypot", "chip-trap"],
+    deny: ["Abgewiesen", "chip-deny"],
+    datei: ["Datei", "chip-datei"],
+    wache: ["Wache", "chip-wache"]
+  };
+
+  function el(tag, text, cls) {
+    var node = document.createElement(tag);
+    if (text !== undefined && text !== null) { node.textContent = String(text); }
+    if (cls) { node.className = cls; }
+    return node;
+  }
+
+  // Eigene Variante statt padStart: das gibt es erst ab ES2017 und fehlt
+  // auf aelteren Browsern.
+  function pad2(value) {
+    return (value < 10 ? "0" : "") + value;
+  }
+
+  function fmtClock(ts) {
+    var d = new Date(ts);
+    return pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds());
+  }
+
+  function fmtLeft(ms) {
+    var s = Math.max(0, Math.round(ms / 1000));
+    if (s < 60) { return s + " s"; }
+    if (s < 3600) { return Math.floor(s / 60) + " min " + (s % 60) + " s"; }
+    return (s / 3600).toFixed(1) + " h";
+  }
+
+  var previous = {};
+
+  function setValue(id, value, key) {
+    var node = document.getElementById(id);
+    if (node.textContent === String(value)) { return; }
+    node.textContent = value;
+    if (previous[key] !== undefined && !reduce) {
+      node.classList.remove("bump");
+      void node.offsetWidth;
+      node.classList.add("bump");
+    }
+    previous[key] = value;
+  }
+
+  function renderKpis() {
+    var fails = state.events.filter(function (e) { return e.kind === "fail"; });
+    var traps = state.events.filter(function (e) { return e.kind === "trap"; });
+    var ips = {};
+    fails.concat(traps).forEach(function (e) { ips[e.ip] = true; });
+
+    setValue("k-fail", fails.length, "fail");
+    setValue("k-ips", Object.keys(ips).length, "ips");
+    setValue("k-blocks", state.blocks.length, "blocks");
+    setValue("k-trap", traps.length, "trap");
+    setValue("k-datei", state.dateien.length, "datei");
+    setValue("k-ok", state.ok, "ok");
+  }
+
+  function renderDateien() {
+    var body = document.getElementById("dateien");
+    var tabelle = document.getElementById("datei-tabelle");
+    var leer = document.getElementById("datei-leer");
+    var zustand = document.getElementById("datei-zustand");
+    if (!body) { return; }
+
+    body.textContent = "";
+    tabelle.hidden = state.dateien.length === 0;
+    leer.hidden = state.dateien.length > 0;
+
+    var summe = 0;
+    state.dateien.forEach(function (d) { summe += d.schwere; });
+    zustand.textContent = state.dateien.length
+      ? "Bewertung: " + (summe >= 9 ? "kritisch" : "auffällig")
+      : "412 Dateien überwacht";
+
+    state.dateien.forEach(function (d) {
+      var row = el("tr", null, d.fresh && !reduce ? "enter" : "");
+      d.fresh = false;
+
+      var art = el("td");
+      art.appendChild(el("span", d.art, "chip " + (d.schwere >= 9 ? "chip-fail" : "chip-trap")));
+      row.appendChild(art);
+
+      // Dateiname gross, Ordner klein darunter: Auf dem Telefon draengt
+      // ein langer Pfad sonst alles Wichtige aus dem Bild.
+      var teile = d.pfad.split("/");
+      var name = teile.pop();
+      var zelle = el("td", null, "mono");
+      zelle.appendChild(el("div", name));
+      if (teile.length) {
+        zelle.appendChild(el("div", teile.join("/") + "/", "dim"));
+      }
+      row.appendChild(zelle);
+
+      row.appendChild(el("td", String(d.schwere), "num"));
+      row.appendChild(el("td", d.bedeutung, "dim"));
+      body.appendChild(row);
+    });
+  }
+
+  function renderBlocks() {
+    var body = document.getElementById("blocks");
+    var empty = document.getElementById("blocks-empty");
+    var count = document.getElementById("block-count");
+
+    body.textContent = "";
+    empty.hidden = state.blocks.length > 0;
+    // Ohne Sperren bleibt sonst eine Kopfzeile ohne Inhalt stehen.
+    document.getElementById("blocks-table").hidden = state.blocks.length === 0;
+    count.textContent = state.blocks.length
+      ? state.blocks.length + (state.blocks.length === 1 ? " Adresse" : " Adressen")
+      : "";
+
+    state.blocks.forEach(function (block) {
+      var trap = block.reason === "honeypot_path";
+      var row = el("tr", null, "sev " + (trap ? "sev-warn" : "sev-crit") +
+                               (block.fresh && !reduce ? " enter" : ""));
+      block.fresh = false;
+
+      row.appendChild(el("td", block.ip, "ip"));
+
+      var reason = el("td");
+      reason.appendChild(el("span", block.reason, "chip " + (trap ? "chip-trap" : "chip-fail")));
+      row.appendChild(reason);
+
+      var left = el("td", fmtLeft(block.until - Date.now()), "num");
+      left.setAttribute("data-until", block.until);
+      row.appendChild(left);
+
+      row.appendChild(el("td", block.level, "num dim"));
+
+      var action = el("td");
+      var button = el("button", "Entsperren", "tiny");
+      button.addEventListener("click", function () {
+        state.blocks = state.blocks.filter(function (b) { return b !== block; });
+        addEvent("ok", block.ip, "–", "Sperre von Hand aufgehoben");
+      });
+      action.appendChild(button);
+      row.appendChild(action);
+
+      body.appendChild(row);
+    });
+  }
+
+  function renderStream() {
+    var stream = document.getElementById("stream");
+    stream.textContent = "";
+
+    var shown = state.events.filter(function (e) {
+      return state.filter === "all" || e.kind === state.filter;
+    });
+
+    if (!shown.length) {
+      stream.appendChild(el("div", "Keine Ereignisse in dieser Auswahl.", "empty"));
+      return;
+    }
+
+    shown.slice(0, 40).forEach(function (event) {
+      var row = el("div", null, "ev" + (event.fresh && !reduce ? " enter" : ""));
+      event.fresh = false;
+
+      row.appendChild(el("span", fmtClock(event.ts), "t"));
+
+      var kind = KINDS[event.kind];
+      var chipCell = el("span");
+      chipCell.appendChild(el("span", kind[0], "chip " + kind[1]));
+      row.appendChild(chipCell);
+
+      row.appendChild(el("span", event.ip, "ip"));
+      row.appendChild(el("span", event.user + "  ·  " + event.msg, "msg"));
+
+      stream.appendChild(row);
+    });
+  }
+
+  // ---------- Diagramm ----------
+  var canvas = document.getElementById("chart");
+  var ctx = canvas.getContext("2d");
+
+  function readToken(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function drawChart() {
+    var ratio = window.devicePixelRatio || 1;
+    var width = canvas.clientWidth;
+    var height = canvas.clientHeight;
+
+    canvas.width = width * ratio;
+    canvas.height = height * ratio;
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    var data = state.hourly;
+    var peak = Math.max.apply(null, data.concat([1]));
+    var pad = 10;
+    var usable = height - pad;
+    var slot = width / data.length;
+    var barWidth = Math.max(3, slot - 5);
+
+    // Feines Raster als Orientierung, nicht als Dekoration
+    ctx.strokeStyle = readToken("--grid");
+    ctx.lineWidth = 1;
+    for (var g = 1; g <= 3; g++) {
+      var y = Math.round(usable - (usable * g / 3)) + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+      ctx.stroke();
+    }
+
+    var accent = readToken("--accent");
+    var crit = readToken("--crit");
+
+    data.forEach(function (value, index) {
+      var barHeight = Math.max(2, (value / peak) * (usable - 6));
+      var x = index * slot + (slot - barWidth) / 2;
+      var y = usable - barHeight;
+      var isLast = index === data.length - 1;
+
+      ctx.fillStyle = isLast ? crit : accent;
+      ctx.globalAlpha = isLast ? 1 : 0.32 + 0.5 * (value / peak);
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(x, y, barWidth, barHeight, [2, 2, 0, 0]);
+      } else {
+        ctx.rect(x, y, barWidth, barHeight);
+      }
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    });
+
+    // Grundlinie
+    ctx.strokeStyle = readToken("--line");
+    ctx.beginPath();
+    ctx.moveTo(0, usable + 0.5);
+    ctx.lineTo(width, usable + 0.5);
+    ctx.stroke();
+
+    document.getElementById("chart-peak").textContent =
+      "Höchster Wert: " + peak + " Fehlversuche";
+  }
+
+  function render() {
+    renderKpis();
+    renderBlocks();
+    renderDateien();
+    renderStream();
+    drawChart();
+  }
+
+  // ---------- Laufende Aktualisierung ----------
+  setInterval(function () {
+    var now = Date.now();
+    var expired = state.blocks.filter(function (b) { return b.until <= now; });
+
+    if (expired.length) {
+      state.blocks = state.blocks.filter(function (b) { return b.until > now; });
+      expired.forEach(function (b) {
+        addEvent("ok", b.ip, "–", "Sperre abgelaufen – Zugriff wieder möglich");
+      });
+      return;
+    }
+
+    // slice.call: NodeList.forEach fehlt auf aelteren Browsern.
+    var cells = document.querySelectorAll("#blocks td[data-until]");
+    Array.prototype.slice.call(cells).forEach(function (cell) {
+      cell.textContent = fmtLeft(Number(cell.getAttribute("data-until")) - now);
+    });
+  }, 1000);
+
+  // ---------- Bedienung ----------
+  document.getElementById("run-brute").addEventListener("click", bruteForce);
+  document.getElementById("run-spray").addEventListener("click", spraying);
+  document.getElementById("run-trap").addEventListener("click", honeypot);
+  document.getElementById("run-upload").addEventListener("click", uploadShell);
+  document.getElementById("run-einbruch").addEventListener("click", einbruch);
+  document.getElementById("run-wache").addEventListener("click", firewallWache);
+
+  document.getElementById("reset").addEventListener("click", function () {
+    clearTimers();
+    busy(false);
+    seed();
+    previous = {};
+    document.getElementById("hint").textContent =
+      "Zurückgesetzt. Wähle ein Angriffsmuster.";
+    render();
+  });
+
+  var FILTERS = [
+    ["all", "Alle Ereignisse"],
+    ["fail", "Nur Fehlversuche"],
+    ["trap", "Nur Honeypot"],
+    ["ok", "Nur Erfolge"]
+  ];
+
+  document.getElementById("filter").addEventListener("click", function () {
+    var index = 0;
+    for (var i = 0; i < FILTERS.length; i++) {
+      if (FILTERS[i][0] === state.filter) { index = i; }
+    }
+    var next = FILTERS[(index + 1) % FILTERS.length];
+    state.filter = next[0];
+    this.textContent = next[1];
+    renderStream();
+  });
+
+  var toggle = document.getElementById("theme");
+  toggle.addEventListener("click", function () {
+    var root = document.documentElement;
+    var dark = supportsQuery && darkQuery.matches;
+    var current = root.getAttribute("data-theme") || (dark ? "dark" : "light");
+    root.setAttribute("data-theme", current === "dark" ? "light" : "dark");
+    drawChart();
+  });
+
+  window.addEventListener("resize", drawChart);
+
+  // Aeltere Browser (Safari vor 14) kennen an MediaQueryList nur
+  // addListener. Ungeprueft aufgerufen wirft das - und riss vorher das
+  // gesamte Skript mit sich, sodass keine Taste mehr reagierte.
+  if (supportsQuery) {
+    if (darkQuery.addEventListener) {
+      darkQuery.addEventListener("change", drawChart);
+    } else if (darkQuery.addListener) {
+      darkQuery.addListener(drawChart);
+    }
+  }
+
+  seed();
+  render();
+})();
+</script>
+</body>
+</html>
