@@ -1638,9 +1638,27 @@ function buildSat(c){
   if (c.fluegel >= 2){ addWing("x", 1); addWing("x", -1); }
   if (c.fluegel === 4){ addWing("z", 1); addWing("z", -1); }
 
-  /* Front (+Z, zeigt im Orbit zur Erde) */
+  /* ---------- Teile bauen (jeweils in eigener Lage) und dann verteilen ---------- */
   const sc = pq ? 0.5 : cube ? 1 : 3.2;
-  const front = [];
+  const ts = x => TIER[tierOf(c, x)].size;
+  // Feste Teile: UHF-Antennen oben, Triebwerk unten in der Mitte
+  if (c.funk_uhf){
+    const L = cube ? 1.7 : 5, gg = grp(); gg.position.set(0, H/2 + 0.012, 0);
+    [[1,0],[-1,0],[0,1],[0,-1]].forEach(([sx,sz]) => { const a = box(sx ? L : 0.03*sc, 0.006, sz ? L : 0.03*sc, m.tape); a.position.set(sx*(W/2 + L/2), 0, sz*(D/2 + L/2)); gg.add(a); });
+    P("uhf", "UHF-Antennen", gg);
+  }
+  if (c.antrieb !== "none"){
+    const gg = grp(), big = c.antrieb === "chem" ? 1.25 : 1;
+    const noz = cyl(0.04*sc, 0.14*sc*big, 0.26*sc*big, c.antrieb === "elek" ? m.dark : m.alu); noz.position.y = -0.13*sc*big; gg.add(noz);
+    if (c.antrieb === "elek"){ const ring = mesh(new THREE.TorusGeometry(0.11*sc, 0.02*sc, 10, 32), m.blue); ring.rotation.x = Math.PI/2; ring.position.y = -0.26*sc; gg.add(ring); }
+    if (!cube){ [[1,1],[-1,1],[1,-1],[-1,-1]].forEach(([a,b]) => { const t = cyl(0.03*sc, 0.07*sc, 0.15*sc, m.alu); t.position.set(a*W*0.4, 0.4, b*D*0.4); gg.add(t); }); }
+    gg.position.set(0, -H/2 - (cube ? 0.035 : 0.5), 0); P("antrieb", ANTRIEB[c.antrieb].name, gg);
+  }
+
+  // Bewegliche Teile: axis = welche Achse des gebauten Teils nach außen zeigt
+  const mob = [];
+  const add = (k, l, o, axis, faces, opt) => mob.push(Object.assign({k, l, o, axis, faces}, opt || {}));
+  const NADIR = ["+z","-x","+x","-z"], ZENIT = ["-z","+y","-x","+x"], SIDE = ["-x","+x","-z","+z","+y"];
   const lens = (r, len, extra) => {
     const gg = grp();
     const barrel = cyl(r, r*1.05, len, m.black); barrel.rotation.x = Math.PI/2; barrel.position.z = len/2; gg.add(barrel);
@@ -1649,15 +1667,14 @@ function buildSat(c){
     if (extra){ const b = box(r*2.4, r*2.4, 0.08, m.dark); b.position.z = 0.04; gg.add(b); }
     return gg;
   };
-  const ts = x => TIER[tierOf(c, x)].size;
-  if (c.nutz_cam) front.push({k:"cam", l:NUTZ.cam.name, o:lens(0.2*sc*ts("cam"), 0.16*sc*ts("cam")), s:0.5*sc*ts("cam")});
-  if (c.nutz_multi) front.push({k:"multi", l:NUTZ.multi.name, o:lens(0.34*sc*ts("multi"), 0.4*sc*ts("multi"), true), s:0.85*sc*ts("multi")});
-  if (c.nutz_hyper) front.push({k:"hyper", l:NUTZ.hyper.name, o:lens(0.42*sc*ts("hyper"), 0.75*sc*ts("hyper"), true), s:1.05*sc*ts("hyper")});
+  if (c.nutz_cam) add("cam", NUTZ.cam.name, lens(0.2*sc*ts("cam"), 0.16*sc*ts("cam")), "z", NADIR, {sight:true, fit:true});
+  if (c.nutz_multi) add("multi", NUTZ.multi.name, lens(0.34*sc*ts("multi"), 0.4*sc*ts("multi"), true), "z", NADIR, {sight:true, fit:true});
+  if (c.nutz_hyper) add("hyper", NUTZ.hyper.name, lens(0.42*sc*ts("hyper"), 0.75*sc*ts("hyper"), true), "z", NADIR, {sight:true, fit:true});
   if (c.nutz_iot){
     class Helix extends THREE.Curve{ getPoint(t, tg){ tg = tg || new THREE.Vector3(); const a = t*Math.PI*2*6; return tg.set(0.1*sc*Math.cos(a), 0.1*sc*Math.sin(a), t*0.55*sc); } }
     const gg = grp(); gg.add(mesh(new THREE.TubeGeometry(new Helix(), 120, 0.012*sc, 6), m.copper));
     const base = cyl(0.16*sc, 0.16*sc, 0.03, m.white); base.rotation.x = Math.PI/2; gg.add(base);
-    front.push({k:"iot", l:NUTZ.iot.name, o:gg, s:0.38*sc});
+    add("iot", NUTZ.iot.name, gg, "z", NADIR, {sight:true, fit:true});
   }
   if (c.nutz_schallplatte){
     const gg = grp(), r = 0.32*sc, gold = new THREE.MeshStandardMaterial({color:0xe8b84e, metalness:0.55, roughness:0.3, emissive:0x3a2608});
@@ -1665,7 +1682,7 @@ function buildSat(c){
     const disc = cyl(r, r, 0.012, gold, 48); disc.rotation.x = Math.PI/2; disc.position.z = 0.025; gg.add(disc);
     const hole = cyl(r*0.12, r*0.12, 0.014, m.dark, 20); hole.rotation.x = Math.PI/2; hole.position.z = 0.027; gg.add(hole);
     for (let i = 1; i < 4; i++){ const ring = mesh(new THREE.TorusGeometry(r*(0.3 + i*0.18), r*0.006, 4, 48), m.dark); ring.position.z = 0.032; gg.add(ring); }
-    front.push({k:"schallplatte", l:NUTZ.schallplatte.name, o:gg, s:r*2.2});
+    add("schallplatte", NUTZ.schallplatte.name, gg, "z", ["+x","-x","-z","+z"], {fit:true, stowOk:false});
   }
   if (c.nutz_planetenlabor){
     const gg = grp(), s2 = 0.6*sc, gold = new THREE.MeshStandardMaterial({color:0xd8a945, metalness:0.9, roughness:0.3});
@@ -1673,7 +1690,11 @@ function buildSat(c){
     [-0.3, 0.3].forEach((x, i) => { const ap = cyl(s2*0.17, s2*0.2, s2*0.25, i ? gold : m.black, 24); ap.rotation.x = Math.PI/2; ap.position.set(x*s2, s2*0.1, s2*0.52); gg.add(ap);
       const gl = cyl(s2*0.13, s2*0.13, 0.01, m.glass, 24); gl.rotation.x = Math.PI/2; gl.position.set(x*s2, s2*0.1, s2*0.65); gg.add(gl); });
     const slit = box(s2*0.8, s2*0.06, 0.02, m.alu); slit.position.set(0, -s2*0.3, s2*0.41); gg.add(slit);
-    front.push({k:"planetenlabor", l:"Planetenlabor: Spektrometer", o:gg, s:s2*1.3});
+    add("planetenlabor", "Planetenlabor: Spektrometer", gg, "z", NADIR, {sight:true, fit:true});
+    const mg = grp(), L = cube ? Math.max(1.5, H*0.7) : 6;
+    const boom = cyl(0.012*sc + 0.006, 0.012*sc + 0.006, L, m.alu, 8); boom.rotation.z = Math.PI/2; boom.position.x = -L/2; mg.add(boom);
+    const mag = box(0.12*sc, 0.12*sc, 0.12*sc, gold); mag.position.x = -L; mg.add(mag);
+    add("magnetometer", "Planetenlabor: Magnetometer-Ausleger", mg, "-x", ["-y","-z","+y","-x","+x"], {overhang:true, stowOk:false, prio:5});
   }
   if (c.nutz_labor){
     const gg = grp(), s2 = 0.55*sc;
@@ -1681,41 +1702,22 @@ function buildSat(c){
     const win = cyl(s2*0.3, s2*0.3, 0.02, new THREE.MeshStandardMaterial({color:0x9fe7b4, emissive:0x2c9a4e, emissiveIntensity:0.7, roughness:0.2}), 32); win.rotation.x = Math.PI/2; win.position.set(-s2*0.3, 0, s2*0.51); gg.add(win);
     const rim = mesh(new THREE.TorusGeometry(s2*0.3, s2*0.04, 10, 32), m.alu); rim.position.set(-s2*0.3, 0, s2*0.52); gg.add(rim);
     for (let i = 0; i < 3; i++){ const led = box(s2*0.12, s2*0.06, 0.02, new THREE.MeshStandardMaterial({color:0x7fd0ff, emissive:0x2f8fd0, emissiveIntensity:0.8})); led.position.set(s2*0.35, s2*(0.2 - i*0.2), s2*0.51); gg.add(led); }
-    front.push({k:"labor", l:NUTZ.labor.name, o:gg, s:s2*1.4});
+    add("labor", NUTZ.labor.name, gg, "z", ["-z","-x","+x","+z"], {fit:true});
   }
-  if (c.funk_s){ const gg = grp(); const b = box(0.5*sc, 0.5*sc, 0.03, m.white); b.position.z = 0.015; gg.add(b); const p = box(0.3*sc, 0.3*sc, 0.012, m.copper); p.position.z = 0.035; gg.add(p); front.push({k:"sband", l:"S-Band-Antenne", o:gg, s:0.55*sc}); }
+  if (c.funk_s){ const gg = grp(); const b = box(0.5*sc, 0.5*sc, 0.03, m.white); b.position.z = 0.015; gg.add(b); const p = box(0.3*sc, 0.3*sc, 0.012, m.copper); p.position.z = 0.035; gg.add(p); add("sband", "S-Band-Antenne", gg, "z", NADIR, {fit:true, stowOk:false}); }
   if (c.funk_x && cube){ const gg = grp(); const b = box(0.8*sc, 0.42*sc, 0.03, m.white); b.position.z = 0.015; gg.add(b);
     for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++){ const p = box(0.13*sc, 0.13*sc, 0.012, m.copper); p.position.set((-0.3 + i*0.2)*sc, (-0.1 + j*0.2)*sc, 0.035); gg.add(p); }
-    front.push({k:"xband", l:"X-Band-Antenne", o:gg, s:0.85*sc}); }
+    add("xband", "X-Band-Antenne", gg, "z", NADIR, {fit:true, stowOk:false}); }
   if (c.funk_laser){ const gg = grp(); const fork = box(0.42*sc, 0.1*sc, 0.2*sc, m.alu); fork.position.z = 0.1*sc; gg.add(fork);
     const tube = cyl(0.15*sc, 0.15*sc, 0.42*sc, m.white); tube.rotation.x = Math.PI/2.6; tube.position.z = 0.3*sc; gg.add(tube);
     const gl = cyl(0.12*sc, 0.12*sc, 0.02, m.glass); gl.rotation.x = Math.PI/2.6; gl.position.set(0, 0.1*sc, 0.5*sc); gg.add(gl);
-    front.push({k:"laser", l:"Laserfunk-Terminal", o:gg, s:0.5*sc}); }
-  if (front.length){
-    const cols = W >= 2 ? 2 : 1, rows = Math.ceil(front.length/cols);
-    const cellH = H*0.92/rows, cellW = W*0.92/cols;
-    front.forEach((it, i) => {
-      const col = i % cols, row = Math.floor(i/cols);
-      const k = Math.min(1, 0.88*Math.min(cellH, cellW)/it.s);
-      it.o.scale.setScalar(k);
-      it.o.position.set(-W*0.46 + cellW*(col + 0.5), H*0.46 - cellH*(row + 0.5), D/2);
-      P(it.k, it.l, it.o);
-    });
-  }
-  /* Rückseite (-Z, zeigt ins All): Teleskop, Labor, Sternsensor, Detektor */
-  const back = [];
-  if (c.stern){ const gg = grp(); const b = cyl(0.13*sc, 0.13*sc, 0.2*sc, m.dark); b.rotation.x = Math.PI/2; b.position.z = -0.1*sc; gg.add(b);
-    const baf = cyl(0.24*sc, 0.14*sc, 0.3*sc, m.black, 24); baf.rotation.x = -Math.PI/2; baf.position.z = -0.35*sc; gg.add(baf);
-    gg.rotation.y = 0.45; back.push({k:"stern", l:STERN.name, o:gg, fixed:[W*0.3, H*0.38]}); }
-  if (c.nutz_sci){ const gg = grp(); const b = box(0.42*sc, 0.34*sc, 0.1*sc, m.dark); b.position.z = -0.05*sc; gg.add(b);
-    for (let i = 0; i < 5; i++){ const s3 = box(0.34*sc, 0.025*sc, 0.02, m.alu); s3.position.set(0, -0.12*sc + i*0.06*sc, -0.105*sc); gg.add(s3); }
-    back.push({k:"sci", l:NUTZ.sci.name, o:gg}); }
-  const flow = back.filter(b => !b.fixed);
-  flow.forEach((b, i) => { b.o.position.set(flow.length > 1 && W >= 1.5 ? (i % 2 ? W*0.24 : -W*0.24) : 0, H*0.2 - (flow.length > 1 && W < 1.5 ? i*H*0.5/(flow.length) : (W >= 1.5 ? Math.floor(i/2)*H*0.45 : 0)), -D/2); P(b.k, b.l, b.o); });
-  back.filter(b => b.fixed).forEach(b => { b.o.position.set(b.fixed[0], b.fixed[1], -D/2); P(b.k, b.l, b.o); });
-
-  /* Teleskop: Rohr nach oben (entlang der Längsachse) */
-  let topUsed = 0;
+    add("laser", "Laserfunk-Terminal", gg, "z", NADIR, {sight:true, fit:true}); }
+  if (c.stern){ const gg = grp(); const b = cyl(0.13*sc, 0.13*sc, 0.2*sc, m.dark); b.rotation.x = Math.PI/2; b.position.z = 0.1*sc; gg.add(b);
+    const baf = cyl(0.14*sc, 0.24*sc, 0.3*sc, m.black, 24); baf.rotation.x = Math.PI/2; baf.position.z = 0.35*sc; gg.add(baf);
+    add("stern", STERN.name, gg, "z", ZENIT, {sight:true}); }
+  if (c.nutz_sci){ const gg = grp(); const b = box(0.42*sc, 0.34*sc, 0.1*sc, m.dark); b.position.z = 0.05*sc; gg.add(b);
+    for (let i = 0; i < 5; i++){ const s3 = box(0.34*sc, 0.025*sc, 0.02, m.alu); s3.position.set(0, -0.12*sc + i*0.06*sc, 0.105*sc); gg.add(s3); }
+    add("sci", NUTZ.sci.name, gg, "z", ZENIT, {fit:true}); }
   if (c.nutz_teleskop){
     const gg = grp(), r = cube ? Math.min(W, D)*0.38 : 1.4, L = cube ? Math.min(H*0.6, 2) : 3;
     const tube = cyl(r, r, L, m.white, 40); tube.position.y = L/2; gg.add(tube);
@@ -1723,14 +1725,8 @@ function buildSat(c){
     const mir = cyl(r*0.8, r*0.8, 0.02, m.glass, 40); mir.position.y = 0.06; gg.add(mir);
     const shade = box(r*2.1, L*0.45, 0.02, m.white); shade.position.set(0, L*0.95, -r*1.02); gg.add(shade);
     const ring = mesh(new THREE.TorusGeometry(r*1.01, r*0.05, 10, 40), m.alu); ring.rotation.x = Math.PI/2; ring.position.y = L; gg.add(ring);
-    const tsc = TIER[tierOf(c, "teleskop")].size; gg.scale.set(tsc, tsc, tsc);
-    gg.position.set(0, H/2, 0); P("teleskop", NUTZ.teleskop.name + " (" + TIER[tierOf(c, "teleskop")].name + ")", gg); topUsed = L*1.2*tsc;
-  }
-  if (c.nutz_planetenlabor){
-    const gg = grp(), L = cube ? Math.max(1.5, H*0.7) : 6;
-    const boom = cyl(0.012*sc + 0.006, 0.012*sc + 0.006, L, m.alu, 8); boom.rotation.z = Math.PI/2; boom.position.x = -L/2; gg.add(boom);
-    const mag = box(0.12*sc, 0.12*sc, 0.12*sc, new THREE.MeshStandardMaterial({color:0xd8a945, metalness:0.9, roughness:0.3})); mag.position.x = -L; gg.add(mag);
-    gg.position.set(-W/2, -H*0.35, -D*0.3); gg.rotation.z = -0.25; P("magnetometer", "Planetenlabor: Magnetometer-Ausleger", gg);
+    const tsc = ts("teleskop"); gg.scale.set(tsc, tsc, tsc);
+    add("teleskop", NUTZ.teleskop.name + " (" + TIER[tierOf(c, "teleskop")].name + ")", gg, "y", ["+y","-z","-x","+x"], {sight:true, prio:8, stowNote:"schaut durch eine Öffnung in der Wand"});
   }
   if (c.rtg){
     const gg = grp(), L = cube ? 1.6 : 5.5, rr = (cube ? 0.13 : 0.45)*(pq ? 0.5 : 1);
@@ -1741,8 +1737,7 @@ function buildSat(c){
       const core = cyl(rr*0.55, rr*0.55, rr*1.4, dark, 20); core.rotation.z = Math.PI/2; core.position.x = x0; gg.add(core);
       for (let f = 0; f < 6; f++){ const fin = box(rr*1.4, rr*1.1, rr*0.05, dark); const a = f*Math.PI/3; fin.position.set(x0, Math.cos(a)*rr*0.75, Math.sin(a)*rr*0.75); fin.rotation.x = -a; gg.add(fin); }
     }
-    gg.position.set(W/2, -H*0.4, D*0.2); gg.rotation.z = -0.45; gg.rotation.y = 0.5;
-    P("rtg", RTG.name, gg);
+    add("rtg", RTG.name, gg, "x", ["-y","-z","+x","-x","+y"], {overhang:true, stowOk:false, prio:7});
   }
   if (c.funk_hga){
     const Rd = cube ? Math.max(W, D)*0.8 + 0.5 : 3.7, gg = grp(), dm = new THREE.MeshStandardMaterial({color:0xf2f3f0, metalness:0.15, roughness:0.5});
@@ -1750,83 +1745,134 @@ function buildSat(c){
     const feed = cyl(0.04*sc, 0.07*sc, Rd*0.5, m.alu, 12); feed.position.y = 0.35*sc + Rd*0.55; gg.add(feed);
     for (let q = 0; q < 3; q++){ const a = q*Math.PI*2/3, st = cyl(0.012*sc, 0.012*sc, Rd*0.95, m.alu, 6); st.position.set(Math.cos(a)*Rd*0.33, 0.35*sc + Rd*0.45, Math.sin(a)*Rd*0.33); st.lookAt(0, 0.35*sc + Rd*0.95, 0); st.rotateX(Math.PI/2); gg.add(st); }
     const mast = cyl(0.05*sc, 0.05*sc, 0.35*sc, m.alu, 10); mast.position.y = 0.175*sc; gg.add(mast);
-    gg.position.set(0, H/2 + topUsed, 0); P("hga", FUNK.hga.name, gg); topUsed += 0.35*sc + Rd*0.3;
+    add("hga", FUNK.hga.name, gg, "y", ["+y","+z","-z","-y"], {overhang:true, stowOk:false, prio:9, sight:true, mast:true});
   }
   if (c.nutz_lander){
     const gg = grp(), r = cube ? Math.min(W, D)*0.42 : 2.2, hs = new THREE.MeshStandardMaterial({color:0x7a4a2a, metalness:0.1, roughness:0.85});
     const shield = cyl(r*0.25, r, r*0.45, hs, 40); shield.position.y = r*0.75; shield.rotation.x = Math.PI; gg.add(shield);
-    const back = cyl(r*0.95, r*0.5, r*0.5, new THREE.MeshStandardMaterial({color:0xe9ecef, metalness:0.3, roughness:0.5}), 40); back.position.y = r*0.28; gg.add(back);
+    const bk = cyl(r*0.95, r*0.5, r*0.5, new THREE.MeshStandardMaterial({color:0xe9ecef, metalness:0.3, roughness:0.5}), 40); bk.position.y = r*0.28; gg.add(bk);
     const chute = cyl(r*0.22, r*0.22, r*0.12, m.dark, 20); chute.position.y = r*0.02; gg.add(chute);
-    gg.rotation.x = Math.PI; gg.position.set(cube ? 0 : W*0.25, H/2 + topUsed + r*0.98, 0);
-    P("lander", NUTZ.lander.name, gg); topUsed += r*1.05;
+    add("lander", NUTZ.lander.name, gg, "y", ["+y","-y","-z","-x","+x"], {prio:6, overhang:true, stowOk:false, sight:true});
   }
-  /* X-Band-Schüssel (Kleinsatellit) */
-  if (c.funk_x && !cube){ const gg = grp(); gg.position.set(W*0.3, -H*0.32, D/2); const d = dish(1.3, 0.45, m.white.clone()); d.rotation.x = -Math.PI/2; d.position.z = 0.9; gg.add(d);
-    const st = cyl(0.08, 0.08, 0.9, m.alu); st.rotation.x = Math.PI/2; st.position.z = 0.45; gg.add(st); P("xdish", "X-Band-Schüssel", gg); }
-  /* Transponder-Reflektor */
+  if (c.funk_x && !cube){ const gg = grp(); const d = dish(1.3, 0.45, m.white.clone()); d.rotation.x = -Math.PI/2; d.position.z = 0.9; gg.add(d);
+    const st = cyl(0.08, 0.08, 0.9, m.alu); st.rotation.x = Math.PI/2; st.position.z = 0.45; gg.add(st); add("xdish", "X-Band-Schüssel", gg, "z", NADIR, {overhang:true, stowOk:false, prio:6, mast:true}); }
   if (c.nutz_relay){
     const R_ = cube ? 1.5 : 3.0, dm = new THREE.MeshStandardMaterial({color:0xd9dde3, metalness:0.6, roughness:0.35});
-    const gg = grp(), d = dish(R_, R_*0.32, dm); d.rotation.x = -Math.PI/2;
-    if (cube){ gg.position.set(0, H/2, 0); d.position.set(0, R_ + 0.2, 0.25); const boom = cyl(0.03, 0.03, R_ + 0.3, m.alu, 8); boom.position.set(0, (R_ + 0.3)/2, 0); gg.add(boom); }
-    else { gg.position.set(-W*0.05, H*0.15, D/2); d.position.set(0, 0, 1.6); const st = cyl(0.12, 0.12, 1.6, m.alu); st.rotation.x = Math.PI/2; st.position.set(0, 0, 0.8); gg.add(st); }
-    gg.add(d);
-    const feed = cyl(0.06*sc, 0.12*sc, 0.35*sc, m.dark); feed.rotation.x = Math.PI/2; feed.position.copy(d.position).add(new THREE.Vector3(0, 0, R_*0.9)); gg.add(feed);
-    P("relay", NUTZ.relay.name, gg);
+    const gg = grp(), d = dish(R_, R_*0.32, dm); d.rotation.x = -Math.PI/2; d.position.set(0, 0, R_*0.3 + 0.4*sc); gg.add(d);
+    const st = cyl(0.04*sc + 0.02, 0.04*sc + 0.02, R_*0.3 + 0.4*sc, m.alu); st.rotation.x = Math.PI/2; st.position.z = (R_*0.3 + 0.4*sc)/2; gg.add(st);
+    const feed = cyl(0.06*sc, 0.12*sc, 0.35*sc, m.dark); feed.rotation.x = Math.PI/2; feed.position.set(0, 0, d.position.z + R_*0.9); gg.add(feed);
+    add("relay", NUTZ.relay.name, gg, "z", ["+z","+y","-z"], {overhang:true, stowOk:false, prio:9, mast:true});
   }
-  /* UHF-Antennen */
   if (c.funk_lora){
-    const gg = grp(); gg.position.set(-W*0.3, H/2, D*0.3);
-    const a = cyl(0.01*sc + 0.004, 0.01*sc + 0.004, 0.9*sc, m.tape, 8); a.position.y = 0.45*sc; gg.add(a);
+    const gg = grp(); const a = cyl(0.01*sc + 0.004, 0.01*sc + 0.004, 0.9*sc, m.tape, 8); a.position.y = 0.45*sc; gg.add(a);
     const tip = mesh(new THREE.SphereGeometry(0.025*sc, 10, 8), m.dark); tip.position.y = 0.9*sc; gg.add(tip);
-    P("lora", "LoRa-Antenne", gg);
-  }
-  if (c.funk_uhf){
-    const L = cube ? 1.7 : 5, gg = grp(); gg.position.set(0, H/2 - 0.08*sc, 0);
-    [[1,0],[-1,0],[0,1],[0,-1]].forEach(([sx,sz]) => { const a = box(sx ? L : 0.03*sc, 0.006, sz ? L : 0.03*sc, m.tape); a.position.set(sx*(W/2 + L/2), 0, sz*(D/2 + L/2)); gg.add(a); });
-    P("uhf", "UHF-Antennen", gg);
-  }
-  /* Unterseite (-Y): Antrieb, Bremssegel */
-  if (c.antrieb !== "none"){
-    const gg = grp(), big = c.antrieb === "chem" ? 1.25 : 1;
-    const noz = cyl(0.04*sc, 0.14*sc*big, 0.26*sc*big, c.antrieb === "elek" ? m.dark : m.alu); noz.position.y = -0.13*sc*big; gg.add(noz);
-    if (c.antrieb === "elek"){ const ring = mesh(new THREE.TorusGeometry(0.11*sc, 0.02*sc, 10, 32), m.blue); ring.rotation.x = Math.PI/2; ring.position.y = -0.26*sc; gg.add(ring); }
-    if (!cube){ [[1,1],[-1,1],[1,-1],[-1,-1]].forEach(([a,b]) => { const t = cyl(0.03*sc, 0.07*sc, 0.15*sc, m.alu); t.position.set(a*W*0.4, 0.4, b*D*0.4); gg.add(t); }); }
-    gg.position.set(0, -H/2 - (cube ? 0.035 : 0.5), 0); P("antrieb", ANTRIEB[c.antrieb].name, gg);
+    add("lora", "LoRa-Antenne", gg, "y", ["+y","-z","-x","+x"], {stowOk:false});
   }
   if (c.nutz_rueckkehr){
     const r = cube ? Math.min(W, D)*0.36 : 1.8, gg = grp(), hs = new THREE.MeshStandardMaterial({color:0x6b3f22, metalness:0.1, roughness:0.9});
-    const back = cyl(r*0.45, r*0.95, r*0.75, new THREE.MeshStandardMaterial({color:0x2e3238, metalness:0.3, roughness:0.6}), 36); back.position.y = -r*0.4; gg.add(back);
+    const bk = cyl(r*0.45, r*0.95, r*0.75, new THREE.MeshStandardMaterial({color:0x2e3238, metalness:0.3, roughness:0.6}), 36); bk.position.y = -r*0.4; gg.add(bk);
     const shield = mesh(new THREE.SphereGeometry(r*1.05, 36, 12, 0, Math.PI*2, Math.PI*0.62, Math.PI*0.38), hs); shield.position.y = -r*0.2; gg.add(shield);
     const ring = mesh(new THREE.TorusGeometry(r*0.97, r*0.04, 8, 36), m.alu); ring.rotation.x = Math.PI/2; ring.position.y = -r*0.78; gg.add(ring);
-    gg.position.set(c.antrieb !== "none" ? W*0.28 : 0, -H/2 - 0.02, c.antrieb !== "none" ? -D*0.1 : 0);
-    P("rueckkehr", NUTZ.rueckkehr.name, gg);
+    add("rueckkehr", NUTZ.rueckkehr.name, gg, "-y", ["-y","-z","-x","+x","+y"], {prio:6, sight:true, stowNote:"wird durch eine Klappe ausgestoßen"});
   }
-  if (c.segel){ const s4 = box(0.45*sc, 0.2*sc, 0.45*sc, m.sail); s4.position.set(-W*0.25, -H/2 - 0.1*sc - (cube ? 0.035 : 0), D*0.18); P("segel", SEGEL.name, s4); }
-  /* Sonnensegel: quadratische Folie auf vier Auslegern über der Oberseite */
+  if (c.segel){ const s4 = box(0.45*sc, 0.2*sc, 0.45*sc, m.sail); s4.position.z = 0.1*sc; const gg = grp(); gg.add(s4); add("segel", SEGEL.name, gg, "z", ["-y","-z","-x","+x"], {sight:true, stowNote:"entfaltet sich durch eine Klappe"}); }
   if (c.sonne && c.sonne !== "none"){
     const A = (SONNE[c.sonne].area[F.cls] != null ? SONNE[c.sonne].area[F.cls] : SONNE[c.sonne].area.c);
-    const side = Math.min(Math.sqrt(A)*10, Math.max(W, H, D)*3.5), gg = grp(); const below = topUsed > 0; gg.position.set(0, below ? -H/2 - 0.7*sc : H/2 + 0.12*sc, 0);
+    const side = Math.min(Math.sqrt(A)*10, Math.max(W, H, D)*3.5), gg = grp();
     const foil = new THREE.MeshStandardMaterial({color:0xd6deea, metalness:0.5, roughness:0.22, emissive:0x1c2636, side:THREE.DoubleSide, transparent:true, opacity:0.9});
-    const half = side/2;
+    const half = side/2, sg = grp(); sg.position.y = 0.12*sc;
     for (let q = 0; q < 4; q++){
       const geo = new THREE.BufferGeometry(), a0 = q*Math.PI/2, a1 = a0 + Math.PI/2, rr = half*Math.SQRT2*0.98;
       const v = [0.15*Math.cos(a0 + Math.PI/4), 0, 0.15*Math.sin(a0 + Math.PI/4), rr*Math.cos(a0), 0, rr*Math.sin(a0), rr*Math.cos(a1), -side*0.012, rr*Math.sin(a1)];
       geo.setAttribute("position", new THREE.Float32BufferAttribute(v, 3)); geo.computeVertexNormals();
-      gg.add(mesh(geo, foil));
-      const boom = cyl(0.02*sc + side*0.0015, 0.02*sc + side*0.0015, rr, m.alu, 6); boom.rotation.z = Math.PI/2; boom.rotation.y = -a0; boom.position.set(Math.cos(a0)*rr/2, 0.01, Math.sin(a0)*rr/2); gg.add(boom);
+      sg.add(mesh(geo, foil));
+      const boom = cyl(0.02*sc + side*0.0015, 0.02*sc + side*0.0015, rr, m.alu, 6); boom.rotation.z = Math.PI/2; boom.rotation.y = -a0; boom.position.set(Math.cos(a0)*rr/2, 0.01, Math.sin(a0)*rr/2); sg.add(boom);
     }
-    gg.rotation.y = Math.PI/4;
-    P("sonne", SONNE[c.sonne].name, gg);
+    sg.rotation.y = Math.PI/4; gg.add(sg);
+    add("sonne", SONNE[c.sonne].name, gg, "y", ["+y","-y","-z"], {overhang:true, stowOk:false, prio:10, mast:true});
   }
-
-  /* Eigene Teile und manuelle Änderungen */
   const man = c.manuell || {};
   (man.x || []).forEach(x => {
     if (!EXTRA[x.t]) return;
     const o = customPart(x.t, m, 1);
+    o.userData.extra = x.id;
+    if (x.auto){ o.scale.fromArray(x.s || [1,1,1]); add("x-" + x.id, "Eigenes Teil: " + EXTRA[x.t].name, o, x.t === "antenne" ? "y" : "z", ["+y","-z","-x","+x","-y","+z"], {stowOk:false, extra:x, prio:-1}); return; }
     o.position.fromArray(x.p || [0, 0, 0]); o.rotation.fromArray((x.r || [0, 0, 0]).slice(0, 3)); o.scale.fromArray(x.s || [1, 1, 1]);
-    o.userData.extra = x.id; P("x-" + x.id, "Eigenes Teil: " + EXTRA[x.t].name, o);
+    P("x-" + x.id, "Eigenes Teil: " + EXTRA[x.t].name, o);
   });
+
+  /* ---------- Platzverteiler ---------- */
+  const V3 = (a,b,c2) => new THREE.Vector3(a, b, c2);
+  const FACES = {
+    "+z":{n:V3(0,0,1), u:V3(1,0,0), A:W, B:H, off:D/2}, "-z":{n:V3(0,0,-1), u:V3(1,0,0), A:W, B:H, off:D/2},
+    "+y":{n:V3(0,1,0), u:V3(1,0,0), A:W, B:D, off:H/2}, "-y":{n:V3(0,-1,0), u:V3(1,0,0), A:W, B:D, off:H/2},
+    "+x":{n:V3(1,0,0), u:V3(0,0,1), A:D, B:H, off:W/2}, "-x":{n:V3(-1,0,0), u:V3(0,0,1), A:D, B:H, off:W/2}
+  };
+  const AXROT = {z:[0,0,0], y:[Math.PI/2,0,0], "-y":[-Math.PI/2,0,0], x:[0,-Math.PI/2,0], "-x":[0,Math.PI/2,0], "-z":[0,Math.PI,0]};
+  const solids = [], sights = [], shrink = b => b.expandByScalar(-0.002);
+  outer.updateMatrixWorld(true);
+  outer.children.forEach(o => { if (o === body || !o.userData.part) return; o.traverse(n => { if (n.isMesh){ const b = new THREE.Box3().setFromObject(n); if (!b.isEmpty()) solids.push(shrink(b)); } }); });
+  const hits = (b, list) => list.some(x => x.intersectsBox(b));
+  const stowed = [];
+  const order = mob.slice().sort((a,b) => (b.prio || 0) - (a.prio || 0));
+  order.forEach(it => {
+    const w = grp(); w.add(it.o); const r0 = AXROT[it.axis] || AXROT.z; it.o.rotation.x += r0[0]; it.o.rotation.y += r0[1]; it.o.rotation.z += r0[2];
+    w.updateMatrixWorld(true);
+    const cb = new THREE.Box3().setFromObject(w), fw = cb.max.x - cb.min.x, fh = cb.max.y - cb.min.y, cx = (cb.max.x + cb.min.x)/2, cy = (cb.max.y + cb.min.y)/2;
+    let placed = false;
+    for (const fk of it.faces){
+      const f = FACES[fk]; if (!f) continue;
+      const vdir = f.n.clone().cross(f.u);
+      let scl = 1;
+      if (fw > f.A*0.96 || fh > f.B*0.96){
+        if (it.fit){ scl = 0.92*Math.min(f.A/fw, f.B/fh); if (scl < 0.45) continue; }
+        else if (!it.overhang) continue;
+      }
+      const sw = fw*scl, sh = fh*scl;
+      const span = (len, sz) => { const free = Math.max(0, len*0.96 - sz); if (it.overhang && sz > len*0.96) return [0]; const k = Math.min(7, Math.max(1, Math.floor(free/(sz*0.5 + 1e-6)) + 1)); const out = []; for (let i = 0; i < k; i++) out.push(k === 1 ? 0 : -free/2 + free*i/(k - 1)); return out; };
+      const cands = [];
+      span(f.A, sw).forEach(a => span(f.B, sh).forEach(b2 => cands.push([a, b2])));
+      cands.sort((p, q) => (Math.abs(p[0]) + Math.abs(p[1])) - (Math.abs(q[0]) + Math.abs(q[1])));
+      const lifts = it.mast ? [0, 0.6*sc, 1.4*sc] : [0];
+      for (const lift of lifts){
+        for (const [a, b2] of cands){
+          w.scale.setScalar(scl);
+          w.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(f.u, vdir, f.n));
+          w.position.copy(f.n).multiplyScalar(f.off + lift).addScaledVector(f.u, a - cx*scl).addScaledVector(vdir, b2 - cy*scl);
+          w.updateMatrixWorld(true);
+          const bb = shrink(new THREE.Box3().setFromObject(w));
+          let ms = null;
+          if (lift > 0){ ms = cyl(0.04*sc/scl, 0.04*sc/scl, lift/scl, m.alu, 8); ms.rotation.x = Math.PI/2; ms.position.set(cx, cy, -lift/(2*scl)); w.add(ms); w.updateMatrixWorld(true); }
+          const col = ms ? new THREE.Box3().setFromObject(ms).expandByScalar(0.08*sc) : null; // Mast mit etwas Abstand freihalten
+          if (hits(bb, solids) || hits(bb, sights) || (col && hits(col, solids))){ if (ms) w.remove(ms); continue; }
+          let sb = null;
+          if (it.sight){ const L = Math.max(1.5*sc, (sw + sh)); sb = bb.clone(); const ext = f.n.clone().multiplyScalar(L); sb.expandByPoint(sb.min.clone().add(ext)); sb.expandByPoint(sb.max.clone().add(ext)); if (hits(sb, solids)){ if (ms) w.remove(ms); continue; } }
+          solids.push(bb); if (col) solids.push(col); if (sb) sights.push(sb);
+          placed = true; break;
+        }
+        if (placed) break;
+      }
+      if (placed) break;
+    }
+    if (!placed){
+      if (it.stowOk === false && !it.extra){ // muss außen sein: an die erste Seite setzen, auch wenn es eng wird
+        const f = FACES[it.faces[0]], vdir = f.n.clone().cross(f.u);
+        w.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(f.u, vdir, f.n));
+        w.position.copy(f.n).multiplyScalar(f.off).addScaledVector(f.u, -cx).addScaledVector(vdir, -cy);
+        w.updateMatrixWorld(true); solids.push(shrink(new THREE.Box3().setFromObject(w)));
+        it.cramped = true;
+      } else if (it.extra){
+        w.position.set(0, H/2 + 1.2*sc, 0); w.updateMatrixWorld(true);
+      } else { stowed.push(it.l + (it.stowNote ? " (" + it.stowNote + ")" : "")); return; }
+    }
+    if (it.extra){ // fest einbacken, damit das Verschieben im Bau-Modus wie gewohnt funktioniert
+      w.updateMatrixWorld(true); const mw = it.o.matrixWorld.clone(); w.remove(it.o);
+      mw.decompose(it.o.position, it.o.quaternion, it.o.scale); P(it.k, it.l, it.o); return;
+    }
+    P(it.k, it.l + (it.cramped ? " – eng, bitte im Bau-Modus verschieben" : ""), w);
+  });
+  g.userData.stowed = stowed;
+
   outer.children.forEach(o => {
     if (!o.userData.part || o.userData.extra) return;
     o.userData.def = {p:o.position.clone(), r:o.rotation.clone(), s:o.scale.clone()};
@@ -1886,6 +1932,7 @@ function rebuild3d(force){
   if (satRoot){ satScene.remove(satRoot); applyHeat(false); disposeTree(satRoot); }
   satRoot = buildSat(R.c);
   satScene.add(satRoot);
+  V.stowed = satRoot.userData.stowed || [];
   if (V.mode === "bauen" && ED.sel){ const o = satRoot.userData.outer.children.find(x => x.userData.part === ED.sel); if (o) ED.tc.attach(o); else ED.sel = null; updateBuildbar(); }
   if (V.heat) applyHeat(true);
   const bb = new THREE.Box3().setFromObject(satRoot), sz = bb.getSize(new THREE.Vector3());
@@ -1914,7 +1961,8 @@ function updateInfo(){
   const sailTxt = sA ? " · Sonnensegel <b>" + nf1.format(Math.sqrt(sA)) + " × " + nf1.format(Math.sqrt(sA)) + " m</b>" + (Math.sqrt(sA)*10 > Math.max(...R.F.d)*3.5 ? " (verkleinert gezeigt)" : "") : "";
   if (R.station){ info.innerHTML = "<b>ca. " + nf0.format(R.F.d[0]/10) + " m lang</b> · <b>" + nf0.format(R.mass/1000) + " t</b> · " + R.nLaunch + " Starts" + (V.mode === "bauen" ? " · Modul antippen, dann an den Griffen ziehen" : " · ziehen zum Drehen"); return; }
   const span = sA ? sailTxt : R.c.fluegel ? " · Spannweite <b>" + nf0.format(satRoot ? satRoot.userData.radius*2*10 : 0) + " cm</b>" : "";
-  info.innerHTML = "<b>" + nf0.format(W*10) + " × " + nf0.format(D*10) + " × " + nf0.format(H*10) + " cm</b> · <b>" + kg(R.mass) + "</b>" + span + (V.mode === "bauen" ? " · Teil antippen, dann an den farbigen Griffen ziehen" : " · ziehen zum Drehen");
+  const stw = (V.stowed && V.stowed.length) ? " · <b>innen verstaut:</b> " + esc(V.stowed.join(", ")) : "";
+  info.innerHTML = stw.length ? "<b>" + nf0.format(W*10) + " × " + nf0.format(D*10) + " × " + nf0.format(H*10) + " cm</b> · <b>" + kg(R.mass) + "</b>" + stw : "<b>" + nf0.format(W*10) + " × " + nf0.format(D*10) + " × " + nf0.format(H*10) + " cm</b> · <b>" + kg(R.mass) + "</b>" + span + (V.mode === "bauen" ? " · Teil antippen, dann an den farbigen Griffen ziehen" : " · ziehen zum Drehen");
 }
 
 /* ---------- Orbit ---------- */
@@ -2174,6 +2222,7 @@ function storeSel(){
   const r3 = v => Math.round(v*1000)/1000;
   if (o.userData.extra){
     const x = MANUAL.x.find(q => q.id === o.userData.extra); if (!x) return;
+    x.auto = false;
     x.p = o.position.toArray().map(r3); x.r = [o.rotation.x, o.rotation.y, o.rotation.z].map(r3); x.s = o.scale.toArray().map(v => r3(Math.max(0.05, Math.abs(v))));
   } else {
     const d0 = o.userData.def; if (!d0) return;
@@ -2188,7 +2237,7 @@ function addExtra(t){
   const F = R.F, sc = F.cls === "p" ? 0.5 : F.cube ? 1 : F.cls === "st" ? 30 : 3.2, n = MANUAL.x.length;
   const id = Date.now().toString(36) + n;
   const [W,H] = F.d;
-  MANUAL.x.push({id, t, p:F.cls === "st" ? [(n % 3 - 1)*60, -60 - Math.floor(n/3)*40, 40] : [(n % 3 - 1)*W*0.4, H/2 + 0.35*sc + Math.floor(n/3)*0.6*sc, 0], r:[0, 0, 0], s:[sc, sc, sc], s0:[sc, sc, sc]});
+  MANUAL.x.push({id, t, auto:true, p:F.cls === "st" ? [(n % 3 - 1)*60, -60 - Math.floor(n/3)*40, 40] : [(n % 3 - 1)*W*0.4, H/2 + 0.35*sc + Math.floor(n/3)*0.6*sc, 0], r:[0, 0, 0], s:[sc, sc, sc], s0:[sc, sc, sc]});
   ED.sel = "x-" + id;
   update(false);
 }
