@@ -350,7 +350,10 @@ const BAHNEN = {
   mars: {name:"Zum Mars", sub:"1,5 AE · halb so viel Sonnenlicht, dünne Atmosphäre", h:2.25e8, beta:0, x:9, deep:true, dv:{c:2500,s:4000}, link:4e-4, dose:15, au:1.52, flaeche:true, planet:"mars", swing:0.8},
   venus: {name:"Zur Venus", sub:"0,7 AE · doppelt so viel Sonnenlicht, 460 °C am Boden", h:1.0e8, beta:0, x:9, deep:true, dv:{c:2500,s:4000}, link:6e-4, dose:12, au:0.72, flaeche:true, heiss:true, planet:"venus", swing:0.8},
   jupiter: {name:"Zum Jupiter", sub:"5,2 AE · nur 4 % Sonnenlicht, starke Strahlung, kein fester Boden", h:6.3e8, beta:0, x:15, deep:true, dv:{c:6000,s:9000}, link:4e-5, dose:150, au:5.2, planet:"jupiter", swing:0.4},
+  saturn: {name:"Zum Saturn", sub:"9,5 AE · 1 % Sonnenlicht, Ringe und 140 Monde – Jahre unterwegs", h:1.28e9, beta:0, x:18, deep:true, dv:{c:7000,s:10000}, link:1e-5, dose:30, au:9.5, planet:"saturn", swing:0.4},
+  pluto: {name:"Zum Pluto", sub:"40 AE · eisiger Zwergplanet am Rand des Sonnensystems", h:5.9e9, beta:0, x:30, deep:true, dv:{c:8000,s:12000}, link:5e-7, dose:5, au:40, flaeche:true, planet:"pluto", swing:0.3},
   interstellar: {name:"Raus aus dem Sonnensystem", sub:"wie Voyager: über 120 AE weit in den interstellaren Raum – Jahrzehnte unterwegs", h:1.8e10, beta:0, x:60, deep:true, dv:{c:8000,s:12000}, swing:0.015, link:2e-9, dose:4, au:100, planet:"sonne", interstellar:true},
+  alphacen: {name:"Zu Alpha Centauri", sub:"der nächste Stern, 4,4 Lichtjahre – nur mit dem Raumschiff", h:4.13e13, beta:0, x:80, deep:true, dv:{c:30000,s:60000}, swing:0.01, link:1e-12, dose:4, au:270000, planet:"sonne", interstellar:true, shipOnly:true},
 };
 const OBC = {
   std: {name:"Standard-Bordcomputer", sub:"handelsübliche Elektronik, verträgt ca. 20 krad Strahlung", c:[0.1,0.1,0.4,6000], s:[2,4,6,60000], tol:20},
@@ -420,22 +423,51 @@ const RAKETEN = {
   schwer:  {name:"Schwerlastrakete", sub:"z. B. Falcon Heavy: bis 60 t, auch weit hinaus ins Sonnensystem", leo:60000, price:150e6, h:70, d:3.7, booster:true},
   super:   {name:"Superschwere Rakete", sub:"z. B. SLS oder Starship: über 100 t – für große Stationsmodule zum Mond", leo:120000, price:600e6, h:110, d:9}
 };
-const BAHN_FAKTOR = {leo:1, sso:0.8, dd:0.8, meo:0.35, geo:0.3, mond:0.25, tief:0.2, mars:0.2, venus:0.2, jupiter:0.08, interstellar:0.05};
-const MITFLUG_OK = {leo:"ok", sso:"ok", dd:"ok", meo:"selten", geo:"selten", mond:"selten", tief:"selten", mars:"selten", venus:"selten", jupiter:"nein", interstellar:"nein"};
+const BAHN_FAKTOR = {leo:1, sso:0.8, dd:0.8, meo:0.35, geo:0.3, mond:0.25, tief:0.2, mars:0.2, venus:0.2, jupiter:0.08, saturn:0.06, pluto:0.05, interstellar:0.05, alphacen:0.04};
+const MITFLUG_OK = {leo:"ok", sso:"ok", dd:"ok", meo:"selten", geo:"selten", mond:"selten", tief:"selten", mars:"selten", venus:"selten", jupiter:"nein", saturn:"nein", pluto:"nein", interstellar:"nein", alphacen:"nein"};
 const capOf = (r, bahn) => RAKETEN[r] && RAKETEN[r].leo ? RAKETEN[r].leo*(BAHN_FAKTOR[bahn] || 1) : Infinity;
 function cheapestRocket(massKg, bahn){
   return ["klein","mittel","gross","schwer","super"].find(r => capOf(r, bahn) >= massKg) || "super";
 }
-/* Raumschiff: Antriebe (Isp in s), Tankmodule, Reisezeiten in Monaten [chemisch, nuklear, Ionen] */
+/* Raumschiff: Antriebe (Isp in s, tag: 0 heute, 1 in Entwicklung, 2 Zukunft, 3 Science-Fiction),
+   gen = Strom, den der Antrieb selbst erzeugt (Reaktor), spiral = Monate zum langsamen Hinaus-/Hineinspiralen bei schwachem Schub */
+const SH_TAG = ["heute verfügbar", "in Entwicklung", "Zukunftstechnik", "Science-Fiction"];
 const SH_ANTRIEB = {
-  chem:    {name:"Chemisch", sub:"starker Schub, kurze Brenndauer – braucht sehr viel Treibstoff", isp:450, mass:15000, power:500, cost:800e6, idx:0},
-  nuklear: {name:"Nuklear-thermisch", sub:"ein Reaktor heizt Wasserstoff auf – doppelt so sparsam, kürzere Reisen", isp:900, mass:25000, power:2000, cost:3e9, idx:1},
-  ionen:   {name:"Ionenantrieb", sub:"extrem sparsam, aber schwach – braucht riesige Solarflügel und lange Reisen", isp:3000, mass:20000, power:250000, cost:1.5e9, idx:2}
+  chem:    {name:"Chemisch", sub:"starker Schub, kurze Brenndauer – braucht sehr viel Treibstoff", isp:450, mass:15000, power:500, gen:0, cost:800e6, fuelCost:6, spiral:0, tag:0},
+  ionen:   {name:"Ionenantrieb (solar)", sub:"extrem sparsam, aber schwach – braucht riesige Solarflügel und Monate zum Beschleunigen", isp:3000, mass:20000, power:250000, gen:0, cost:1.5e9, fuelCost:20, spiral:6, tag:0},
+  nuklear: {name:"Nuklear-thermisch", sub:"ein Reaktor heizt Wasserstoff auf – doppelt so sparsam wie chemisch", isp:900, mass:25000, power:2000, gen:25000, cost:3e9, fuelCost:8, spiral:0, tag:1},
+  nep:     {name:"Nuklear-elektrisch", sub:"ein Reaktor liefert Strom für Ionentriebwerke – sparsam und unabhängig von der Sonne", isp:6000, mass:60000, power:0, gen:200000, cost:8e9, fuelCost:20, spiral:3, tag:1},
+  plasma:  {name:"Plasma (VASIMR)", sub:"Radiowellen heizen Plasma auf Millionen Grad – Schub und Sparsamkeit einstellbar", isp:5000, mass:40000, power:0, gen:100000, cost:6e9, fuelCost:10, spiral:2, tag:1},
+  segel:   {name:"Riesen-Sonnensegel", sub:"ein Segel so groß wie eine Stadt – braucht keinen Treibstoff, wird aber weit draußen sehr langsam", isp:0, mass:30000, power:0, gen:0, cost:5e9, fuelCost:0, spiral:4, tag:2, segel:true},
+  fusion:  {acc:0.1, name:"Fusionsantrieb", sub:"verschmilzt Wasserstoff wie die Sonne – 200-mal sparsamer als chemisch", isp:100000, mass:200000, power:0, gen:1e6, cost:50e9, fuelCost:1000, spiral:0, tag:2},
+  antimaterie: {acc:1, name:"Antimaterie", sub:"Materie und Antimaterie zerstrahlen – der stärkste denkbare Raketenantrieb", isp:1e7, mass:100000, power:0, gen:5e6, cost:500e9, fuelCost:5000, spiral:0, tag:2},
+  warp:    {name:"Warp-Antrieb", sub:"krümmt den Raum und reist schneller als das Licht – nur in Filmen", isp:0, mass:500000, power:0, gen:1e7, cost:5e12, fuelCost:0, spiral:0, tag:3, warp:true}
 };
+const SH_STUFEN = ["chem", "nuklear", "nep", "fusion", "antimaterie"]; // Reihenfolge, in der die KI aufrüstet
 const TANK = {name:"Tankmodul", sub:"50 t Treibstoff", dry:5000, fuel:50000, cost:150e6};
-const SH_DV = {leo:[500,0], sso:[600,0], dd:[600,0], meo:[3000,1500], geo:[4000,1500], mond:[4000,1000], mars:[6000,3000], venus:[4000,3500], tief:[5000,3000], jupiter:[15000,8000], interstellar:[60000,60000]};
-const SH_TIME = {leo:[0,0,0], sso:[0,0,0], dd:[0,0,0], meo:[0.1,0.1,2], geo:[0.2,0.2,4], mond:[0.1,0.1,3], mars:[7,4,10], venus:[5,3,8], tief:[12,8,18], jupiter:[30,20,40], interstellar:[1e6,1e6,1e6]};
-const ZIEL = {leo:"die Erdumlaufbahn", sso:"die Erdumlaufbahn", dd:"die Erdumlaufbahn", meo:"die mittlere Erdbahn", geo:"die geostationäre Bahn", mond:"den Mond", mars:"den Mars", venus:"die Venus", tief:"einen Asteroiden", jupiter:"den Jupiter", interstellar:"den interstellaren Raum"};
+const MAGSCHILD = {name:"Magnetischer Strahlenschild", sub:"supraleitende Spulen lenken geladene Teilchen ab wie das Erdmagnetfeld – Zukunftstechnik", mass:30000, power:50000, cost:4e9};
+const SCHLAF = {name:"Kälteschlaf", sub:"die Crew schläft auf der Reise in gekühlten Kammern, altert kaum und isst fast nichts – Zukunftstechnik", mass:1500, power:300, cost:150e6};
+/* Mindest-Δv [hin, zurück] in m/s und Weg: [Strecke in m, Monate auf der sparsamsten Bahn] */
+const SH_DV = {leo:[500,0], sso:[600,0], dd:[600,0], meo:[3000,1500], geo:[4000,1500], mond:[4000,1000], mars:[6000,3000], venus:[4000,3500], tief:[5000,3000], jupiter:[15000,8000], saturn:[18000,10000], pluto:[20000,15000], interstellar:[20000,20000], alphacen:[30000,30000]};
+const SH_WEG = {meo:[2e7,0.1], geo:[3.6e7,0.2], mond:[3.84e8,0.1], venus:[4.1e10,5], mars:[7.8e10,8.5], tief:[1e11,12], jupiter:[6.3e11,32], saturn:[1.28e12,72], pluto:[5.9e12,114], interstellar:[1.8e13,420], alphacen:[4.13e16,4.13e16/17000/2.63e6]};
+const MON = 2.63e6, C_LIGHT = 3e8;
+function shipTrip(c, EN, mass, fuel){
+  const dvs = SH_DV[c.bahn] || [500, 0], legs = c.rueckflug ? 2 : 1, W = SH_WEG[c.bahn], B = BAHNEN[c.bahn] || {};
+  const dvNeed = dvs[0] + (c.rueckflug ? dvs[1] : 0), sp = B.deep || c.bahn === "geo" || c.bahn === "meo" ? EN.spiral*(B.deep ? 1 : 0.5) : 0;
+  if (EN.warp) return {dvNeed, dvHave:Infinity, travel: W ? Math.max(0.03, W[0]/(10*C_LIGHT)/MON) : 0.03, rate:0};
+  if (EN.segel){
+    const auM = (1 + Math.min(B.au || 1, 1e4))/2, rate = 5000/(auM*auM); // m/s pro Jahr
+    const t = W ? Math.max(W[1], (dvNeed/legs)/rate*12) : (dvNeed/legs)/rate*12;
+    return {dvNeed, dvHave:dvNeed, travel:t + sp, rate};
+  }
+  const dvHave = fuel > 0 ? EN.isp*9.81*Math.log(mass/Math.max(1, mass - fuel)) : 0;
+  const extra = Math.max(0, dvHave - dvNeed)/legs;
+  let travel = sp;
+  if (W){ const vh = W[0]/(W[1]*MON), v = Math.min(0.3*C_LIGHT, vh + extra/2); travel += Math.max(W[0]/v, EN.acc ? 2*Math.sqrt(W[0]/EN.acc) : 0)/MON; }
+  return {dvNeed, dvHave, travel, rate:0};
+}
+const durStr = m => m < 1 ? nf0.format(Math.max(1, m*30.4)) + (Math.round(m*30.4) <= 1 ? " Tag" : " Tage") : m < 24 ? monStr(m) : nf0.format(m/12) + " Jahre";
+const ZIEL = {leo:"in die Erdumlaufbahn", sso:"in die Erdumlaufbahn", dd:"in die Erdumlaufbahn", meo:"in die mittlere Erdbahn", geo:"in die geostationäre Bahn", mond:"zum Mond", mars:"zum Mars", venus:"zur Venus", tief:"zu einem Asteroiden", jupiter:"zum Jupiter", saturn:"zum Saturn", pluto:"zum Pluto", interstellar:"in den interstellaren Raum", alphacen:"nach Alpha Centauri"};
 const ST_NUTZ = ["cam","multi","hyper","iot","sci","teleskop","relay"]; // Nutzlasten, die außen an einer Station sitzen können
 const SCHWENK = {name:"Schwenkplattform für Nutzlasten", sub:"richtet Kameras und Teleskop unabhängig von der Station auf 0,01° genau aus", mass:800, power:500, cost:60e6};
 const KERN = {name:"Kernmodul", sub:"Steuerung, Lageregelung, Funk und Triebwerke zur Bahnhaltung · 80 m³", mass:22000, vol:80, power:8000, cost:1.2e9, ports:1};
@@ -535,6 +567,8 @@ const PRESETS = {
   teleskop: {label:"Weltraumteleskop", sub:"beobachtet Sterne und Galaxien", wish:"Ein Teleskop, das Sterne und Galaxien beobachtet"},
   rueckkehr: {label:"Rückkehrkapsel", sub:"Experimente kommen zurück", wish:"Ein Satellit mit Weltraumlabor, der die Proben in einer Kapsel zurück zur Erde bringt"},
   marsschiff: {label:"Marsschiff", sub:"4 Astronauten hin und zurück", wish:"Ein Raumschiff, das 4 Astronauten zum Mars und zurück bringt"},
+  saturnschiff: {label:"Saturn-Kreuzer", sub:"6 Personen, Fusionsantrieb", wish:"Ein Raumschiff mit Fusionsantrieb, das 6 Personen zum Saturn und zurück bringt"},
+  sternenschiff: {label:"Sternenschiff", sub:"Antimaterie und Kälteschlaf nach Alpha Centauri", wish:"Ein Raumschiff mit Antimaterie und Kälteschlaf, das 4 Personen zu Alpha Centauri bringt, nur hin"},
   mondschiff: {label:"Mondschiff", sub:"3 Astronauten, 1 Monat am Mond", wish:"Ein Raumschiff, das 3 Astronauten zum Mond und zurück bringt"},
   ministation: {label:"Mini-Raumstation", sub:"für 2 Astronauten", wish:"Eine kleine Raumstation für 2 Astronauten"},
   forschstation: {label:"Forschungsstation", sub:"6 Personen, Labor, Kuppel, Teleskop", wish:"Eine Forschungsstation mit Labor, Aussichtskuppel, Erdbeobachtungskamera und Teleskop für 6 Astronauten"},
@@ -579,9 +613,11 @@ function computeStation(c){
   const beta = B.beta*D2R, bstar = Math.asin(RE/r);
   let fe = 0; if (beta < bstar && !deep && !ship) fe = Math.acos(Math.min(1, Math.sqrt(h*h + 2*RE*h)/(r*Math.cos(beta))))/Math.PI;
   const EN = SH_ANTRIEB[c.sh_antrieb] || SH_ANTRIEB.chem;
-  const travel = ship ? (SH_TIME[c.bahn] || [0,0,0])[EN.idx] : 0, legs = ship && c.rueckflug ? 2 : 1;
-  const missionMonths = ship ? travel*legs + Math.max(0, c.aufenthalt || 0) : c.jahre*12;
-  const yrs = ship ? Math.max(0.1, missionMonths/12) : c.jahre, crew = c.crew || 0, cnt = k => Math.max(0, Math.round(c["m_" + k] || 0));
+  const legs = ship && c.rueckflug ? 2 : 1, stay = Math.max(0, c.aufenthalt || 0), schlaf = ship && !!c.schlaf, magS = ship && !!c.magschild;
+  let travel = 0, missionMonths = ship ? 0 : c.jahre*12, trip = null;
+  let yrs = c.jahre;
+  const crew = c.crew || 0, cnt = k => Math.max(0, Math.round(c["m_" + k] || 0));
+  const engSeg = ship ? Math.max(1, Math.ceil(EN.mass/50000)) : 0;
   const LV = LEBEN[c.leben] || LEBEN.teil;
   const parts = [];
   const add = (cat, name, mass, vol, power, cost, n) => { if (n > 0) parts.push({cat, name:(n > 1 ? n + " × " : "") + name, mass:mass*n, vol:vol*n, power:power*n, cost:cost*n, internal:false, n}); };
@@ -593,13 +629,13 @@ function computeStation(c){
   if (c.strahl) add("waerme", "Strahlenschutz-Wände aus Wasser", 8000, 0, 0, 150e6, 1);
   let fuel = 0, supplyT = 0, supplyCap = 0;
   if (ship){
-    add("antrieb", "Antriebsmodul: " + EN.name, EN.mass, 0, EN.power, EN.cost, 1);
+    add("antrieb", "Antriebsmodul: " + EN.name + (engSeg > 1 ? " (in " + engSeg + " Teilen gestartet)" : ""), EN.mass, 0, EN.power, EN.cost, 1);
     add("antrieb", TANK.name + " (" + TANK.sub + ")", TANK.dry, 0, 0, TANK.cost, cnt("tank"));
-    fuel = cnt("tank")*TANK.fuel;
-    if (fuel > 0) add("antrieb", "Treibstoff (" + nf0.format(fuel/1000) + " t)", fuel, 0, 0, fuel*6, 1);
-    supplyT = crew*LV.kgpd*missionMonths*30.4/1000 + 1;
+    fuel = EN.segel || EN.warp ? 0 : cnt("tank")*TANK.fuel;
+    if (fuel > 0) add("antrieb", "Treibstoff (" + nf0.format(fuel/1000) + " t)", fuel, 0, 0, fuel*EN.fuelCost, 1);
+    if (magS) add("waerme", MAGSCHILD.name, MAGSCHILD.mass, 0, MAGSCHILD.power, MAGSCHILD.cost, 1);
+    if (schlaf && crew > 0) add("lage", SCHLAF.name + "-Kammern", SCHLAF.mass, 0, SCHLAF.power, SCHLAF.cost, crew);
     supplyCap = 3 + cnt("lager")*15 + (cnt("wohn") + cnt("wohnauf"))*2;
-    if (supplyT > 0) add("lage", "Vorräte für " + monStr(missionMonths) + " (Essen, Wasser, Sauerstoff, Ersatzteile)", supplyT*1000, 0, 0, supplyT*200000, 1);
   }
   const sNutz = ST_NUTZ.filter(x => c["nutz_" + x]);
   if (sNutz.length){
@@ -611,12 +647,23 @@ function computeStation(c){
   let A_extra = 0;
   xs.forEach(x => { const E = EXTRA[x.t]; if (!E) return; const s3 = (x.s || [1,1,1]).map(v => Math.max(0.05, Math.abs(+v) || 1)); const t = E.f(s3); add("eigen", "Eigenes Teil: " + E.name, t[0], 0, 0, t[3], 1); if (E.solar) A_extra += E.solar(s3); });
 
+  if (ship){
+    const supFor = m => crew*LV.kgpd*m*30.4/1000 + 1;
+    const awake = t => t*legs*(schlaf ? 0.15 : 1) + stay;
+    const m0 = parts.reduce((s,p) => s + p.mass, 0);
+    trip = shipTrip(c, EN, m0 + supFor(awake(1))*1000, fuel);
+    supplyT = supFor(awake(trip.travel));
+    trip = shipTrip(c, EN, m0 + supplyT*1000, fuel);
+    travel = trip.travel; missionMonths = travel*legs + stay; supplyT = supFor(awake(travel)); yrs = Math.max(0.1, missionMonths/12);
+    add("lage", "Vorräte für " + durStr(missionMonths) + (schlaf ? " (Crew schläft unterwegs)" : "") + " – Essen, Wasser, Sauerstoff, Ersatzteile", supplyT*1000, 0, 0, supplyT*200000, 1);
+  }
   const mass = parts.reduce((s,p) => s + p.mass, 0), vol = parts.reduce((s,p) => s + p.vol, 0);
-  const heaviest = Math.max(KERN.mass, ...Object.entries(MODULE).filter(([k]) => cnt(k) > 0).map(([,m]) => m.mass), ship ? EN.mass : 0, ship && cnt("tank") ? TANK.dry + TANK.fuel : 0);
+  const heaviest = Math.max(KERN.mass, ...Object.entries(MODULE).filter(([k]) => cnt(k) > 0).map(([,m]) => m.mass), ship ? EN.mass/engSeg : 0, ship && cnt("tank") ? TANK.dry + (fuel ? TANK.fuel : 0) : 0, magS ? MAGSCHILD.mass : 0);
   const AU = B.au || 1, degr = Math.pow(0.985, yrs);
   const P_sun = (cnt("solar")*MODULE.solar.kw*1000*STIER[stierOf(c)].eta/0.28 + A_extra*S0*ETA)*degr/(AU*AU);
-  const P_gen = P_sun*(1 - fe);
-  const P_cons = parts.reduce((s,p) => s + p.power, 0) + crew*1000;
+  const P_reak = ship ? EN.gen : 0;
+  const P_gen = P_sun*(1 - fe) + P_reak;
+  const P_cons = parts.reduce((s,p) => s + p.power, 0) + crew*(schlaf ? 400 : 1000);
   const ratio = P_gen/Math.max(1, P_cons);
   const cool = cnt("radiator")*MODULE.radiator.kw*1000 + 8000;
   const ports = KERN.ports + cnt("knoten")*MODULE.knoten.ports;
@@ -646,8 +693,8 @@ function computeStation(c){
       pp >= okV ? "" : "Ein aufblasbares Wohnmodul bringt viel Platz bei wenig Gewicht.");
   }
   T_("energie", "Strom", ratio >= 1.2 ? "ok" : ratio >= 1 ? "warn" : "fail", nf1.format(P_gen/1000) + " / " + nf1.format(P_cons/1000) + " kW",
-    "Die Solarflügel liefern im Mittel " + nf1.format(P_gen/1000) + " kW (nach Alterung" + (fe > 0 ? ", " + pct(fe) + " der Zeit im Erdschatten" : "") + "). Module, Lebenserhaltung und Besatzung brauchen " + nf1.format(P_cons/1000) + " kW.",
-    ratio >= 1.2 ? "" : "Ein weiteres Solarflügel-Paar anbauen.");
+    "Die Solarflügel liefern im Mittel " + nf1.format(P_sun*(1 - fe)/1000) + " kW (nach Alterung" + (fe > 0 ? ", " + pct(fe) + " der Zeit im Erdschatten" : "") + (AU > 1.3 ? ", hier draußen kommt nur " + pct(1/(AU*AU)) + " des Sonnenlichts an" : "") + ")." + (P_reak ? " Der Reaktor des Antriebs liefert zusätzlich " + nf1.format(P_reak/1000) + " kW – auch fern der Sonne." : "") + " Module, Antrieb, Lebenserhaltung und Besatzung brauchen " + nf1.format(P_cons/1000) + " kW.",
+    ratio >= 1.2 ? "" : ship && AU > 3 && !P_reak ? "So weit draußen hilft nur ein Antrieb mit eigenem Reaktor (nuklear-elektrisch, Fusion)." : "Ein weiteres Solarflügel-Paar anbauen.");
   T_("kuehlung", "Kühlung", cool >= P_cons*1.1 ? "ok" : cool >= P_cons ? "warn" : "fail", nf0.format(cool/1000) + " / " + nf0.format(P_cons/1000) + " kW",
     "Fast aller Strom wird in der Station zu Wärme. Im Vakuum kann sie nur über Radiatoren abgestrahlt werden: " + nf0.format(cool/1000) + " kW Kühlleistung für " + nf0.format(P_cons/1000) + " kW Wärme.",
     cool >= P_cons*1.1 ? "" : "Einen weiteren Radiator anbauen.");
@@ -661,10 +708,22 @@ function computeStation(c){
     "Pro Jahr braucht die Station etwa " + nf1.format(needT) + " t: " + (crew ? nf1.format(crew*LV.kgpd*365/1000) + " t Essen, Wasser und Sauerstoff, " : "") + nf1.format(reboost) + " t Treibstoff, um die Bahnhöhe zu halten, und Ersatzteile. " + (c.fluege || 0) + " Frachtflüge bringen je 3 t.",
     capT >= needT*1.1 ? "" : (c.leben === "offen" ? "Wasser-Recycling spart viel Nachschub." : "Mehr Frachtflüge pro Jahr einplanen" + (c.leben === "teil" && crew > 4 ? " oder ein Gewächshaus einbauen." : ".")));
   if (crew > 0 && ship){
-    const dRate = (deep ? 0.6 : 0.2)*(c.strahl ? 0.6 : 1), dose = dRate*missionMonths/12;
-    T_("strahlung", "Strahlung für die Crew", dose <= 0.3 ? "ok" : dose <= 0.6 ? "warn" : "fail", nf0.format(dose*1000) + " mSv in " + nf0.format(missionMonths) + (Math.round(missionMonths) === 1 ? " Monat" : " Monaten"),
-      "Niemand wird abgelöst – die Crew bleibt die ganze Reise an Bord und bekommt etwa " + nf0.format(dose*1000) + " Millisievert ab. Für ein ganzes Astronautenleben gelten höchstens 600 mSv.",
-      dose <= 0.3 ? "" : !c.strahl ? "Strahlenschutz-Wände aus Wasser (ein Sturmschutzraum) einbauen." : c.sh_antrieb !== "nuklear" ? "Ein nuklear-thermischer Antrieb verkürzt die Reise." : "Kürzer am Ziel bleiben.");
+    const dRate = (deep ? 0.6 : 0.2)*(c.strahl ? 0.6 : 1)*(magS ? 0.1 : 1), dose = dRate*(travel*legs*(schlaf ? 0.3 : 1) + stay)/12;
+    const faster = SH_STUFEN[SH_STUFEN.indexOf(c.sh_antrieb) + 1];
+    T_("strahlung", "Strahlung für die Crew", dose <= 0.3 ? "ok" : dose <= 0.6 ? "warn" : "fail", nf0.format(dose*1000) + " mSv in " + durStr(missionMonths).replace("Monate", "Monaten").replace("Jahre", "Jahren"),
+      "Niemand wird abgelöst – die Crew bleibt die ganze Reise an Bord und bekommt etwa " + nf0.format(dose*1000) + " Millisievert ab. Für ein ganzes Astronautenleben gelten höchstens 600 mSv." + (magS ? " Der Magnetschild hält 90 % der Teilchen ab." : "") + (schlaf ? " In den Schlafkammern liegt die Crew tief im Schiff, umgeben von Wasser." : ""),
+      dose <= 0.3 ? "" : !c.strahl ? "Strahlenschutz-Wände aus Wasser (ein Sturmschutzraum) einbauen." : faster && SH_STUFEN.includes(c.sh_antrieb) ? "Ein stärkerer Antrieb (" + SH_ANTRIEB[faster].name + ") verkürzt die Reise." : !magS ? "Einen magnetischen Strahlenschild einbauen." : "Kürzer am Ziel bleiben.");
+    const ageY = (travel*legs*(schlaf ? 0.1 : 1) + stay)/12;
+    T_("lebenszeit", "Lebenszeit der Crew", ageY <= 10 ? "ok" : ageY <= 30 ? "warn" : "fail", (schlaf ? "altert " : "") + nf1.format(ageY).replace(",0", "") + " Jahre",
+      "Die ganze Mission dauert " + durStr(missionMonths) + "." + (schlaf ? " Im Kälteschlaf altert die Crew unterwegs kaum – sie wird nur um etwa " + nf1.format(ageY) + " Jahre älter." : "") +
+      (ageY <= 10 ? " Das schafft eine Crew gut." : ageY <= 30 ? " Die Crew verbringt einen großen Teil ihres Lebens an Bord – nur wenige würden das mitmachen." : " Das ist länger als ein ganzes Berufsleben – die Crew würde das Ziel kaum erreichen oder nie zurückkommen."),
+      ageY <= 10 ? "" : faster && SH_STUFEN.includes(c.sh_antrieb) ? "Ein schnellerer Antrieb (" + SH_ANTRIEB[faster].name + ") oder mehr Treibstoff verkürzt die Reise." : !schlaf ? "Kälteschlaf für die Reise – oder ein näheres Ziel." : "Ein näheres Ziel oder kein Rückflug.");
+    const tg = Math.max(EN.tag, magS ? 2 : 0, schlaf ? 2 : 0);
+    const techL = [[EN.name, EN.tag]].concat(magS ? [[MAGSCHILD.name, 2]] : [], schlaf ? [[SCHLAF.name, 2]] : []).filter(x => x[1] > 0);
+    T_("technik", "Technik", tg === 0 ? "ok" : tg === 3 ? "fail" : "warn", SH_TAG[tg],
+      tg === 0 ? "Alles an Bord gibt es heute schon." : techL.map(x => x[0] + ": " + SH_TAG[x[1]]).join(" · ") + ". " +
+      (tg === 1 ? "Funktioniert in Labortests, ist aber noch nie mit Menschen geflogen – rechne mit Verzögerungen und höheren Kosten." : tg === 2 ? "Die Physik erlaubt es, gebaut hat es noch niemand – vielleicht in einigen Jahrzehnten. Die Kosten sind nur grob geschätzt." : "Nach heutiger Physik ist das nicht möglich – ein Gedankenspiel, kein Bauplan."),
+      tg === 3 ? "Einen echten Antrieb wählen, z. B. Antimaterie oder Fusion." : "");
     T_("truemmer", "Schutz vor Trümmern", c.schild ? "ok" : "warn", c.schild ? "Schilde vorhanden" : "ungeschützt",
       "Winzige Meteoriten fliegen mit bis zu 70 km/s durchs Sonnensystem. Ohne Schutzschilde kann schon ein Sandkorn eine Wand durchschlagen.",
       c.schild ? "" : "Whipple-Schilde (mehrlagige Schutzbleche) anbringen.");
@@ -693,14 +752,19 @@ function computeStation(c){
   }
   let dvHave = 0, dvNeed = 0;
   if (ship){
-    const dry = mass - fuel; dvHave = EN.isp*9.81*Math.log(mass/Math.max(1, dry));
-    const dvs = SH_DV[c.bahn] || [500, 0]; dvNeed = dvs[0] + (c.rueckflug ? dvs[1] : 0);
-    const impossible = c.bahn === "interstellar";
-    T_("reise", "Reise zum Ziel", impossible ? "fail" : dvHave >= dvNeed*1.1 ? "ok" : dvHave >= dvNeed ? "warn" : "fail", nf0.format(dvHave) + " / " + nf0.format(dvNeed) + " m/s",
-      impossible ? "Bis zu anderen Sternen bräuchte ein Raumschiff mit heutiger Technik Zehntausende Jahre – das schafft keine Crew." :
-      "Hinflug zu " + (ZIEL[c.bahn] || "dem Ziel") + (c.rueckflug ? " und zurück" : "") + ": nötig sind etwa " + nf0.format(dvNeed) + " m/s Geschwindigkeitsänderung. Mit " + nf0.format(fuel/1000) + " t Treibstoff und dem Antrieb »" + EN.name + "« schafft das Raumschiff " + nf0.format(dvHave) + " m/s (Raketengleichung: je sparsamer der Antrieb, desto weiter). " +
-      (travel ? "Eine Strecke dauert etwa " + (travel < 1 ? nf0.format(travel*30) + " Tage" : nf0.format(travel) + " Monate") + ", die ganze Mission " + nf0.format(missionMonths) + (Math.round(missionMonths) === 1 ? " Monat." : " Monate.") : ""),
-      impossible ? "Wähle ein Ziel im Sonnensystem." : dvHave >= dvNeed*1.1 ? "" : cnt("tank") < 12 ? "Ein weiteres Tankmodul anbauen" + (c.sh_antrieb === "chem" ? " – oder einen nuklear-thermischen Antrieb wählen, der braucht nur halb so viel Treibstoff." : ".") : c.sh_antrieb === "chem" ? "Ein nuklear-thermischer Antrieb braucht nur halb so viel Treibstoff." : "Ein näheres Ziel oder kein Rückflug.");
+    dvHave = trip.dvHave; dvNeed = trip.dvNeed;
+    const reach = (ZIEL[c.bahn] || "zum Ziel") + (c.rueckflug ? " und zurück" : "");
+    const tTxt = travel ? " Eine Strecke dauert etwa " + durStr(travel) + ", die ganze Mission " + durStr(missionMonths) + "." : "";
+    if (EN.warp) T_("reise", "Reise zum Ziel", "ok", "überlichtschnell",
+      "Ein Warp-Antrieb würde den Raum vor dem Schiff zusammenziehen und dahinter ausdehnen – so ginge es mit zehnfacher Lichtgeschwindigkeit " + reach + "." + tTxt, "");
+    else if (EN.segel){ const ok = trip.rate >= 1500, mid = trip.rate >= 300;
+      T_("reise", "Reise zum Ziel", ok ? "ok" : mid ? "warn" : "fail", nf0.format(trip.rate) + " m/s pro Jahr",
+        "Das Segel braucht keinen Treibstoff: Sonnenlicht drückt es an, im Mittel um " + nf0.format(trip.rate) + " m/s pro Jahr. Für den Flug " + reach + " sind " + nf0.format(dvNeed) + " m/s nötig." + tTxt + (mid ? "" : " So weit draußen ist das Sonnenlicht zu schwach."),
+        ok ? "" : "Ein Antrieb mit Reaktor (nuklear-elektrisch oder Fusion) – das Segel funktioniert nur nah an der Sonne gut."); }
+    else { const nxt = SH_STUFEN[SH_STUFEN.indexOf(c.sh_antrieb) + 1] || (c.sh_antrieb === "antimaterie" ? null : "nep");
+      T_("reise", "Reise zum Ziel", dvHave >= dvNeed*1.1 ? "ok" : dvHave >= dvNeed ? "warn" : "fail", nf0.format(Math.min(dvHave, 9.99e8)) + " / " + nf0.format(dvNeed) + " m/s",
+        "Für den Flug " + reach + " sind mindestens " + nf0.format(dvNeed) + " m/s Geschwindigkeitsänderung nötig. Mit " + nf0.format(fuel/1000) + " t Treibstoff und dem Antrieb »" + EN.name + "« schafft das Raumschiff " + nf0.format(Math.min(dvHave, 9.99e8)) + " m/s (Raketengleichung: je sparsamer der Antrieb, desto weiter). Was übrig bleibt, macht die Reise schneller." + (EN.spiral && deep ? " Wegen des schwachen Schubs dauert allein das Beschleunigen etwa " + monStr(EN.spiral) + "." : "") + (EN.acc ? " Der Antrieb schiebt ununterbrochen mit " + nf2.format(EN.acc/9.81).replace(/0$/, "") + " g – die halbe Strecke beschleunigen, die halbe bremsen." : "") + tTxt,
+        dvHave >= dvNeed*1.1 ? "" : cnt("tank") < 24 ? "Ein weiteres Tankmodul anbauen" + (nxt ? " – oder einen sparsameren Antrieb (" + SH_ANTRIEB[nxt].name + ") wählen." : ".") : nxt ? "Ein sparsamerer Antrieb: " + SH_ANTRIEB[nxt].name + "." : "Ein näheres Ziel oder kein Rückflug."); }
   }
   const far = deep && c.bahn !== "mond";
   if (!ship) T_("bahn", "Erreichbarkeit", far ? "fail" : deep ? "warn" : "ok", far ? "zu weit weg" : deep ? "Mondbahn" : "Erdumlaufbahn",
@@ -711,7 +775,7 @@ function computeStation(c){
 
   /* Kosten */
   const hw = parts.reduce((s,p) => s + p.cost, 0);
-  const nLaunch = 1 + Object.entries(MODULE).reduce((s,[k,m]) => s + (k === "solar" || k === "radiator" ? Math.ceil(cnt(k)/3) : k === "kuppel" ? 0 : cnt(k)), 0) + (ship ? 1 + cnt("tank") : 0);
+  const nLaunch = 1 + Object.entries(MODULE).reduce((s,[k,m]) => s + (k === "solar" || k === "radiator" ? Math.ceil(cnt(k)/3) : k === "kuppel" ? 0 : cnt(k)), 0) + (ship ? engSeg + cnt("tank") + (magS ? 1 : 0) : 0);
   const launchPer = RAKETEN[srk].price;
   const launch = nLaunch*launchPer;
   const once = [], run = [];
@@ -725,7 +789,7 @@ function computeStation(c){
   const subOnce = hw + once.reduce((s,x) => s + x.cost, 0);
   once.push({name:"Reserve für Unvorhergesehenes (15 %)", cost:subOnce*0.15, reserve:true});
   const flug = 120e6*(deep ? 3 : 1);
-  if (ship) run.push({name:"Missionsbetrieb und Kontrollzentrum (" + monStr(missionMonths) + ")", cost:150e6*yrs});
+  if (ship) run.push({name:"Missionsbetrieb und Kontrollzentrum (" + durStr(missionMonths) + ")", cost:150e6*yrs});
   else if (c.fluege > 0) run.push({name:(c.fluege) + " Frachtflüge pro Jahr × " + yrs + " J. à " + eur(flug), cost:c.fluege*flug*yrs});
   if (crew > 0 && !ship) run.push({name:"Crew-Flüge: 2 Wechsel pro Jahr × " + crew + " Sitze × " + yrs + " J.", cost:2*crew*55e6*(deep ? 3 : 1)*yrs});
   if (!ship) run.push({name:"Betrieb und Kontrollzentrum (" + yrs + " J.)", cost:150e6*yrs});
@@ -735,7 +799,7 @@ function computeStation(c){
     total <= c.budget ? "Passt: es bleiben " + eur(c.budget - total) + " Luft." : "Das sind " + eur(total - c.budget) + " mehr als dein Budget.",
     total <= c.budget*0.9 ? "" : "Weniger Module, eine kleinere Besatzung oder ein aufblasbares Wohnmodul statt mehrerer fester sparen viel.");
 
-  const len = 13 + 9*(cnt("wohn") + cnt("wohnauf") + cnt("labor") + cnt("lager")) + 6*cnt("knoten") + (ship ? 8 + 5*Math.ceil(cnt("tank")/4) : 0);
+  const len = 13 + 9*(cnt("wohn") + cnt("wohnauf") + cnt("labor") + cnt("lager")) + 6*cnt("knoten") + (ship ? 8 + 5*Math.ceil((fuel ? cnt("tank") : 0)/4) + ({segel:6, antimaterie:5.5, fusion:2.5}[c.sh_antrieb] || 0) + (magS ? 1.6 : 0) : 0);
   const F = Object.assign({}, FORMATE[ship ? "SH" : "ST"], {d:[len*10, 45, 45]});
   return {station:true, ship, missionMonths, travel, dvHave, dvNeed, supplyT, supplyCap, c, F, B, cube:false, k:"st", h, T, fe, parts, dry:mass, harness:0, mass, massRes:mass*1.1, vol, volMax:Math.max(1, crew*30), volUnit:" m³",
     P_sun, P_gen, P_cons, ratio, dod, E_ecl, sim, emptyAt, minSoc, contact:0, downGB:1, needGB:1, best:1, bestKey:null, acc:1, needAcc:180, f1:20, fReq:10, L_nat:Infinity,
@@ -1192,11 +1256,13 @@ form.innerHTML =
   '</div>' +
   '<div class="sec" data-group="sh"><h2>Raumschiff-Reise</h2>' +
     '<p class="note">Das Ziel wählst du oben unter »Umlaufbahn«. Unterwegs wird niemand abgelöst und nichts nachgeliefert – alles muss an Bord sein.</p>' +
-    seg("sh_antrieb", Object.entries(SH_ANTRIEB).map(([k,a]) => [k, a.name, "Isp " + a.isp + " s"]), "Antrieb") +
+    '<div class="field"><span class="lbl">Antrieb</span>' + optRadio("sh_antrieb", Object.fromEntries(Object.entries(SH_ANTRIEB).map(([k,a]) => [k, {name:a.name, sub:SH_TAG[a.tag] + " · " + a.sub}])), "shx") + '</div>' +
     '<p class="note" id="shAntriebInfo"></p>' +
-    range("m_tank", "Tankmodule (je 50 t Treibstoff)", 0, 12, 1, "") +
+    range("m_tank", "Tankmodule (je 50 t Treibstoff)", 0, 24, 1, "") +
     check1("rueckflug", {name:"Hin- und Rückflug", sub:"die Crew kommt wieder nach Hause"}) +
-    range("aufenthalt", "Aufenthalt am Ziel", 0, 24, 1, "Monate") +
+    range("aufenthalt", "Aufenthalt am Ziel", 0, 120, 1, "Monate") +
+    '<p class="note">Für lange Reisen:</p>' +
+    check1("magschild", MAGSCHILD) + check1("schlaf", SCHLAF) +
   '</div>' +
   '<div class="sec" data-group="st"><h2>Raumstation</h2>' +
     range("crew", "Besatzung", 0, 12, 1, "") +
@@ -1235,7 +1301,7 @@ document.getElementById("presets").innerHTML = Object.entries(PRESETS).map(([k,p
 
 const NUMS = ["hoehe","jahre","segmente","batterie","fluegel"];
 const STNUMS = ["crew","fluege","aufenthalt","m_tank", ...Object.keys(MODULE).map(k => "m_" + k)];
-const BOOLS = ["koerper","stern","segel","heizung","rtg","swingby","schild","strahl","schwenk","rueckflug", ...Object.keys(FUNK).map(x => "funk_" + x), ...Object.keys(NUTZ).map(x => "nutz_" + x)];
+const BOOLS = ["koerper","stern","segel","heizung","rtg","swingby","schild","strahl","schwenk","rueckflug","magschild","schlaf", ...Object.keys(FUNK).map(x => "funk_" + x), ...Object.keys(NUTZ).map(x => "nutz_" + x)];
 const RADIOS = ["bahn","format","fluegel","boden","lage","antrieb","obc","haut","bauweise","sonne","start","leben","rakete","sh_antrieb"];
 let MANUAL = {d:{}, x:[]};
 let KOSTEN = "alles";
@@ -1262,7 +1328,7 @@ function batteryRange(fmt){
   if (k === "p"){ b.min = 2; b.max = 40; b.step = 1; } else if (k === "c"){ b.min = 10; b.max = 250; b.step = 5; } else { b.min = 200; b.max = 5000; b.step = 50; }
 }
 function writeForm(c){
-  c = Object.assign({sh_antrieb:"chem", m_tank:2, rueckflug:true, aufenthalt:2, rakete: isStn(c.format) ? "gross" : "mitflug", sonne:"none", boden:"eigen", bauweise:"selbst", start:"kauf", leben:"teil", crew:4, fluege:4, m_wohn:1, m_wohnauf:0, m_labor:1, m_knoten:1, m_lager:1, m_kuppel:0, m_solar:2, m_radiator:2, schild:true, strahl:false}, c);
+  c = Object.assign({sh_antrieb:"chem", m_tank:2, rueckflug:true, aufenthalt:2, magschild:false, schlaf:false, rakete: isStn(c.format) ? "gross" : "mitflug", sonne:"none", boden:"eigen", bauweise:"selbst", start:"kauf", leben:"teil", crew:4, fluege:4, m_wohn:1, m_wohnauf:0, m_labor:1, m_knoten:1, m_lager:1, m_kuppel:0, m_solar:2, m_radiator:2, schild:true, strahl:false}, c);
   MANUAL = c.manuell && typeof c.manuell === "object" ? JSON.parse(JSON.stringify({d:c.manuell.d || {}, x:c.manuell.x || []})) : {d:{}, x:[]};
   const el = form.elements;
   el.titel.value = c.titel;
@@ -1291,6 +1357,8 @@ function refreshHints(c, R){
   form.querySelectorAll("[data-hint]").forEach(n => {
     const [key, v] = n.dataset.hint.split(":");
     if (key === "none"){ n.textContent = ""; return; }
+    if (key === "shx"){ const a = SH_ANTRIEB[v]; n.innerHTML = eur(a.cost).replace(" €","&nbsp;€") + "<br>" + (a.warp ? "∞" : a.segel ? "ohne&nbsp;Treibstoff" : "Isp&nbsp;" + nf0.format(a.isp) + "&nbsp;s"); return; }
+    if (key === "magschild" || key === "schlaf"){ const o = key === "magschild" ? MAGSCHILD : SCHLAF, nn = key === "schlaf" ? Math.max(1, c.crew || 0) : 1; n.innerHTML = eur(o.cost*nn).replace(" €","&nbsp;€"); return; }
     if (key === "koerper"){ const [W,H,D] = R.F.d, A = (W*H*2 + D*H*2)*0.008; n.innerHTML = eur(A*(R.cube ? 230000 : 110000)*R.BW.f).replace(" €","&nbsp;€"); return; }
     const t = tupleFor(key, v, R.k);
     if (!t){ n.textContent = ""; return; }
@@ -1329,9 +1397,10 @@ function refreshHints(c, R){
   form.querySelectorAll('[data-group="stonly"]').forEach(n => n.hidden = c.format !== "ST");
   form.querySelectorAll('[data-group="sh"]').forEach(n => n.hidden = !sh);
   form.querySelector('[data-wrap="jahre"]').hidden = sh;
-  o("m_tank").textContent = c.m_tank + " · " + nf0.format(c.m_tank*50) + " t Treibstoff";
-  o("aufenthalt").textContent = c.aufenthalt + (c.aufenthalt === 1 ? " Monat" : " Monate");
-  { const a = SH_ANTRIEB[c.sh_antrieb] || SH_ANTRIEB.chem, i = document.getElementById("shAntriebInfo"); if (i) i.textContent = a.sub + " · " + eur(a.cost) + (R.ship ? " · Reise: " + (R.travel < 1 ? nf0.format(R.travel*30) + " Tage" : nf0.format(R.travel) + " Monate") + " pro Strecke, Mission " + monStr(R.missionMonths) : ""); }
+  { const a0 = SH_ANTRIEB[c.sh_antrieb] || SH_ANTRIEB.chem; o("m_tank").textContent = c.m_tank + " · " + nf0.format(c.m_tank*50) + " t Treibstoff"; form.querySelector('[data-wrap="m_tank"]').hidden = !!(a0.segel || a0.warp); }
+  o("aufenthalt").textContent = c.aufenthalt < 24 ? c.aufenthalt + (c.aufenthalt === 1 ? " Monat" : " Monate") : c.aufenthalt + " Monate (" + nf1.format(c.aufenthalt/12).replace(",0", "") + " Jahre)";
+  { const al = form.querySelector('label:has(#f-bahn-alphacen)'); if (al) al.hidden = !sh; }
+  { const a = SH_ANTRIEB[c.sh_antrieb] || SH_ANTRIEB.chem, i = document.getElementById("shAntriebInfo"); if (i) i.textContent = a.name + ": " + eur(a.cost) + (a.gen ? " · Reaktor liefert " + nf0.format(a.gen/1000) + " kW" : "") + (R.ship ? " · Reise: " + durStr(R.travel) + " pro Strecke, Mission " + durStr(R.missionMonths) : ""); }
   form.querySelector('[data-wrap="hoehe"]').hidden = !!BAHNEN[c.bahn].h;
   form.querySelector('[data-wrap="segmente"]').hidden = c.fluegel === 0;
   const [W,H,D] = R.F.d;
@@ -1365,7 +1434,7 @@ function renderResults(){
     (R.crew ? bud("Lebensraum", R.volMax, Math.max(R.vol, 1), nf0.format(R.vol) + " m³ für " + R.crew + " Personen") : "") +
     bud("Stromverbrauch", R.P_cons, Math.max(R.P_gen, 1), nf1.format(R.P_cons/1000) + " von " + nf1.format(R.P_gen/1000) + " kW") +
     bud("Wärme / Kühlung", R.P_cons, R.cool, nf0.format(R.P_cons/1000) + " von " + nf0.format(R.cool/1000) + " kW") +
-    (R.ship ? bud("Vorräte an Bord", R.supplyT, Math.max(R.supplyCap, 0.01), nf1.format(R.supplyT) + " von " + nf1.format(R.supplyCap) + " t") + bud("Treibstoff für die Reise", R.dvNeed, Math.max(R.dvHave, 1), nf0.format(R.dvNeed) + " von " + nf0.format(R.dvHave) + " m/s") :
+    (R.ship ? bud("Vorräte an Bord", R.supplyT, Math.max(R.supplyCap, 0.01), nf1.format(R.supplyT) + " von " + nf1.format(R.supplyCap) + " t") + (isFinite(R.dvHave) && R.dvHave !== R.dvNeed || R.c.sh_antrieb === "chem" ? bud("Treibstoff für die Reise", R.dvNeed, Math.max(R.dvHave, 1), nf0.format(R.dvNeed) + " von " + nf0.format(R.dvHave) + " m/s") : "") :
       bud("Nachschub", R.needT, Math.max(R.capT, 0.01), nf1.format(R.needT) + " von " + nf1.format(R.capT) + " t/Jahr")) +
     (c.budget > 0 ? bud("Budget", R.total, c.budget, eur(R.total) + " von " + eur(c.budget)) : "");
   else document.getElementById("budgets").innerHTML =
@@ -1714,7 +1783,7 @@ function buildStation(c){
   }
   // Raumschiff: Tanks und Triebwerk am Heck (-X)
   if (c.format === "SH"){
-    const nT = cnt("tank"), tankMat = new THREE.MeshStandardMaterial({color:0xd98a3a, roughness:0.7, metalness:0.1});
+    const nT = c.sh_antrieb === "segel" || c.sh_antrieb === "warp" ? 0 : cnt("tank"), tankMat = new THREE.MeshStandardMaterial({color:0xd98a3a, roughness:0.7, metalness:0.1});
     for (let gI = 0; gI < Math.ceil(nT/4); gI++){
       const tg = new THREE.Group(), inG = Math.min(4, nT - gI*4);
       const spine = cyl(6, 6, 50, ringM, 12); spine.rotation.z = Math.PI/2; tg.add(spine);
@@ -1724,15 +1793,42 @@ function buildStation(c){
     }
     const eg = new THREE.Group(), EN = SH_ANTRIEB[c.sh_antrieb] || SH_ANTRIEB.chem;
     const body = cyl(r0, r0, 30, skin, 32); body.rotation.z = Math.PI/2; eg.add(body);
-    if (c.sh_antrieb === "ionen"){
-      for (let j = 0; j < 4; j++){ const a = j*Math.PI/2, th = cyl(5, 7, 10, m.dark, 20); th.rotation.z = Math.PI/2; th.position.set(-20, Math.cos(a)*11, Math.sin(a)*11); eg.add(th);
-        const gl = mesh(new THREE.CircleGeometry(5, 20), m.blue); gl.rotation.y = -Math.PI/2; gl.position.set(-25.2, Math.cos(a)*11, Math.sin(a)*11); eg.add(gl); }
+    const sa = c.sh_antrieb, glowM = col => new THREE.MeshStandardMaterial({color:col, emissive:col, emissiveIntensity:0.9, roughness:0.4});
+    const nozzle = (r1, r2, L, x) => { const n = cyl(r1, r2, L, m.dark, 32); n.rotation.z = -Math.PI/2; n.position.x = x; eg.add(n); return n; };
+    const radiator = (w, L, x) => [-1,1].forEach(sg => { const fin = box(L, 1, w, new THREE.MeshStandardMaterial({color:0x5b5f66, roughness:0.6})); fin.position.set(x, 0, sg*(r0 + w/2 + 1)); eg.add(fin); });
+    const shieldDisk = (r, x) => { const sh = cyl(r, r, 2, m.alu, 32); sh.rotation.z = Math.PI/2; sh.position.x = x; eg.add(sh); };
+    if (sa === "ionen" || sa === "nep" || sa === "plasma"){
+      const nTh = sa === "plasma" ? 2 : 4, col = sa === "plasma" ? 0xc070ff : 0x5aa8ff;
+      for (let j = 0; j < nTh; j++){ const a = j*Math.PI*2/nTh + (nTh === 2 ? Math.PI/2 : 0), rr = nTh === 2 ? 12 : 11, th = cyl(5, 7, 10, m.dark, 20); th.rotation.z = Math.PI/2; th.position.set(-20, Math.cos(a)*rr, Math.sin(a)*rr); eg.add(th);
+        const gl = mesh(new THREE.CircleGeometry(5, 20), glowM(col)); gl.rotation.y = -Math.PI/2; gl.position.set(-25.2, Math.cos(a)*rr, Math.sin(a)*rr); eg.add(gl); }
+      if (sa !== "ionen"){ shieldDisk(r0 + 6, 16); radiator(40, 28, -2); }
+    } else if (sa === "segel"){
+      const sm = new THREE.MeshStandardMaterial({color:0xe8e4d4, metalness:0.85, roughness:0.25, side:THREE.DoubleSide});
+      const sail = mesh(new THREE.PlaneGeometry(200, 200), sm); sail.rotation.y = Math.PI/2; sail.position.x = -40; eg.add(sail);
+      [0,1].forEach(d => { const bm = cyl(0.9, 0.9, 283, ringM, 6); bm.rotation.x = Math.PI/4 + d*Math.PI/2; bm.position.x = -39; eg.add(bm); });
+      const mast = cyl(1.2, 1.2, 26, ringM, 8); mast.rotation.z = Math.PI/2; mast.position.x = -27; eg.add(mast);
+    } else if (sa === "fusion"){
+      const ring = mesh(new THREE.TorusGeometry(r0 + 4, 5, 16, 40), m.alu); ring.rotation.y = Math.PI/2; ring.position.x = -6; eg.add(ring);
+      nozzle(10, 24, 34, -32); const gl = mesh(new THREE.CircleGeometry(9, 24), glowM(0xff9a3a)); gl.rotation.y = -Math.PI/2; gl.position.x = -49.2; eg.add(gl);
+      shieldDisk(r0 + 8, 16); radiator(60, 28, -2);
+    } else if (sa === "antimaterie"){
+      for (let k = 0; k < 3; k++){ const sp = mesh(new THREE.SphereGeometry(5, 20, 12), glowM(0x7a4dff)); const a = k*Math.PI*2/3; sp.position.set(4, Math.cos(a)*(r0 + 4), Math.sin(a)*(r0 + 4)); eg.add(sp); }
+      const spine = cyl(3, 3, 60, ringM, 12); spine.rotation.z = Math.PI/2; spine.position.x = -40; eg.add(spine);
+      const dishN = cyl(30, 4, 14, m.alu, 40); dishN.rotation.z = -Math.PI/2; dishN.position.x = -72; eg.add(dishN);
+      const gl = mesh(new THREE.CircleGeometry(4, 20), glowM(0xd8c8ff)); gl.rotation.y = -Math.PI/2; gl.position.x = -78; eg.add(gl);
+      shieldDisk(r0 + 8, 16);
+    } else if (sa === "warp"){
+      [-1,1].forEach(sg => { const ring = mesh(new THREE.TorusGeometry(r0 + 22, 3, 12, 48), glowM(0x4ad6ff)); ring.rotation.y = Math.PI/2; ring.position.x = sg*10 - 4; eg.add(ring); });
+      [0,1,2,3].forEach(k => { const a = k*Math.PI/2 + Math.PI/4, st = box(4, 2, 22, ringM); st.position.set(-4, Math.cos(a)*(r0 + 11), Math.sin(a)*(r0 + 11)); st.rotation.x = -a; eg.add(st); });
     } else {
-      const noz = cyl(6, c.sh_antrieb === "nuklear" ? 14 : 18, 30, m.dark, 32); noz.rotation.z = -Math.PI/2; noz.position.x = -30; eg.add(noz);
-      if (c.sh_antrieb === "nuklear"){ const shield = cyl(r0 + 6, r0 + 6, 2, m.alu, 32); shield.rotation.z = Math.PI/2; shield.position.x = 16; eg.add(shield);
-        [-1,1].forEach(sg => { const fin = box(26, 1, 30, new THREE.MeshStandardMaterial({color:0x5b5f66, roughness:0.6})); fin.position.set(-4, 0, sg*(r0 + 15)); eg.add(fin); }); }
+      nozzle(6, sa === "nuklear" ? 14 : 18, 30, -30);
+      if (sa === "nuklear"){ shieldDisk(r0 + 6, 16); radiator(30, 26, -4); }
     }
-    eg.position.x = xNeg - 15; xNeg -= 30; P("triebwerk", "Antriebsmodul: " + EN.name, eg);
+    const egLen = sa === "segel" ? 60 : sa === "antimaterie" ? 85 : sa === "fusion" ? 55 : 30;
+    eg.position.x = xNeg - 15; xNeg -= egLen; P("triebwerk", "Antriebsmodul: " + EN.name, eg);
+    if (c.magschild){ const mg = new THREE.Group(), coilM = new THREE.MeshStandardMaterial({color:0xb87333, metalness:0.7, roughness:0.35});
+      [-1,1].forEach(sg => { const coil = mesh(new THREE.TorusGeometry(r0 + 10, 2.2, 12, 48), coilM); coil.rotation.y = Math.PI/2; coil.position.x = sg*12; mg.add(coil); });
+      mg.position.x = xPos + 8; xPos += 16; P("magschild", MAGSCHILD.name, mg); }
   }
   // Andockstelle am Kernmodul + angedockte Raumschiffe
   const kp = port(new THREE.Vector3(0, 1, 0)); kp.position.set(0, r0 + 2, 30); kern.add(kp);
@@ -2156,7 +2252,7 @@ function updateInfo(){
   if (V.mode === "orbit"){ info.innerHTML = (R.B.deep ? "Umlaufbahn um " + ({mond:"den Mond", mars:"den Mars", venus:"die Venus", tief:"den Asteroiden", jupiter:"den Jupiter"}[R.c.bahn] || "das Ziel") + ", stark vereinfacht" + (R.B.interstellar ? "" : "") : "Erde und Bahn nicht maßstabsgetreu") + " · Satellit stark vergrößert"; return; }
   const sA = R.c.sonne && R.c.sonne !== "none" ? (SONNE[R.c.sonne].area[R.F.cls] != null ? SONNE[R.c.sonne].area[R.F.cls] : SONNE[R.c.sonne].area.c) : 0;
   const sailTxt = sA ? " · Sonnensegel <b>" + nf1.format(Math.sqrt(sA)) + " × " + nf1.format(Math.sqrt(sA)) + " m</b>" + (Math.sqrt(sA)*10 > Math.max(...R.F.d)*3.5 ? " (verkleinert gezeigt)" : "") : "";
-  if (R.station && R.ship){ info.innerHTML = "<b>ca. " + nf0.format(R.F.d[0]/10) + " m lang</b> · <b>" + nf0.format(R.mass/1000) + " t</b> beim Abflug · " + R.nLaunch + " Starts zum Zusammenbau · Mission " + monStr(R.missionMonths); return; }
+  if (R.station && R.ship){ info.innerHTML = "<b>ca. " + nf0.format(R.F.d[0]/10) + " m lang</b> · <b>" + nf0.format(R.mass/1000) + " t</b> beim Abflug · " + R.nLaunch + " Starts zum Zusammenbau · Mission " + durStr(R.missionMonths); return; }
   if (R.station){ info.innerHTML = "<b>ca. " + nf0.format(R.F.d[0]/10) + " m lang</b> · <b>" + nf0.format(R.mass/1000) + " t</b> · " + R.nLaunch + " Starts" + (V.mode === "bauen" ? " · Modul antippen, dann an den Griffen ziehen" : " · ziehen zum Drehen"); return; }
   const span = sA ? sailTxt : R.c.fluegel ? " · Spannweite <b>" + nf0.format(satRoot ? satRoot.userData.radius*2*10 : 0) + " cm</b>" : "";
   const stw = (V.stowed && V.stowed.length) ? " · <b>innen verstaut:</b> " + esc(V.stowed.join(", ")) : "";
@@ -2180,6 +2276,10 @@ function planetCanvas(kind){
       else if (kind === "jupiter"){ const n = fbm(px*1.2, cy*2, pz*1.2, 4); const band = Math.sin((cy + n*0.12)*22);
         r = 200 + band*30; g = 170 + band*28 - (band < 0 ? 15 : 0); b = 130 + band*25;
         const dx = lon - 4.2, dy = lat + 0.38; if (dx*dx/0.05 + dy*dy/0.012 < 1){ r = 200; g = 95; b = 70; } }
+      else if (kind === "saturn"){ const n = fbm(px*1.2, cy*2, pz*1.2, 4); const band = Math.sin((cy + n*0.08)*16);
+        r = 222 + band*18; g = 196 + band*18; b = 140 + band*16; }
+      else if (kind === "pluto"){ const n = fbm(px*2.5 + 7, cy*2.5, pz*2.5, 5); const heart = (lon - 3.1)**2/0.25 + (lat - 0.05)**2/0.18 < 1;
+        r = heart ? 240 : 170 + n*60; g = heart ? 232 : 130 + n*50; b = heart ? 220 : 100 + n*40; }
       else if (kind === "sonne"){ const n = fbm(px*4 + 1, cy*4, pz*4, 5); r = 255; g = 170 + n*80; b = 40 + n*60; }
       else if (kind === "mond" || kind === "asteroid"){ const n = fbm(px*2.5 + 3, cy*2.5, pz*2.5, 5), cr2 = fbm(px*9, cy*9, pz*9, 2);
         const base = (kind === "mond" ? 120 : 95) + n*90 - (cr2 > 0.62 ? 45 : 0); r = base; g = base*0.97; b = base*(kind === "mond" ? 0.95 : 0.85); }
@@ -2606,9 +2706,12 @@ function parseWishes(text){
   if (nutz.includes("multi") || nutz.includes("hyper")) funk = "x";
   else if (nutz.includes("cam") || has(/video|viele daten|hochauflös/)) funk = "s";
   let bahn = null;
-  if (voyager) bahn = "interstellar";
+  if (has(/alpha centauri|proxima|anderen? stern|nächsten stern|zu den sternen|sternensystem/)) bahn = "alphacen";
+  else if (voyager) bahn = "interstellar";
   else if (has(/venus/)) bahn = "venus";
-  else if (has(/jupiter|saturn|gasriese/)) bahn = "jupiter";
+  else if (has(/pluto|kuipergürtel|zwergplanet/)) bahn = "pluto";
+  else if (has(/saturn|titan|enceladus/)) bahn = "saturn";
+  else if (has(/jupiter|gasriese|europa|ganymed/)) bahn = "jupiter";
   else if (has(/mars/)) bahn = "mars";
   else if (has(/mond/)) bahn = "mond";
   else if (has(/asteroid|komet/)) bahn = "tief";
@@ -2633,7 +2736,7 @@ function parseWishes(text){
   const what = nutz.map(x => NUTZ[x].name).join(" und ");
   const sonne = has(/sonnensegel|lichtsegel|solar ?sail|mit (sonnen)?licht fliegen/) ? "klein" : null;
   const familie = has(/cubesat/) ? "c" : has(/pocketqube/) ? "p" : null;
-  const shipW = has(/raumschiff|bemannte? reise|menschen zum (mars|mond)|astronauten (zum|zu den|auf den) (mars|mond|venus|asteroid)|crew zum|mit (der )?crew (zum|durchs)|durchs all reisen/);
+  const shipW = has(/raumschiff|raumkreuzer|sternenschiff|lange(n)? reise(n)? mit|generationenschiff|bemannte? reise|menschen zum (mars|mond)|astronauten (zum|zu den|auf den) (mars|mond|venus|asteroid)|crew zum|mit (der )?crew (zum|durchs)|durchs all reisen/);
   const station = shipW || has(/raum ?station|weltraumstation|mondstation|forschungsstation|wohnstation|station (für|mit|am|im|um)|astronaut|besatzung|menschen (im all|leben|wohnen)|wohnen im all|leben im all/);
   const cm = t.match(/(\d{1,2})\s*(astronaut|personen|menschen|leute|crew|besatzung)/);
   const stNutz = [];
@@ -2644,9 +2747,10 @@ function parseWishes(text){
     if (has(/(^|[\s,])schiff(e|en|s)?\b|schiffsverkehr|iot|sensoren|\bais\b/)) stNutz.push("iot");
     if (has(/fernseh|internet|relais|transponder/)) stNutz.push("relay");
   }
-  if (shipW) return {station:true, ship:true, titel:"", nutzlast:stNutz, bahn: bahn || "mars", jahre:null, budget, maxkg, rueck: !has(/nur hin|ohne rückkehr|one ?way|ohne rückflug/),
+  const shDrive = has(/warp|überlicht/) ? "warp" : has(/antimaterie/) ? "antimaterie" : has(/fusion/) ? "fusion" : has(/plasma|vasimr/) ? "plasma" : has(/nuklear.?elektr|reaktor.{0,20}ionen/) ? "nep" : has(/ionen/) ? "ionen" : has(/sonnensegel|segel/) ? "segel" : has(/nuklear|atom|reaktor/) ? "nuklear" : has(/chemisch/) ? "chem" : null;
+  if (shipW) return {station:true, ship:true, titel:"", nutzlast:stNutz, bahn: bahn || "mars", jahre:null, budget, maxkg, rueck: !has(/nur hin|ohne rückkehr|one ?way|ohne rückflug/), antrieb:shDrive, schlaf: has(/kälteschlaf|tiefschlaf|winterschlaf|hibernat/),
     crew: cm ? Math.min(12, Number(cm[1])) : 4, labor: has(/labor|forsch|experiment/), kuppel: has(/kuppel|aussicht|fenster/), gruen: true,
-    verstanden: "Ein Raumschiff, das " + (cm ? Number(cm[1]) : 4) + " Personen zu " + (ZIEL[bahn || "mars"] || "ihrem Ziel") + (has(/nur hin|ohne rückkehr|one ?way|ohne rückflug/) ? " bringt (ohne Rückflug)." : " und wieder zurück bringt."),
+    verstanden: "Ein Raumschiff, das " + (cm ? Number(cm[1]) : 4) + " Personen " + (ZIEL[bahn || "mars"] || "zu ihrem Ziel") + (has(/nur hin|ohne rückkehr|one ?way|ohne rückflug/) ? " bringt (ohne Rückflug)" : " und wieder zurück bringt") + (shDrive ? " – mit " + SH_ANTRIEB[shDrive].name + "." : "."),
     realismus: "Ein bemanntes Raumschiff zu anderen Himmelskörpern kostet zig Milliarden – so etwas schaffen nur Raumfahrtagenturen oder große Firmen."};
   if (station) return {station:true, titel:"", nutzlast:stNutz, bahn: bahn === "mond" ? "mond" : null, jahre: yr ? Number(yr[1]) : null, budget, maxkg,
     crew: cm ? Math.min(12, Number(cm[1])) : 4, labor: has(/labor|forsch|experiment|wissenschaft/), kuppel: has(/kuppel|aussicht|fenster|blick/), gruen: has(/gewächshaus|pflanzen|gemüse|selbstversorg/),
@@ -2667,7 +2771,9 @@ function cleanWishes(w, fallback){
   o.bahn = BAHNEN[w.bahn] ? w.bahn : null;
   o.jahre = Number(w.jahre) >= 1 ? Math.min(50, Math.round(Number(w.jahre))) : null;
   if ([1,2,3].includes(Number(w.stufe))) o.stufe = Number(w.stufe);
-  if (w.ship === true){ o.ship = true; o.station = true; o.crew = Number(w.crew) >= 0 ? Math.min(12, Math.round(Number(w.crew))) : (o.crew || 4); if (w.rueckflug === false) o.rueck = false; }
+  if (w.ship === true){ o.ship = true; o.station = true; o.crew = Number(w.crew) >= 0 ? Math.min(12, Math.round(Number(w.crew))) : (o.crew || 4); if (w.rueckflug === false) o.rueck = false;
+    if (SH_ANTRIEB[w.schiff_antrieb]) o.antrieb = w.schiff_antrieb; if (w.kaelteschlaf === true) o.schlaf = true; }
+  if (o.bahn === "alphacen" && !o.ship) o.bahn = "interstellar";
   if (w.station === true){ o.station = true; o.crew = Number(w.crew) >= 0 ? Math.min(12, Math.round(Number(w.crew))) : (o.crew || 4); }
   o.budget = Number(w.budget) > 0 ? Number(w.budget) : o.budget;
   o.maxkg = Number(w.maxkg) > 0 ? Number(w.maxkg) : o.maxkg;
@@ -2788,13 +2894,29 @@ function repairStation(c, R){
   const bad = id => { const t = R.tests.find(x => x.id === id); return t && t.status !== "ok" ? t.status : null; };
   const cap = k => (c["m_" + k] || 0) < (k === "solar" || k === "radiator" ? 12 : 6);
   if (c.format === "SH"){
-    if (bad("reise") && c.bahn !== "interstellar"){
-      if (c.sh_antrieb === "chem" && (c.m_tank || 0) >= 6){ c.sh_antrieb = "nuklear"; return "Nuklear-thermischer Antrieb – er braucht nur halb so viel Treibstoff wie ein chemischer."; }
-      if ((c.m_tank || 0) < 12){ c.m_tank = (c.m_tank || 0) + 1; return "Weiteres Tankmodul angebaut – " + c.m_tank + " × 50 t Treibstoff."; }
+    const up = () => { if (c._shKeep) return null; const cur = c.sh_antrieb, nx = cur === "ionen" || cur === "plasma" || cur === "segel" ? "nep" : SH_STUFEN[SH_STUFEN.indexOf(cur) + 1];
+      if (!nx || !SH_ANTRIEB[nx]) return null; c.sh_antrieb = nx; if (nx === "fusion" || nx === "antimaterie") c.m_tank = Math.max(1, Math.min(c.m_tank || 0, 4));
+      return SH_ANTRIEB[nx].name + " – " + {nuklear:"braucht nur halb so viel Treibstoff wie ein chemischer.", nep:"sehr sparsam und mit eigenem Reaktor, auch fern der Sonne.", fusion:"200-mal sparsamer als chemisch – damit werden aus Jahren Monate.", antimaterie:"der stärkste denkbare Antrieb, für die allerweitesten Reisen."}[nx]; };
+    if (c.sh_antrieb === "warp" && !c._shKeep){ c.sh_antrieb = "antimaterie"; c.m_tank = 4; return "Antimaterie statt Warp – Warp gibt es nur in Science-Fiction."; }
+    if (bad("reise") === "fail" && c.sh_antrieb === "segel"){ const m = up(); if (m) return m; }
+    if (bad("reise") && c.sh_antrieb !== "segel"){
+      if (c.sh_antrieb === "chem" && (c.m_tank || 0) >= 6){ const m = up(); if (m) return m; }
+      if ((c.m_tank || 0) < 24 && !(c.sh_antrieb === "nuklear" && (c.m_tank || 0) >= 12)){ c.m_tank = (c.m_tank || 0) + 1; return "Weiteres Tankmodul angebaut – " + c.m_tank + " × 50 t Treibstoff."; }
+      const m = up(); if (m) return m;
+    }
+    if (bad("lebenszeit") === "fail" || bad("strahlung") === "fail" && c.strahl){
+      if ((bad("lebenszeit") === "fail" || c.magschild) && c.sh_antrieb !== "antimaterie"){ const m = up(); if (m) return m; }
+      if (bad("strahlung") === "fail" && !c.magschild){ c.magschild = true; return "Magnetischer Strahlenschild – hält 90 % der Strahlung ab."; }
+      if (SH_ANTRIEB[c.sh_antrieb].isp >= 1e5 && (c.m_tank || 0) < 24){ c.m_tank = Math.min(24, (c.m_tank || 0) + 4); return "Mehr Treibstoff (" + c.m_tank + " Tankmodule) – das Raumschiff fliegt schneller."; }
+      if (!c.schlaf && (c.crew || 0) > 0){ c.schlaf = true; return "Kälteschlaf – die Crew verschläft die lange Reise."; }
+      if (c.aufenthalt > 1){ c.aufenthalt = Math.max(1, Math.floor(c.aufenthalt/2)); return "Kürzer am Ziel bleiben (" + monStr(c.aufenthalt) + ")."; }
     }
     if (bad("versorgung")){ if (c.leben === "offen"){ c.leben = "teil"; return "Wasser-Recycling – spart viele Tonnen Vorräte."; } if (c.leben === "teil"){ c.leben = "zu"; return "Gewächshaus und fast geschlossene Lebenserhaltung."; } if (cap("lager")){ c.m_lager = (c.m_lager || 0) + 1; return "Lagermodul für die Vorräte der ganzen Reise."; } }
-    if (!bad("reise") && R.dvHave > R.dvNeed*1.35 && (c.m_tank || 0) > 0 && compute(Object.assign({}, c, {m_tank:c.m_tank - 1})).dvHave >= R.dvNeed*1.1){ c.m_tank--; return "Ein Tankmodul weniger – der Treibstoff reicht auch so (" + c.m_tank + " × 50 t)."; }
-    if (bad("strahlung")){ if (!c.strahl){ c.strahl = true; return "Strahlenschutz-Wände aus Wasser (Sturmschutzraum)."; } if (c.sh_antrieb === "chem"){ c.sh_antrieb = "nuklear"; return "Nuklear-thermischer Antrieb – die Reise wird kürzer, die Crew bekommt weniger Strahlung ab."; } if (c.aufenthalt > 1){ c.aufenthalt--; return "Kürzer am Ziel bleiben (" + c.aufenthalt + " Monate) – weniger Strahlung."; } }
+    if ((SH_ANTRIEB[c.sh_antrieb].segel || SH_ANTRIEB[c.sh_antrieb].warp) && c.m_tank > 0){ c.m_tank = 0; return "Tankmodule abgebaut – dieser Antrieb braucht keinen Treibstoff."; }
+    if (!bad("reise") && !bad("lebenszeit") && bad("strahlung") !== "fail" && R.dvHave > R.dvNeed*1.35 && (c.m_tank || 0) > 0){ const R2 = compute(Object.assign({}, c, {m_tank:c.m_tank - 1}));
+      if (R2.dvHave >= R.dvNeed*1.1 && !["lebenszeit","strahlung"].some(id => { const a = R2.tests.find(t => t.id === id), b = R.tests.find(t => t.id === id); return a && b && a.status !== b.status; })){ c.m_tank--; return "Ein Tankmodul weniger – der Treibstoff reicht auch so (" + c.m_tank + " × 50 t)."; } }
+    if (bad("strahlung") === "fail"){ if (!c.strahl){ c.strahl = true; return "Strahlenschutz-Wände aus Wasser (Sturmschutzraum)."; } }
+    if (bad("strahlung")){ if (!c.strahl){ c.strahl = true; return "Strahlenschutz-Wände aus Wasser (Sturmschutzraum)."; } if (c.sh_antrieb === "chem" && !c._shKeep){ c.sh_antrieb = "nuklear"; return "Nuklear-thermischer Antrieb – die Reise wird kürzer, die Crew bekommt weniger Strahlung ab."; } }
   }
   if (bad("bahn") === "fail"){ c.bahn = "leo"; c.hoehe = 420; return "Erdumlaufbahn gewählt – nur dort kann die Crew regelmäßig wechseln."; }
   if (bad("energie") && cap("solar")){ c.m_solar = (c.m_solar || 0) + 1; return "Weiteres Solarflügel-Paar angebaut."; }
@@ -2819,12 +2941,14 @@ function repairStation(c, R){
 function designStation(w){
   const crew = w.crew != null ? w.crew : 4;
   if (w.ship){
-    const c = Object.assign({}, PRESETS.bake.c, {titel:w.titel || "Raumschiff " + (({mond:"Mond", mars:"Mars", venus:"Venus", tief:"Asteroid", jupiter:"Jupiter"})[w.bahn] || ""), format:"SH", bauweise:"kauf", start:"kauf", rakete:"schwer",
-      bahn:w.bahn || "mars", crew, leben:"zu", schild:true, strahl:true, fluege:0, sh_antrieb:"chem", m_tank:2, rueckflug:w.rueck !== false, aufenthalt: w.bahn === "mond" ? 1 : 2,
+    const c = Object.assign({}, PRESETS.bake.c, {titel:w.titel || "Raumschiff " + (({mond:"Mond", mars:"Mars", venus:"Venus", tief:"Asteroid", jupiter:"Jupiter", saturn:"Saturn", pluto:"Pluto", interstellar:"Voyager", alphacen:"Alpha Centauri"})[w.bahn] || ""), format:"SH", bauweise:"kauf", start:"kauf", rakete:"schwer",
+      bahn:w.bahn || "mars", crew, leben:"zu", schild:true, strahl:true, fluege:0, sh_antrieb: SH_ANTRIEB[w.antrieb] ? w.antrieb : ({jupiter:"nep", saturn:"nep", pluto:"fusion", interstellar:"fusion", alphacen:"antimaterie"}[w.bahn] || "chem"), m_tank: w.antrieb === "segel" || w.antrieb === "warp" ? 0 : w.bahn === "alphacen" ? 4 : 2, schlaf:!!w.schlaf || w.bahn === "alphacen", magschild:false, rueckflug:w.rueck !== false, aufenthalt: w.bahn === "mond" ? 1 : 2,
       ...Object.fromEntries(ST_NUTZ.map(x => ["nutz_" + x, (w.nutzlast || []).includes(x)])), schwenk:false,
       m_wohn:1, m_wohnauf:0, m_labor: w.labor ? 1 : 0, m_knoten:1, m_lager:0, m_kuppel: w.kuppel ? 1 : 0, m_solar:2, m_radiator:2, budget:w.budget || 0, maxkg:0});
+    if (SH_ANTRIEB[w.antrieb]) c._shKeep = true;
     const log = []; let Rr = compute(c);
     for (let i = 0; i < 80; i++){ const msg = repairStation(c, Rr); if (!msg) break; log.push(msg); Rr = compute(c); }
+    delete c._shKeep;
     return {c, R:Rr, log, hard:Rr.tests.filter(t => t.status === "fail" && t.id !== "budget").length};
   }
   const c = Object.assign({}, PRESETS.bake.c, {titel:w.titel || (w.bahn === "mond" ? "Mondstation" : "Raumstation"), format:"ST", bauweise:"kauf", start:"kauf",
@@ -2860,7 +2984,7 @@ function aiPrompt(text, budget, maxkg){
     '{"titel": "kurzer Missionsname, höchstens 30 Zeichen",\n' +
     ' "nutzlast": ["cam" | "multi" | "hyper" | "iot" | "sci" | "teleskop" | "labor" | "planetenlabor" | "lander" | "schallplatte" | "rueckkehr" | "relay", ...]  (leere Liste, wenn er nur funken soll),\n' +
     ' "funk": "lora" | "uhf" | "s" | "x"  (die kleinste ausreichende Funkverbindung: lora für sehr billige Hobby-Satelliten mit wenigen Messwerten, uhf für Funkbaken und kleine Datenmengen, s für Fotos, x für große Bilddaten),\n' +
-    ' "bahn": "leo" | "sso" | "dd" | "meo" | "geo" | "mond" | "mars" | "venus" | "jupiter" | "tief" | "interstellar" | null,\n' +
+    ' "bahn": "leo" | "sso" | "dd" | "meo" | "geo" | "mond" | "mars" | "venus" | "jupiter" | "saturn" | "pluto" | "tief" | "interstellar" | "alphacen" | null,\n' +
     ' "sonnensegel": true | false (true, wenn er mit einem Sonnensegel fliegen soll),\n' +
     ' "jahre": Zahl 1-15 oder null,\n' +
     ' "budget": Euro-Betrag oder null (nur wenn genannt),\n' +
@@ -2869,6 +2993,8 @@ function aiPrompt(text, budget, maxkg){
     ' "station": true | false (true, wenn eine Raumstation für Menschen gewünscht ist),\n' +
     ' "ship": true | false (true, wenn ein bemanntes Raumschiff durchs All zu einem Ziel reisen soll – dann bahn = Ziel),\n' +
     ' "rueckflug": true | false (beim Raumschiff: soll es zurückkommen?),\n' +
+    ' "schiff_antrieb": "chem" | "ionen" | "nuklear" | "nep" | "plasma" | "segel" | "fusion" | "antimaterie" | "warp" | null (nur beim Raumschiff und nur, wenn ein Antrieb genannt ist; nep = nuklear-elektrisch),\n' +
+    ' "kaelteschlaf": true | false (beim Raumschiff: soll die Crew die Reise im Kälteschlaf verbringen?),\n' +
     ' "crew": Zahl 0-12 oder null (Anzahl Personen auf der Station),\n' +
     ' "stufe": 1 | 2 | 3 | null  (Qualität der Nutzlast: 1 einfach und billig, 2 gut, 3 super gut und teuer; null wenn nichts gesagt),\n' +
     ' "bauweise": "bastler" | "selbst" | "bausatz" | "kauf" | null  (bastler = Hobby-Elektronik wie ESP32 und LoRa für sehr kleine Budgets),\n' +
@@ -2876,7 +3002,7 @@ function aiPrompt(text, budget, maxkg){
     ' "realismus": null oder "1 Satz, falls der Wunsch mit Hobby-Budget kaum machbar ist, und was stattdessen ginge"}\n\n' +
     "Nutzlasten: cam = einfache Farbkamera; multi = Multispektralkamera (Pflanzen, Landwirtschaft); hyper = Hyperspektralkamera (Mineralien); " +
     "iot = Empfänger für Sensoren, Schiffe (AIS) oder Tiersender; sci = Strahlungs- oder Messsensor, Wissenschaft, Schule; teleskop = Weltraumteleskop für Sterne, Galaxien, Planeten; labor = Weltraumlabor für Experimente mit Pflanzen, Bakterien oder Kristallen in Schwerelosigkeit; planetenlabor = Labor, das einen anderen Planeten, Mond oder Asteroiden aus der Umlaufbahn erforscht (Gestein, Atmosphäre, Magnetfeld); lander = Landesonde mit Mini-Labor, die auf der Oberfläche landet; schallplatte = Goldene Schallplatte als Botschaft an Außerirdische wie bei Voyager; rueckkehr = Rückkehrkapsel, die Proben oder Experimente zurück zur Erde bringt; relay = Kommunikations-Transponder (Fernsehen, Internet).\n" +
-    "Bahnen: leo = niedrig wie die ISS; sso = sonnensynchron (Standard für Kameras); dd = Dämmerungsbahn; meo = wie GPS; geo = geostationär; mond = Flug zum Mond; mars, venus, jupiter = Flug zu diesem Planeten; tief = Flug zu einem Asteroiden oder Kometen bzw. allgemein das All erkunden; interstellar = wie Voyager das Sonnensystem verlassen. null, wenn nichts dafür spricht.\n" +
+    "Bahnen: leo = niedrig wie die ISS; sso = sonnensynchron (Standard für Kameras); dd = Dämmerungsbahn; meo = wie GPS; geo = geostationär; mond = Flug zum Mond; mars, venus, jupiter, saturn, pluto = Flug zu diesem Planeten; tief = Flug zu einem Asteroiden oder Kometen bzw. allgemein das All erkunden; interstellar = wie Voyager das Sonnensystem verlassen; alphacen = zum nächsten Stern (nur mit Raumschiff). null, wenn nichts dafür spricht.\n" +
     (budget ? "Budget laut Eingabefeld: " + budget + " Euro.\n" : "") + (maxkg ? "Höchstgewicht laut Eingabefeld: " + maxkg + " kg.\n" : "") +
     '\nBeschreibung:\n"""\n' + text.slice(0, 2000) + '\n"""';
 }
@@ -2988,7 +3114,7 @@ function movesFor(c, opts){
     if (c.fluege < 12) put(x => x.fluege++); if (c.fluege > 0) put(x => x.fluege--);
     put(x => x.schild = !x.schild); put(x => x.strahl = !x.strahl);
     if (ST_NUTZ.some(x => c["nutz_" + x])) put(x => x.schwenk = !x.schwenk);
-    if (c.format === "SH"){ Object.keys(SH_ANTRIEB).forEach(a => a !== c.sh_antrieb && put(x => x.sh_antrieb = a)); if (c.m_tank < 12) put(x => x.m_tank++); if (c.m_tank > 0) put(x => x.m_tank--); if (c.aufenthalt > 0) put(x => x.aufenthalt--); }
+    if (c.format === "SH"){ Object.keys(SH_ANTRIEB).forEach(a => a !== c.sh_antrieb && put(x => x.sh_antrieb = a)); if (c.m_tank < 24) put(x => x.m_tank++); if (c.m_tank > 0) put(x => x.m_tank--); if (c.aufenthalt > 0) put(x => x.aufenthalt--); put(x => x.magschild = !x.magschild); if (c.crew > 0) put(x => x.schlaf = !x.schlaf); }
     if (!BAHNEN[c.bahn].h){ if (c.hoehe > 350) put(x => x.hoehe -= 50); if (c.hoehe < 600) put(x => x.hoehe += 50); }
     return out;
   }
@@ -3056,7 +3182,7 @@ function improveSearch(c0, goals, opts){
 const FIELD_LABEL = {sh_antrieb:"Antrieb des Raumschiffs", m_tank:"Tankmodule", aufenthalt:"Aufenthalt am Ziel", rakete:"Rakete", format:"Bauform", bahn:"Umlaufbahn", boden:"Bodenstation", lage:"Lageregelung", antrieb:"Antrieb", obc:"Bordcomputer", haut:"Oberfläche", bauweise:"Bauweise", sonne:"Sonnensegel", start:"Start", leben:"Lebenserhaltung",
   hoehe:"Bahnhöhe", jahre:"Missionsdauer", segmente:"Felder je Flügel", batterie:"Akku", fluegel:"Solarflügel", crew:"Besatzung", fluege:"Frachtflüge pro Jahr"};
 const FIELD_DICT = {sh_antrieb:SH_ANTRIEB, rakete:RAKETEN, format:FORMATE, bahn:BAHNEN, boden:BODEN, lage:LAGE, antrieb:ANTRIEB, obc:OBC, haut:HAUT, bauweise:BAUWEISE, sonne:SONNE, leben:LEBEN, start:{kauf:{name:"Startplatz kaufen"}, foerder:{name:"Förderprogramm"}}};
-const BOOL_LABEL = Object.assign({schwenk:SCHWENK.name, rueckflug:"Rückflug zur Erde", koerper:"Solarzellen am Gehäuse", stern:STERN.name, segel:SEGEL.name, heizung:HEIZ.name, rtg:RTG.name, swingby:SWING.name, schild:"Trümmerschutz", strahl:"Strahlenschutz-Wände"},
+const BOOL_LABEL = Object.assign({magschild:MAGSCHILD.name, schlaf:SCHLAF.name, schwenk:SCHWENK.name, rueckflug:"Rückflug zur Erde", koerper:"Solarzellen am Gehäuse", stern:STERN.name, segel:SEGEL.name, heizung:HEIZ.name, rtg:RTG.name, swingby:SWING.name, schild:"Trümmerschutz", strahl:"Strahlenschutz-Wände"},
   Object.fromEntries(Object.entries(FUNK).map(([k,f]) => ["funk_" + k, f.name])), Object.fromEntries(Object.entries(NUTZ).map(([k,n]) => ["nutz_" + k, n.name])));
 function describeChanges(a, b){
   const out = [];
@@ -3073,7 +3199,7 @@ function describeChanges(a, b){
 }
 const ALLOWED = {
   radio: {sh_antrieb:Object.keys(SH_ANTRIEB), rakete:Object.keys(RAKETEN), format:Object.keys(FORMATE), bahn:Object.keys(BAHNEN), boden:Object.keys(BODEN), lage:Object.keys(LAGE), antrieb:Object.keys(ANTRIEB), obc:Object.keys(OBC), haut:Object.keys(HAUT), bauweise:Object.keys(BAUWEISE), sonne:Object.keys(SONNE), start:["kauf","foerder"], leben:Object.keys(LEBEN)},
-  num: {...Object.fromEntries(Object.keys(TIERINFO).map(k => ["stufe_" + k, [1,3]])), ...Object.fromEntries(Object.keys(FUNK).map(k => ["stufe_f_" + k, [1,3]])), stufe_solar:[1,3], hoehe:[300,1200], jahre:[1,50], fluegel:[0,4], segmente:[1,3], batterie:[2,5000], crew:[0,12], fluege:[0,12], ...Object.fromEntries(Object.keys(MODULE).map(k => ["m_" + k, [0, k === "solar" || k === "radiator" ? 12 : 6]])), m_tank:[0,12], aufenthalt:[0,24]},
+  num: {...Object.fromEntries(Object.keys(TIERINFO).map(k => ["stufe_" + k, [1,3]])), ...Object.fromEntries(Object.keys(FUNK).map(k => ["stufe_f_" + k, [1,3]])), stufe_solar:[1,3], hoehe:[300,1200], jahre:[1,50], fluegel:[0,4], segmente:[1,3], batterie:[2,5000], crew:[0,12], fluege:[0,12], ...Object.fromEntries(Object.keys(MODULE).map(k => ["m_" + k, [0, k === "solar" || k === "radiator" ? 12 : 6]])), m_tank:[0,24], aufenthalt:[0,120]},
   bool: Object.keys(BOOL_LABEL)
 };
 function applyChange(c, f, v){
