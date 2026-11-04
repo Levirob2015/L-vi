@@ -5545,7 +5545,7 @@ function showPlan(w, P, via){
   else if (w.budget && !inBudget && Rr.hw <= w.budget){ st = "Die Bauteile passen in dein Budget: " + eur(Rr.hw) + ". Mit Testmodell, Tests, Zulassung, Bodenstation und Reserve kommen insgesamt " + eur(Rr.total) + " zusammen."; cls = "warn"; }
   else if (w.budget && !inBudget){ st = "Über Budget: die günstigste Variante kostet " + eur(Rr.total) + ", " + eur(Rr.total - w.budget) + " mehr als geplant."; cls = "fail"; }
   else if (w.budget){ st = "Passt ins Budget – es bleiben " + eur(w.budget - Rr.total) + " Luft."; cls = "ok"; }
-  else { st = Rr.station ? "Diese Station besteht alle Prüfungen." : "Günstigste Variante, die alle Prüfungen besteht."; cls = "ok"; }
+  else { st = Rr.station ? (Rr.ship ? "Dieses Raumschiff besteht alle Prüfungen." : "Diese Station besteht alle Prüfungen.") : "Günstigste Variante, die alle Prüfungen besteht."; cls = "ok"; }
   let html = '<b class="h">' + esc(Rr.F.name) + " · " + (Rr.station ? (c.crew ? c.crew + " Personen" : "unbemannt") : esc(BAUWEISE[c.bauweise].name)) + " · " + eur(Rr.total) + " · " + (Rr.station ? nf0.format(Rr.mass/1000) + " t" : kg(Rr.mass)) + "</b>" +
     '<p class="st ' + cls + '">' + esc(st) + "</p>" +
     "<p>" + esc(w.verstanden) + "</p>" +
@@ -5833,7 +5833,36 @@ document.getElementById("imp-chips").addEventListener("click", e => { const b = 
    ===================================================================== */
 const STORE = "satellitenwerkstatt.v3";
 function save(c){ try { localStorage.setItem(STORE, JSON.stringify(c)); } catch(e){} }
-function load(){ try { const s = JSON.parse(localStorage.getItem(STORE)); if (s && FORMATE[s.format] && BAHNEN[s.bahn]) return Object.assign({}, PRESETS.bake.c, s); } catch(e){} return null; }
+/* Gespeicherte Entwürfe kommen aus dem Browser-Speicher – dort kann jedes Skript
+   und jede Erweiterung hineinschreiben. Deshalb wird nichts ungeprüft übernommen:
+   Auswahlfelder nur mit bekannten Werten, Zahlen begrenzt, Texte kurz und ohne
+   Sonderzeichen, die 3D-Anordnung nur als Zahlenlisten. */
+function cleanManual(m){
+  const out = {d:{}, x:[]}; if (!m || typeof m !== "object") return out;
+  const vec = a => Array.isArray(a) && a.length === 3 && a.every(n => typeof n === "number" && isFinite(n) && Math.abs(n) < 1e5) ? a.slice() : undefined;
+  const tr = o => { const r = {}; if (!o || typeof o !== "object") return r; ["p","r","s","s0"].forEach(k => { const v = vec(o[k]); if (v) r[k] = v; }); return r; };
+  if (m.d && typeof m.d === "object" && !Array.isArray(m.d)) Object.keys(m.d).slice(0, 300).forEach(k => { if (/^[\w-]{1,60}$/.test(k)) out.d[k] = tr(m.d[k]); });
+  if (Array.isArray(m.x)) m.x.slice(0, 60).forEach(e => { if (e && typeof e === "object" && Object.prototype.hasOwnProperty.call(EXTRA, e.t) && /^[\w-]{1,40}$/.test(String(e.id)))
+    out.x.push(Object.assign({id:String(e.id), t:e.t, auto:!!e.auto}, tr(e))); });
+  return out;
+}
+function sanitizeStored(s){
+  if (!s || typeof s !== "object" || Array.isArray(s)) return null;
+  const c = Object.assign({}, PRESETS.bake.c);
+  Object.keys(s).forEach(k => {
+    const v = s[k];
+    if (k === "__proto__" || k === "constructor" || k === "prototype" || k.startsWith("_")) return;
+    if (k === "manuell"){ c.manuell = cleanManual(v); return; }
+    if (k === "titel"){ if (typeof v === "string") c.titel = v.slice(0, 40); return; }
+    if (ALLOWED.radio[k]){ if (ALLOWED.radio[k].includes(String(v))) c[k] = String(v); return; }
+    if (ALLOWED.num[k]){ applyChange(c, k, v); return; }
+    if (typeof v === "boolean"){ c[k] = v; return; }
+    if (typeof v === "number" && isFinite(v)){ c[k] = Math.max(-1e13, Math.min(1e13, v)); return; }
+    if (typeof v === "string" && v.length <= 40 && /^[\w .,\-äöüÄÖÜß]*$/.test(v)) c[k] = v;
+  });
+  return FORMATE[c.format] && BAHNEN[c.bahn] ? c : null;
+}
+function load(){ try { return sanitizeStored(JSON.parse(localStorage.getItem(STORE))); } catch(e){} return null; }
 
 let lastFormat = null;
 function update(force){

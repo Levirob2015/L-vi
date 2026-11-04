@@ -25,6 +25,11 @@ Kommandozeile.
 > SatNOGS-Empfangsnetz und ein KI-Entwurf, der aus einer Beschreibung,
 > einem Budget und einem Höchstgewicht die günstigste startklare Variante sucht.
 > Online: `https://levirob2015.github.io/L-vi/satellit.html`
+>
+> Auf dem eigenen Server mit LoginShield davor:
+> `python examples/satellit_server.py` – Fallen für Schwachstellen-Scanner,
+> Anfrage-Firewall, Flutbremse, Sicherheits-Kopfzeilen (CSP) und das
+> Dashboard auf Port 8787.
 
 ### Klickbare Vorschau
 
