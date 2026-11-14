@@ -100,6 +100,9 @@ button,input,select{font:inherit;color:inherit}
 .tiers label:has(input:focus-visible) span{outline:2px solid var(--accent)}
 .tiers.solo{padding-left:0}
 .tier-info{grid-column:1/-1;margin:0;font-size:11.5px;color:var(--muted)}
+.tiers.gross{grid-template-columns:auto repeat(5,minmax(0,1fr));align-items:center}
+.tiers.gross .gl{font-size:11px;color:var(--muted);padding:0 2px 0 0;border:0;background:none;display:block;text-align:left}
+.tiers.gross span{padding:4px 2px;font:10.5px var(--f-mono)}
 .imp-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px}
 .imp-row input{border:1px solid var(--line);background:var(--raise);border-radius:6px;padding:7px 9px;min-width:0}
 .imp-chips{display:flex;flex-wrap:wrap;gap:4px}
@@ -121,6 +124,10 @@ button,input,select{font:inherit;color:inherit}
 .ai-out .st.ok{color:var(--ok)} .ai-out .st.warn{color:var(--warn)} .ai-out .st.fail{color:var(--fail)}
 .ai-out .muted{color:var(--muted)}
 .ai-out .scan{display:grid;grid-template-columns:88px 1fr;gap:10px;align-items:start}
+.scan-chat{display:grid;gap:6px;border-top:1px solid var(--line);padding-top:8px;margin-top:2px}
+.chat-log{display:grid;gap:4px;max-height:220px;overflow-y:auto}
+.chat-log .msg{margin:0;padding:5px 8px;border-radius:6px;background:var(--panel);border:1px solid var(--line)}
+.chat-log .msg.du{background:var(--accent-soft);border-color:transparent;justify-self:end;max-width:92%}
 .ai-out .scan img{width:88px;height:88px;object-fit:contain;background:#fff;border:1px solid var(--line);border-radius:6px}
 #aiMode{font-size:11px}
 .range{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;align-items:center}
@@ -3057,6 +3064,29 @@ const STIER = {
 const ftierOf = (c, x) => FTIER[c["stufe_f_" + x]] ? +c["stufe_f_" + x] : 2;
 const stierOf = c => STIER[c.stufe_solar] ? +c.stufe_solar : 2;
 const rateStr = b => b >= 1e9 ? nf1.format(b/1e9) + " Gbit/s" : b >= 1e6 ? nf0.format(b/1e6) + " Mbit/s" : b >= 1e3 ? nf1.format(b/1e3) + " kbit/s" : nf0.format(b) + " bit/s";
+/* Größe einzelner Bauteile (in %) und Technikstand der Elektronik.
+   Größer = mehr Leistung (Optik und Antennen sammeln mit der Fläche, also im Quadrat),
+   aber schwerer, mehr Platz, mehr Strom, teurer. Kleiner = umgekehrt.
+   Modern = gleiche Leistung in kleiner, weil Chips immer kleiner werden – kostet aber mehr
+   und verträgt weniger Strahlung. */
+const GR_STUFEN = [50, 75, 100, 150, 200];
+const grOf = (c, key) => GR_STUFEN.includes(+c["gr_" + key]) ? +c["gr_" + key]/100 : 1;
+const grFx = s => ({mass:s*s, vol:s*s, power:s, cost:s, perf:s*s});
+const GR_OPTIK = ["cam","multi","hyper","teleskop"];
+function grInfo(x, st, s){
+  const t = TIERINFO[x][st - 1]; if (s === 1) return t;
+  const f = v => nf1.format(v).replace(",0", ""), p = str => Number(str.replace(",", "."));
+  if (x === "cam" || x === "multi") return t.replace(/\d+(?:,\d+)?/, m => f(p(m)/s));
+  if (x === "teleskop") return t.replace(/\d+(?:,\d+)?/, m => f(p(m)*s));
+  return t + " · Leistung " + Math.round(s*s*100) + " %";
+}
+const TECHNIK = {
+  bewaehrt: {name:"Bewährt", sub:"ältere, robuste Chips: größer und schwerer, aber billig und strahlungsfest", mass:1.3, vol:1.35, power:1.2, cost:0.7, tol:1.5},
+  standard: {name:"Standard", sub:"heutige Raumfahrt-Elektronik", mass:1, vol:1, power:1, cost:1, tol:1},
+  modern:   {name:"Modern (miniaturisiert)", sub:"neueste, winzige Chips: gleiche Leistung, kleiner, leichter und sparsamer – aber teurer und strahlungsempfindlicher", mass:0.6, vol:0.55, power:0.8, cost:1.6, tol:0.6}
+};
+const techOf = c => TECHNIK[c.technik] || TECHNIK.standard;
+const ELEK_KEYS = k => !!k && (k === "obc" || k === "eps" || k === "bat" || k === "lage" || k === "stern" || k.startsWith("funk_") || k.startsWith("nutz_"));
 const tierOf = (c, x) => TIERINFO[x] ? (TIER[c["stufe_" + x]] ? +c["stufe_" + x] : 2) : 2;
 const HEIZ = {name:"Akkuheizung mit Thermostat", c:[0.04,0.02,1,1500], s:[1,1,40,25000]};
 const BAUWEISE = {
@@ -3181,7 +3211,7 @@ function computeStation(c){
   const sNutz = ST_NUTZ.filter(x => c["nutz_" + x]);
   if (sNutz.length){
     add("struktur", "Außenplattform für Nutzlasten (" + sNutz.length + " Stellplätze)", 1500, 0, 300, 80e6, 1);
-    sNutz.forEach(x => { const st = tierOf(c, x), T = TIER[st], v = NUTZ[x].s; add("nutz", "Außen: " + NUTZ[x].name + " – " + T.name + ": " + TIERINFO[x][st - 1], v[0]*T.mass, 0, v[2]*T.power, v[3]*T.cost, 1); });
+    sNutz.forEach(x => { const st = tierOf(c, x), T = TIER[st], v = NUTZ[x].s, gs = grOf(c, x), g = grFx(gs); add("nutz", "Außen: " + NUTZ[x].name + " – " + T.name + ": " + grInfo(x, st, gs) + (gs !== 1 ? " · Größe " + Math.round(gs*100) + " %" : ""), v[0]*T.mass*g.mass, 0, v[2]*T.power*g.power, v[3]*T.cost*g.cost, 1); });
     if (c.schwenk) add("lage", SCHWENK.name, SCHWENK.mass, 0, SCHWENK.power, SCHWENK.cost, 1);
   }
   const xs = (c.manuell && Array.isArray(c.manuell.x)) ? c.manuell.x : [];
@@ -3279,13 +3309,14 @@ function computeStation(c){
   }
   if (sNutz.length){
     const accS = c.schwenk ? 0.01 : 0.5;
-    const needS = sNutz.reduce((mn, x) => Math.min(mn, NUTZ[x].point*TIER[tierOf(c, x)].point), 180);
-    const bad = sNutz.filter(x => NUTZ[x].point*TIER[tierOf(c, x)].point < accS);
+    const ptOf = x => NUTZ[x].point*TIER[tierOf(c, x)].point/(GR_OPTIK.includes(x) ? grOf(c, x) : 1);
+    const needS = sNutz.reduce((mn, x) => Math.min(mn, ptOf(x)), 180);
+    const bad = sNutz.filter(x => ptOf(x) < accS);
     T_("nutzlage", "Ausrichtung der Nutzlasten", bad.length ? "fail" : needS < accS*2 ? "warn" : "ok", "kann " + degStr(accS) + " · braucht " + (needS >= 180 ? "–" : degStr(needS)),
-      (bad.length ? bad.map(x => NUTZ[x].name + " muss auf " + degStr(NUTZ[x].point*TIER[tierOf(c, x)].point) + " genau zeigen").join(", ") + ". " : "") +
+      (bad.length ? bad.map(x => NUTZ[x].name + " muss auf " + degStr(ptOf(x)) + " genau zeigen").join(", ") + ". " : "") +
       "Eine Raumstation schwankt durch Crew-Bewegungen, andockende Raumschiffe und Triebwerke um etwa ±0,5°." + (c.schwenk ? " Die Schwenkplattform gleicht das aus und hält die Geräte auf 0,01° genau." : ""),
       bad.length || needS < accS*2 ? (c.schwenk ? "Eine niedrigere Nutzlast-Stufe braucht weniger Genauigkeit." : "Eine Schwenkplattform für die Nutzlasten einbauen.") : "");
-    const gb = sNutz.reduce((s2, x) => s2 + NUTZ[x].data.s*TIER[tierOf(c, x)].data, 0);
+    const gb = sNutz.reduce((s2, x) => s2 + NUTZ[x].data.s*TIER[tierOf(c, x)].data*(GR_OPTIK.includes(x) ? grFx(grOf(c, x)).perf : grOf(c, x)), 0);
     const down = deep ? 50 : 2700;
     T_("nutzdaten", "Nutzlast-Daten", gb <= down*0.7 ? "ok" : gb <= down ? "warn" : "fail", dataStr(gb) + " / " + dataStr(down) + " am Tag",
       "Die Außen-Nutzlasten erzeugen " + dataStr(gb) + " am Tag. " + (deep ? "Vom Mond gehen etwa " + dataStr(down) + " am Tag zur Erde." : "Über Relaissatelliten kann die Station fast rund um die Uhr funken – etwa " + dataStr(down) + " am Tag.") + (c.crew ? " Die Crew kann die Geräte warten und austauschen – ein großer Vorteil gegenüber Satelliten." : ""),
@@ -3384,8 +3415,8 @@ function compute(c){
   if (A_wing > 0 && !cube && c.lage === "rw") add("energie", "Solarflügel-Drehantrieb (2×)", [6,4,6,240000]);
 
   const funkKeys = Object.keys(FUNK).filter(x => c["funk_" + x]);
-  funkKeys.forEach(x => { const F_ = FTIER[ftierOf(c, x)], v = tup(FUNK[x]);
-    add("funk", FUNK[x].name + " – Stufe " + ftierOf(c, x) + ": " + rateStr(FUNK[x].rate[kr]*F_.rate), [v[0]*F_.mass, v[1], v[2]*F_.power, v[3]*F_.cost], {key:"funk_" + x}); });
+  funkKeys.forEach(x => { const F_ = FTIER[ftierOf(c, x)], v = tup(FUNK[x]), gs = grOf(c, "f_" + x), g = grFx(gs);
+    add("funk", FUNK[x].name + " – Stufe " + ftierOf(c, x) + ": " + rateStr(FUNK[x].rate[kr]*F_.rate*g.perf) + (gs !== 1 ? " · Antenne " + Math.round(gs*100) + " %" : ""), [v[0]*F_.mass*g.mass, v[1]*g.vol, v[2]*F_.power*g.power, v[3]*F_.cost*g.cost], {key:"funk_" + x}); });
   add("lage", LAGE[c.lage].name, tup(LAGE[c.lage]), {key:"lage"});
   if (c.stern) add("lage", STERN.name, tup(STERN), {key:"stern"});
   if (c.antrieb !== "none") add("antrieb", ANTRIEB[c.antrieb].name + " mit Tank", tup(ANTRIEB[c.antrieb]), {key:"antrieb"});
@@ -3393,8 +3424,9 @@ function compute(c){
   if (c.sonne && c.sonne !== "none") add("antrieb", sonne.name, tup(sonne), {key:"sonne"});
   if (c.segel) add("antrieb", SEGEL.name, tup(SEGEL), {key:"segel"});
   const nutzKeys = Object.keys(NUTZ).filter(x => c["nutz_" + x]);
-  nutzKeys.forEach(x => { const st = tierOf(c, x), T = TIER[st], v = tup(NUTZ[x]);
-    add("nutz", NUTZ[x].name + (TIERINFO[x] ? " – " + T.name + ": " + TIERINFO[x][st - 1] : ""), [v[0]*T.mass, v[1]*T.vol, v[2]*T.power, v[3]*T.cost], {key:"nutz_" + x}); });
+  nutzKeys.forEach(x => { const st = tierOf(c, x), T = TIER[st], v = tup(NUTZ[x]), gs = grOf(c, x), g = grFx(gs);
+    add("nutz", NUTZ[x].name + (TIERINFO[x] ? " – " + T.name + ": " + grInfo(x, st, gs) : "") + (gs !== 1 ? " · Größe " + Math.round(gs*100) + " %" : ""), [v[0]*T.mass*g.mass, v[1]*T.vol*g.vol, v[2]*T.power*g.power, v[3]*T.cost*g.cost], {key:"nutz_" + x}); });
+  { const TK = techOf(c); if (TK !== TECHNIK.standard) parts.forEach(pt => { if (ELEK_KEYS(pt.key)){ pt.mass *= TK.mass; pt.vol *= TK.vol; pt.power *= TK.power; pt.cost *= TK.cost; } }); }
   add("waerme", "Oberfläche: " + HAUT[c.haut].name, tup(HAUT[c.haut]), {internal:false});
   const heizW = c.heizung ? tup(HEIZ)[2]*((B.au || 1) > 1.2 ? 3 : 1) : 0;
   if (c.heizung) add("waerme", HEIZ.name, [tup(HEIZ)[0], tup(HEIZ)[1], 0, tup(HEIZ)[3]], {key:"heiz"});
@@ -3489,18 +3521,18 @@ function compute(c){
   let best = 0, bestKey = null;
   const usable = c.boden === "satnogs" ? funkKeys.filter(x => x === "uhf" || x === "s") : c.boden === "tinygs" ? funkKeys.filter(x => x === "lora") : funkKeys;
   usable.forEach(x => {
-    const rr = FUNK[x].rate[kr]*FTIER[ftierOf(c, x)].rate*Math.min(1, distF*(x === "hga" ? (deep ? 1000 : 20) : 1))*(x === "laser" ? 0.4 : 1);
+    const rr = FUNK[x].rate[kr]*FTIER[ftierOf(c, x)].rate*grFx(grOf(c, "f_" + x)).perf*Math.min(1, distF*(x === "hga" ? (deep ? 1000 : 20) : 1))*(x === "laser" ? 0.4 : 1);
     if (rr > best){ best = rr; bestKey = x; }
   });
   const downGB = best*contact*0.6/8/1e9;
-  const needGB = nutzKeys.reduce((s,x) => s + NUTZ[x].data[kr]*TIER[tierOf(c, x)].data, 0)*(deep ? 0.1 : 1) + (B.interstellar ? 0.00002 : deep ? 0.0001 : 0.0005);
+  const needGB = nutzKeys.reduce((s,x) => s + NUTZ[x].data[kr]*TIER[tierOf(c, x)].data*(GR_OPTIK.includes(x) ? grFx(grOf(c, x)).perf : grOf(c, x)), 0)*(deep ? 0.1 : 1) + (B.interstellar ? 0.00002 : deep ? 0.0001 : 0.0005);
   const needMinDay = best > 0 ? needGB*8e9/(best*0.6)/60 + 10 : 0;
   const bookedMin = Math.max(deep ? 15 : 0, Math.min(contact/60, needMinDay*(B.interstellar ? 0.3 : 1.3)));
 
   /* Ausrichtung */
   const acc = c.stern ? (c.lage === "rw" ? 0.05 : c.lage === "mtq" ? 5 : 45) : LAGE[c.lage].acc;
   const needs = [];
-  nutzKeys.forEach(x => needs.push({name:NUTZ[x].name + (TIERINFO[x] ? " (" + TIER[tierOf(c, x)].name + ")" : ""), p:Math.min(180, NUTZ[x].point*TIER[tierOf(c, x)].point)}));
+  nutzKeys.forEach(x => needs.push({name:NUTZ[x].name + (TIERINFO[x] ? " (" + TIER[tierOf(c, x)].name + ")" : ""), p:Math.min(180, NUTZ[x].point*TIER[tierOf(c, x)].point/(GR_OPTIK.includes(x) ? grOf(c, x) : 1))}));
   funkKeys.forEach(x => needs.push({name:FUNK[x].name, p:FUNK[x].point}));
   const needAcc = needs.reduce((m,n) => Math.min(m, n.p), 180);
   const tooCoarse = needs.filter(n => n.p < acc);
@@ -3522,7 +3554,7 @@ function compute(c){
 
   /* Strahlung */
   const doseYr = deep ? B.dose + (c.swingby && B.swing && B.interstellar ? 3 : 0) : h >= 35000 ? 12 : h >= 2000 ? 40 : 0.5 + Math.max(0, h - 400)/400*2;
-  const dose = doseYr*yrs, tol = OBC[c.obc].tol*(c.bauweise === "bastler" ? 0.5 : 1);
+  const dose = doseYr*yrs, tol = OBC[c.obc].tol*(c.bauweise === "bastler" ? 0.5 : 1)*techOf(c).tol;
 
   /* ---------- Tests ---------- */
   const tests = [];
@@ -3755,19 +3787,24 @@ function optRadio(key, obj, hintKey){
   return '<div class="opts" role="radiogroup">' + Object.entries(obj).map(([v,o]) =>
     '<label class="opt"><input type="radio" name="' + key + '" value="' + v + '" id="f-' + key + '-' + v + '"><span><span class="opt-name">' + esc(o.name) + '</span><span class="opt-sub">' + esc(o.sub) + '</span></span><span class="opt-hint" data-hint="' + (hintKey || key) + ':' + v + '"></span></label>').join("") + '</div>';
 }
+function grRow(key, label){
+  return '<div class="tiers gross" data-grbox="' + key + '" role="radiogroup" aria-label="Größe: ' + esc(label) + '"><span class="gl">Größe</span>' +
+    GR_STUFEN.map(n => '<label><input type="radio" name="gr_' + key + '" value="' + n + '" id="f-gr_' + key + '-' + n + '"><span>' + n + '&nbsp;%</span></label>').join("") +
+    '<p class="tier-info" data-grinfo="' + key + '"></p></div>';
+}
 function nutzChecks(){
   return '<div class="opts">' + Object.entries(NUTZ).map(([v,o]) =>
     '<div class="nutz-item"' + (ST_NUTZ.includes(v) ? "" : ' data-group="sat"') + '><label class="opt"><input type="checkbox" name="nutz_' + v + '" id="f-nutz_' + v + '"><span><span class="opt-name">' + esc(o.name) + '</span><span class="opt-sub">' + esc(o.sub) + '</span></span><span class="opt-hint" data-hint="nutz_' + v + '"></span></label>' +
     (TIERINFO[v] ? '<div class="tiers" data-tiers="' + v + '" role="radiogroup" aria-label="Stufe für ' + esc(o.name) + '">' + [1,2,3].map(n =>
       '<label><input type="radio" name="stufe_' + v + '" value="' + n + '" id="f-stufe_' + v + '-' + n + '"><span><b>' + TIER[n].name + '</b><small>' + TIER[n].q + '</small><em data-tierprice="' + v + ':' + n + '"></em></span></label>').join("") +
-      '<p class="tier-info" data-tierinfo="' + v + '"></p></div>' : '') + '</div>').join("") + '</div>';
+      '<p class="tier-info" data-tierinfo="' + v + '"></p></div>' : '') + grRow(v, o.name) + '</div>').join("") + '</div>';
 }
 function funkChecks(){
   return '<div class="opts">' + Object.entries(FUNK).map(([v,o]) =>
     '<div class="nutz-item"><label class="opt"><input type="checkbox" name="funk_' + v + '" id="f-funk_' + v + '"><span><span class="opt-name">' + esc(o.name) + '</span><span class="opt-sub">' + esc(o.sub) + '</span></span><span class="opt-hint" data-hint="funk_' + v + '"></span></label>' +
     '<div class="tiers" data-ftiers="' + v + '" role="radiogroup" aria-label="Stufe für ' + esc(o.name) + '">' + [1,2,3].map(n =>
       '<label><input type="radio" name="stufe_f_' + v + '" value="' + n + '" id="f-stufe_f_' + v + '-' + n + '"><span><b>Stufe ' + n + '</b><small>' + FTIER[n].q + '</small><em data-ftierprice="' + v + ':' + n + '"></em></span></label>').join("") +
-      '<p class="tier-info" data-ftierinfo="' + v + '"></p></div></div>').join("") + '</div>';
+      '<p class="tier-info" data-ftierinfo="' + v + '"></p></div>' + grRow("f_" + v, o.name + " (Antenne)") + '</div>').join("") + '</div>';
 }
 function optChecks(prefix, obj){
   return '<div class="opts">' + Object.entries(obj).map(([v,o]) =>
@@ -3807,7 +3844,9 @@ form.innerHTML =
   '<div class="sec"><h2>Bauform <i id="dimLine"></i></h2>' +
     seg("format", [["1P","1P","5 cm"],["2P","2P","11 cm"],["3P","3P","18 cm"],["1U","1U","10 cm"],["3U","3U","34 cm"],["6U","6U","34 cm"],["12U","12U","34 cm"],["S","Klein","bis 250 kg"],["ST","Raumstation","bleibt in ihrer Bahn"],["SH","Raumschiff","reist mit Crew durchs All"]], "", "seg-grid") +
     '<div data-group="sat" class="field"><p class="note">PocketQubes (5 cm) sind die günstigste Art, ins All zu kommen. CubeSats bieten mehr Platz.</p>' +
-    seg("bauweise", Object.entries(BAUWEISE).map(([k,b]) => [k, b.name, b.f === 1 ? "voller Preis" : "ca. " + Math.round(b.f*100) + " %"]), "Bauweise") + '</div>' +
+    seg("bauweise", Object.entries(BAUWEISE).map(([k,b]) => [k, b.name, b.f === 1 ? "voller Preis" : "ca. " + Math.round(b.f*100) + " %"]), "Bauweise") +
+    seg("technik", Object.entries(TECHNIK).map(([k,t]) => [k, t.name.replace(" (miniaturisiert)", ""), k === "standard" ? "normal" : k === "modern" ? "kleiner, teurer" : "größer, billiger"]), "Technikstand der Elektronik") +
+    '<p class="note" id="technikInfo"></p></div>' +
   '</div>' +
   '<div class="sec" data-group="sh"><h2>Raumschiff-Reise</h2>' +
     '<p class="note">Das Ziel wählst du oben unter »Umlaufbahn«. Unterwegs wird niemand abgelöst und nichts nachgeliefert – alles muss an Bord sein.</p>' +
@@ -3857,7 +3896,8 @@ document.getElementById("presets").innerHTML = Object.entries(PRESETS).map(([k,p
 const NUMS = ["hoehe","jahre","segmente","batterie","fluegel"];
 const STNUMS = ["crew","fluege","aufenthalt","m_tank", ...Object.keys(MODULE).map(k => "m_" + k)];
 const BOOLS = ["koerper","stern","segel","heizung","rtg","swingby","schild","strahl","schwenk","rueckflug","magschild","schlaf", ...Object.keys(FUNK).map(x => "funk_" + x), ...Object.keys(NUTZ).map(x => "nutz_" + x)];
-const RADIOS = ["bahn","format","fluegel","boden","lage","antrieb","obc","haut","bauweise","sonne","start","leben","rakete","sh_antrieb"];
+const GR_KEYS = () => [...Object.keys(NUTZ), ...Object.keys(FUNK).map(k => "f_" + k)];
+const RADIOS = ["technik","bahn","format","fluegel","boden","lage","antrieb","obc","haut","bauweise","sonne","start","leben","rakete","sh_antrieb"];
 let MANUAL = {d:{}, x:[]};
 let KOSTEN = "alles";
 try { if (localStorage.getItem("satellitenwerkstatt.kosten") === "bau") KOSTEN = "bau"; } catch(e){}
@@ -3876,6 +3916,7 @@ function readForm(){
   Object.keys(TIERINFO).forEach(k => { const x = form.querySelector('input[name="stufe_' + k + '"]:checked'); c["stufe_" + k] = x ? Number(x.value) : 2; });
   Object.keys(FUNK).forEach(k => { const x = form.querySelector('input[name="stufe_f_' + k + '"]:checked'); c["stufe_f_" + k] = x ? Number(x.value) : 2; });
   { const x = form.querySelector('input[name="stufe_solar"]:checked'); c.stufe_solar = x ? Number(x.value) : 2; }
+  GR_KEYS().forEach(k => { const x = form.querySelector('input[name="gr_' + k + '"]:checked'); c["gr_" + k] = x ? Number(x.value) : 100; });
   return c;
 }
 function batteryRange(fmt){
@@ -3884,7 +3925,7 @@ function batteryRange(fmt){
   if (k === "p"){ b.min = 2; b.max = 40; b.step = 1; } else if (k === "c"){ b.min = 10; b.max = 250; b.step = 5; } else { b.min = 200; b.max = 5000; b.step = 50; }
 }
 function writeForm(c){
-  c = Object.assign({sh_antrieb:"chem", m_tank:2, rueckflug:true, aufenthalt:2, magschild:false, schlaf:false, rakete: isStn(c.format) ? "gross" : "mitflug", sonne:"none", boden:"eigen", bauweise:"selbst", start:"kauf", leben:"teil", crew:4, fluege:4, m_wohn:1, m_wohnauf:0, m_labor:1, m_knoten:1, m_lager:1, m_kuppel:0, m_solar:2, m_radiator:2, schild:true, strahl:false}, c);
+  c = Object.assign({technik:"standard", sh_antrieb:"chem", m_tank:2, rueckflug:true, aufenthalt:2, magschild:false, schlaf:false, rakete: isStn(c.format) ? "gross" : "mitflug", sonne:"none", boden:"eigen", bauweise:"selbst", start:"kauf", leben:"teil", crew:4, fluege:4, m_wohn:1, m_wohnauf:0, m_labor:1, m_knoten:1, m_lager:1, m_kuppel:0, m_solar:2, m_radiator:2, schild:true, strahl:false}, c);
   MANUAL = c.manuell && typeof c.manuell === "object" ? JSON.parse(JSON.stringify({d:c.manuell.d || {}, x:c.manuell.x || []})) : {d:{}, x:[]};
   const el = form.elements;
   el.titel.value = c.titel;
@@ -3895,6 +3936,7 @@ function writeForm(c){
   Object.keys(TIERINFO).forEach(k => { const x = form.querySelector('input[name="stufe_' + k + '"][value="' + (c["stufe_" + k] || 2) + '"]'); if (x) x.checked = true; });
   Object.keys(FUNK).forEach(k => { const x = form.querySelector('input[name="stufe_f_' + k + '"][value="' + (c["stufe_f_" + k] || 2) + '"]'); if (x) x.checked = true; });
   { const x = form.querySelector('input[name="stufe_solar"][value="' + (c.stufe_solar || 2) + '"]'); if (x) x.checked = true; }
+  GR_KEYS().forEach(k => { const v = GR_STUFEN.includes(+c["gr_" + k]) ? +c["gr_" + k] : 100, x = form.querySelector('input[name="gr_' + k + '"][value="' + v + '"]'); if (x) x.checked = true; });
   el.budget.value = c.budget > 0 ? c.budget : "";
   el.maxkg.value = c.maxkg > 0 ? c.maxkg : "";
   if (parseSize(el.maxcm.value) !== (c.maxcm || 0)) el.maxcm.value = c.maxcm > 0 ? sizeStr(c.maxcm) : "";
@@ -3927,16 +3969,22 @@ function refreshHints(c, R){
     const t = R.station ? null : tupOf(FUNK[k], R.k), st = ftierOf(c, k), kr = R.k === "s" ? "s" : "c";
     box.querySelectorAll("[data-ftierprice]").forEach(n => { const lv = +n.dataset.ftierprice.split(":")[1]; n.textContent = t ? eur(t[3]*FTIER[lv].cost*R.BW.f) : ""; });
     box.querySelector("[data-ftierinfo]").textContent = rateStr(FUNK[k].rate[kr]*FTIER[st].rate) + " · " + (st === 1 ? "einfacher Sender, sparsam" : st === 3 ? "stärkerer Verstärker und bessere Antenne, braucht mehr Strom" : "ausgewogen");
-    const hint = form.querySelector('[data-hint="funk_' + k + '"]'); if (hint && t) hint.innerHTML = kg(t[0]*FTIER[st].mass).replace(" kg","&nbsp;kg") + "<br>" + eur(t[3]*FTIER[st].cost*R.BW.f).replace(" €","&nbsp;€");
+    const hint = form.querySelector('[data-hint="funk_' + k + '"]'); if (hint && t){ const g = grFx(grOf(c, "f_" + k)); hint.innerHTML = kg(t[0]*FTIER[st].mass*g.mass).replace(" kg","&nbsp;kg") + "<br>" + eur(t[3]*FTIER[st].cost*g.cost*R.BW.f).replace(" €","&nbsp;€"); }
   });
+  GR_KEYS().forEach(k => { const box = form.querySelector('[data-grbox="' + k + '"]'); if (!box) return;
+    const on = k.startsWith("f_") ? c["funk_" + k.slice(2)] : c["nutz_" + k]; box.hidden = !on; if (!on) return;
+    const sz = grOf(c, k), g = grFx(sz), opt = GR_OPTIK.includes(k), fu = k.startsWith("f_");
+    box.querySelector("[data-grinfo]").textContent = sz === 1 ? (fu ? "Größere Antenne = mehr Daten, kleinere = weniger." : opt ? "Größere Optik = schärfere Bilder und mehr Daten, braucht aber genaueres Zielen." : "Größer = mehr Leistung, aber schwerer und teurer.") :
+      (sz > 1 ? "Größer: " : "Kleiner: ") + (fu ? "Datenrate " : opt ? "Bildschärfe und Daten " : "Leistung ") + Math.round(g.perf*100) + " % · Gewicht und Platz " + Math.round(g.mass*100) + " % · Strom " + Math.round(g.power*100) + " % · Preis " + Math.round(g.cost*100) + " %" + (opt && sz > 1 ? " · muss genauer zielen" : "") + "."; });
+  { const ti = document.getElementById("technikInfo"), TK = techOf(c); if (ti) ti.textContent = TK.sub + (TK === TECHNIK.standard ? "." : " – Elektronik: Gewicht " + Math.round(TK.mass*100) + " %, Platz " + Math.round(TK.vol*100) + " %, Strom " + Math.round(TK.power*100) + " %, Preis " + Math.round(TK.cost*100) + " %, Strahlungsfestigkeit " + Math.round(TK.tol*100) + " %."); }
   { const si = document.getElementById("solarInfo"); if (si) si.textContent = STIER[stierOf(c)].info + " · Preis der Solarzellen ×" + nf1.format(STIER[stierOf(c)].cost).replace(",0", ""); }
   Object.keys(TIERINFO).forEach(k => {
     const box = form.querySelector('[data-tiers="' + k + '"]'); if (!box) return;
     box.hidden = !c["nutz_" + k];
     const t = tupOf(NUTZ[k], R.station ? "s" : R.k), st = tierOf(c, k);
     box.querySelectorAll("[data-tierprice]").forEach(n => { const lv = +n.dataset.tierprice.split(":")[1]; n.textContent = t ? eur(t[3]*TIER[lv].cost*R.BW.f) : ""; });
-    box.querySelector("[data-tierinfo]").textContent = TIERINFO[k][st - 1] + " · " + (st === 1 ? "leichter und sparsamer" : st === 3 ? "schwerer, braucht mehr Strom und genauere Ausrichtung" : "ausgewogen");
-    const hint = form.querySelector('[data-hint="nutz_' + k + '"]'); if (hint && t) hint.innerHTML = kg(t[0]*TIER[st].mass).replace(" kg","&nbsp;kg") + "<br>" + eur(t[3]*TIER[st].cost*R.BW.f).replace(" €","&nbsp;€");
+    box.querySelector("[data-tierinfo]").textContent = grInfo(k, st, grOf(c, k)) + " · " + (st === 1 ? "leichter und sparsamer" : st === 3 ? "schwerer, braucht mehr Strom und genauere Ausrichtung" : "ausgewogen");
+    const hint = form.querySelector('[data-hint="nutz_' + k + '"]'); if (hint && t){ const g = grFx(grOf(c, k)); hint.innerHTML = kg(t[0]*TIER[st].mass*g.mass).replace(" kg","&nbsp;kg") + "<br>" + eur(t[3]*TIER[st].cost*g.cost*R.BW.f).replace(" €","&nbsp;€"); }
   });
   Object.keys(RAKETEN).forEach(k => { const n = form.querySelector('label:has(#f-rakete-' + k + ') .opt-hint'); if (!n) return;
     const cap = capOf(k, c.bahn); n.innerHTML = k === "mitflug" ? (MITFLUG_OK[c.bahn] === "nein" ? "nicht möglich" : MITFLUG_OK[c.bahn] === "selten" ? "selten" : "") : eur(RAKETEN[k].price).replace(" €","&nbsp;€") + "<br>" + (cap >= 1000 ? nf1.format(cap/1000) + "&nbsp;t" : nf0.format(cap) + "&nbsp;kg"); });
@@ -4323,7 +4371,7 @@ function buildStation(c){
       const plate = box(w2, 26, 2, new THREE.MeshStandardMaterial({color:0xb7bcc3, metalness:0.6, roughness:0.4})); pg.add(plate);
       [-1, 1].forEach(sx => { const st = box(3, 3, 10, ringM); st.position.set(sx*w2*0.35, 0, -sign*6); pg.add(st); });
       items.forEach((x, i) => {
-        const ts = TIER[tierOf(c, x)].size, o = new THREE.Group(), xi = -w2/2 + 11 + i*22;
+        const ts = TIER[tierOf(c, x)].size*grOf(c, x), o = new THREE.Group(), xi = -w2/2 + 11 + i*22;
         if (x === "teleskop"){ const tb = cyl(6*ts, 6*ts, 26*ts, new THREE.MeshStandardMaterial({color:0xf2f2ef, roughness:0.5}), 32); tb.rotation.x = Math.PI/2; tb.position.z = 13*ts; o.add(tb); const gl = cyl(5.2*ts, 5.2*ts, 0.3, m.glass, 32); gl.rotation.x = Math.PI/2; gl.position.z = 26*ts; o.add(gl); }
         else if (x === "relay"){ const d = dish(10, 3, new THREE.MeshStandardMaterial({color:0xd9dde3, metalness:0.6, roughness:0.35})); d.rotation.x = -Math.PI/2; d.position.z = 6; o.add(d); const ms = cyl(0.8, 0.8, 6, ringM, 8); ms.rotation.x = Math.PI/2; ms.position.z = 3; o.add(ms); }
         else if (x === "iot"){ const b = cyl(4, 4, 1, m.white); b.rotation.x = Math.PI/2; o.add(b); const a = cyl(0.6, 0.6, 12, m.copper, 8); a.rotation.x = Math.PI/2; a.position.z = 6; o.add(a); }
@@ -4486,7 +4534,7 @@ function buildSat(c){
 
   /* ---------- Teile bauen (jeweils in eigener Lage) und dann verteilen ---------- */
   const sc = pq ? 0.5 : cube ? 1 : 3.2;
-  const ts = x => TIER[tierOf(c, x)].size;
+  const ts = x => TIER[tierOf(c, x)].size*grOf(c, x);
   // Feste Teile: UHF-Antennen oben, Triebwerk unten in der Mitte
   if (c.funk_uhf){
     const L = cube ? 1.7 : 5, gg = grp(); gg.position.set(0, H/2 + 0.012, 0);
@@ -5296,7 +5344,7 @@ function parseWishes(text){
   else if (has(/profi|kaufteile|zuverlässig|fertig kaufen/)) bauweise = "kauf";
   const what = nutz.map(x => NUTZ[x].name).join(" und ");
   const sonne = has(/sonnensegel|lichtsegel|solar ?sail|mit (sonnen)?licht fliegen/) ? "klein" : null;
-  const familie = has(/cubesat/) ? "c" : has(/pocketqube/) ? "p" : null;
+  const familie = has(/cubesat/) ? "c" : has(/pocketqube/) ? "p" : has(/mikrosatellit|kleinsatellit|minisatellit|großer satellit|große[nr]? satellit|riesen ?satellit|riesige[nr]? satellit/) ? "s" : null;
   const shipW = has(/raumschiff|raumkreuzer|sternenschiff|lange(n)? reise(n)? mit|generationenschiff|bemannte? reise|menschen zum (mars|mond)|astronauten (zum|zu den|auf den) (mars|mond|venus|asteroid)|crew zum|mit (der )?crew (zum|durchs)|durchs all reisen/);
   const station = shipW || has(/raum ?station|weltraumstation|mondstation|forschungsstation|wohnstation|station (für|mit|am|im|um)|astronaut|besatzung|menschen (im all|leben|wohnen)|wohnen im all|leben im all/);
   const cm = t.match(/(\d{1,2})\s*(astronaut|personen|menschen|leute|crew|besatzung)/);
@@ -5328,7 +5376,7 @@ function cleanWishes(w, fallback){
   if (!w || typeof w !== "object") return o;
   if (Array.isArray(w.nutzlast)) o.nutzlast = w.nutzlast.map(String).filter(x => NUTZ_KEYS.includes(x));
   if (["lora","uhf","s","x"].includes(w.funk)) o.funk = w.funk;
-  if (w.familie === "c" || w.familie === "p") o.familie = w.familie;
+  if (w.familie === "c" || w.familie === "p" || w.familie === "s") o.familie = w.familie;
   o.bahn = BAHNEN[w.bahn] ? w.bahn : null;
   o.jahre = Number(w.jahre) >= 1 ? Math.min(50, Math.round(Number(w.jahre))) : null;
   if ([1,2,3].includes(Number(w.stufe))) o.stufe = Number(w.stufe);
@@ -5437,7 +5485,7 @@ function designFor(w, format, bauweise, start){
     funk_lora:w.funk === "lora", funk_uhf:w.funk !== "lora", funk_s:w.funk === "s", funk_x:w.funk === "x", funk_laser:false,
     boden: BAHNEN[bahn].deep ? "dsn" : w.funk === "x" ? "eigen" : w.funk === "lora" ? "tinygs" : "satnogs", start:start || "kauf", lage: optical || nutz.has("relay") || nutz.has("teleskop") || w.sonne ? "mtq" : "none", stern:false,
     antrieb: ["geo","meo"].includes(bahn) ? "elek" : "none", segel:false, sonne:w.sonne || "none", obc:"std", haut:"weiss", heizung:true, bauweise,
-    budget:w.budget || 0, maxkg:w.maxkg || 0, maxcm:w.maxcm || 0, _bahnFix:!!w.bahn,
+    budget:w.budget || 0, maxkg:w.maxkg || 0, maxcm:w.maxcm || 0, technik:w.technik || "standard", _bahnFix:!!w.bahn,
     rtg:far, swingby:!!(w.bahn && BAHNEN[w.bahn] && BAHNEN[w.bahn].swing && (BAHNEN[w.bahn].au || 1) > 3), funk_hga:!!(w.bahn && BAHNEN[w.bahn] && BAHNEN[w.bahn].interstellar)};
   if (c.bahn === "interstellar"){ c.jahre = Math.max(w.jahre || 0, 40); c.obc = "rad"; c.lage = "rw"; c.koerper = false; }
   NUTZ_KEYS.forEach(x => c["nutz_" + x] = nutz.has(x));
@@ -5529,6 +5577,12 @@ function plan(w){
   let res = fams.map(f => designFor(w, f, bauweise, "kauf"));
   // Reicht das Budget nicht für einen gekauften Start, auch den kostenlosen Förderplatz prüfen
   if (w.budget && !res.some(r => r.hard === 0 && r.R.total <= w.budget)) res = res.concat(fams.map(f => designFor(w, f, bauweise, "foerder")));
+  // Passt nichts, weil es zu eng oder zu schwer wird: moderne, miniaturisierte Elektronik probieren.
+  if (!w.technik && (w.maxcm || w.maxkg) && !res.some(r => r.hard === 0)){
+    const mod = fams.map(f => designFor(Object.assign({}, w, {technik:"modern"}), f, bauweise, "kauf"));
+    mod.forEach(r => { if (r.hard === 0) r.log.unshift("Moderne, miniaturisierte Elektronik – kleiner und leichter, aber teurer. So passt alles hinein."); });
+    res = res.concat(mod);
+  }
   const okOnes = res.filter(r => r.hard === 0);
   // Passt nichts ganz: Hat der Bauer eine Größe genannt, bleibt die Näherung in dieser Größe.
   const sizeOk = r => !r.R.tests.some(t => t.id === "wunschgroesse" && t.status === "fail");
@@ -5556,7 +5610,7 @@ function aiPrompt(text, budget, maxkg){
     ' "budget": Euro-Betrag oder null (nur wenn genannt),\n' +
     ' "maxkg": Kilogramm oder null (nur wenn genannt),\n' +
     ' "maxcm": größte erlaubte Kantenlänge in Zentimetern oder null (nur wenn eine Größe genannt ist; Meter in Zentimeter umrechnen),\n' +
-    ' "familie": "c" (wenn ausdrücklich ein CubeSat gewünscht ist) | "p" (PocketQube) | null,\n' +
+    ' "familie": "c" (wenn ausdrücklich ein CubeSat gewünscht ist) | "p" (PocketQube) | "s" (Mikro- oder Kleinsatellit, großer Satellit bis 250 kg) | null,\n' +
     ' "station": true | false (true, wenn eine Raumstation für Menschen gewünscht ist),\n' +
     ' "ship": true | false (true, wenn ein bemanntes Raumschiff durchs All zu einem Ziel reisen soll – dann bahn = Ziel),\n' +
     ' "rueckflug": true | false (beim Raumschiff: soll es zurückkommen?),\n' +
@@ -5638,20 +5692,84 @@ async function runAI(){
 /* Zeichnungs-Scanner: ein Foto einer Skizze wird von Claude gelesen. Was Claude
    zurückgibt, läuft durch dieselbe Positivliste wie eine Beschreibung (cleanWishes);
    gebaut und geprüft wird alles von der Werkstatt selbst. */
-const SCAN = {url:null};
+const SCAN = {url:null, file:null, msgs:[], chat:[], base:null, busy:false};
 async function scanLimits(){ if (!AI.sample || !AI.sample.limits) return null; try { const l = await AI.sample.limits(); return l && l.images ? l.images : null; } catch(e){ return null; } }
 function scanPrompt(text, budget, maxkg, maxcm){
   return aiPrompt(
     "Im Anhang ist ein Foto einer Zeichnung oder Skizze. Darauf ist ein Satellit, eine Raumstation oder ein Raumschiff gezeichnet, das jemand bauen möchte. " +
-    "Lies aus der Zeichnung ab, was gebaut werden soll: die Grundform (kleiner Würfel = CubeSat/PocketQube, lange Röhre aus Modulen = Station, Röhre mit Tanks und Triebwerk = Raumschiff), " +
+    "Lies aus der Zeichnung ab, was gebaut werden soll: die Grundform (kleiner Würfel = CubeSat/PocketQube, größerer Kasten = Mikro- oder Kleinsatellit, lange Röhre aus Modulen = Station, Röhre mit Tanks und Triebwerk = Raumschiff), " +
     "Solarflügel, Antennen und Parabolschüsseln, Kameras, Teleskope, Sonnensegel, Landekapseln, Labore. Beschriftete Maße gehören in maxcm, ein beschriftetes Gewicht in maxkg, ein Preis in budget. " +
     "Schreib in »verstanden«, was du auf der Zeichnung erkannt hast. Ist auf dem Bild gar keine Zeichnung eines Raumfahrzeugs, gib nutzlast [] und als verstanden »Auf dem Bild habe ich keine Zeichnung eines Satelliten erkannt.« zurück." +
     (text ? " Zusätzliche Beschreibung des Bauers: " + text : ""), budget, maxkg).replace(
-    ' "verstanden":', ' "erkannt": ["kurze Stichwörter, was auf der Zeichnung zu sehen ist", ...] (höchstens 10),\n "fluegel": 0 | 2 | 4 | null (Anzahl der gezeichneten Solarflügel),\n "verstanden":') +
+    ' "verstanden":', ' "erkannt": ["kurze Stichwörter, was auf der Zeichnung zu sehen ist", ...] (höchstens 10),\n "fluegel": 0 | 2 | 4 | null (Anzahl der gezeichneten Solarflügel),\n "antwort": "nur bei einer Korrektur: 1-2 kurze Sätze in Du-Form, was du geändert hast",\n "verstanden":') +
     (maxcm ? "\nHöchstgröße laut Eingabefeld: " + maxcm + " cm." : "");
 }
+function scanCorrection(msg){
+  return "Der Bauer korrigiert dich: »" + msg + "«\n" +
+    "Er kennt seine Zeichnung am besten. Übernimm seine Angaben (Bauform, Größe, Gewicht, Teile, Ziel, Station oder Raumschiff), auch wenn du es auf dem Bild anders gesehen hast, und behalte alles andere bei. " +
+    "Mikrosatellit, großer oder riesiger Satellit = familie \"s\"; CubeSat = \"c\"; PocketQube = \"p\"; Raumstation = station true; Raumschiff = ship true. Eine genannte Größe gehört in maxcm (in Zentimetern), ein Gewicht in maxkg.\n" +
+    "Antworte wieder NUR mit dem vollständigen JSON im selben Format wie vorher. Schreib in »antwort« 1–2 kurze Sätze in Du-Form, was du geändert hast.";
+}
+const scanErr = e => e && e.code === "cancelled" ? "Abgebrochen." : e && e.code === "rate_limited" ? "Claude ist gerade ausgelastet. Versuch es in einer Minute noch einmal." : "Das hat nicht geklappt. Versuch es noch einmal oder mit einem schärferen Foto.";
+async function scanAsk(){
+  const stop = document.getElementById("ai-stop");
+  AI.ctl = new AbortController(); stop.hidden = false; SCAN.busy = true;
+  try {
+    // Erste Nachricht (Aufgabe) bleibt immer, dazu höchstens die letzten 8 Wechsel.
+    const msgs = SCAN.msgs.length > 17 ? [SCAN.msgs[0]].concat(SCAN.msgs.slice(-16)) : SCAN.msgs;
+    return await AI.sample.json(msgs, {images:[SCAN.file], signal:AI.ctl.signal, modelTier:"default"});
+  } finally { stop.hidden = true; AI.ctl = null; SCAN.busy = false; }
+}
+function scanApply(j){
+  const b = SCAN.base;
+  let w = cleanWishes(j, parseWishes(b.text));
+  if (b.budget) w.budget = b.budget; if (b.maxkg) w.maxkg = b.maxkg; if (b.maxcm && !(Number(j && j.maxcm) > 0)) w.maxcm = b.maxcm;
+  const erkannt = Array.isArray(j && j.erkannt) ? j.erkannt.filter(x => typeof x === "string" && x.trim()).slice(0, 10).map(x => x.trim().slice(0, 50)) : [];
+  if (!w.verstanden) w.verstanden = erkannt.length ? "Auf deiner Zeichnung: " + erkannt.join(", ") + "." : "Deine Zeichnung.";
+  const P = plan(w);
+  const fl = Number(j && j.fluegel);
+  if ([0,2,4].includes(fl) && !P.best.R.station && P.best.c.fluegel !== fl){
+    const c2 = Object.assign(clone(P.best.c), {fluegel:fl}), R2 = compute(c2), fails = R => R.tests.filter(t => t.status === "fail").length;
+    if (fails(R2) <= fails(P.best.R)) P.best = Object.assign({}, P.best, {c:c2, R:R2, log:P.best.log.concat(fl ? fl + " Solarflügel wie auf deiner Zeichnung." : "Ohne Solarflügel wie auf deiner Zeichnung.")});
+  }
+  writeForm(P.best.c); update(true);
+  showPlan(w, P, "zeichnung");
+  aiOut.insertAdjacentHTML("afterbegin", '<div class="scan"><img alt="Deine Zeichnung" src="' + SCAN.url + '"><div><b>Erkannt:</b>' + (erkannt.length ? "<ul>" + erkannt.map(li).join("") + "</ul>" : ' <span class="muted">nichts Eindeutiges</span>') + "</div></div>");
+  scanChatRender();
+}
+const SCAN_CHIPS = ["Das ist ein CubeSat", "Das ist ein Mikrosatellit", "Das ist ein riesiger Satellit", "Das ist eine Raumstation", "Das ist ein Raumschiff"];
+function scanChatRender(){
+  let box = document.getElementById("scan-chat");
+  if (!box){ box = document.createElement("div"); box.id = "scan-chat"; box.className = "scan-chat"; aiOut.appendChild(box); }
+  box.innerHTML = '<p class="muted"><b>Stimmt etwas nicht?</b> Erklär Claude, was auf deiner Zeichnung wirklich ist – zum Beispiel die Bauform, die Größe oder welche Teile drauf sind.</p>' +
+    (SCAN.chat.length ? '<div class="chat-log">' + SCAN.chat.map(m => '<p class="msg ' + m.who + '"><b>' + (m.who === "du" ? "Du" : "Claude") + ':</b> ' + esc(m.text) + "</p>").join("") + "</div>" : "") +
+    '<div class="imp-chips">' + SCAN_CHIPS.map(t => '<button type="button" data-chip="' + esc(t) + '">' + esc(t) + "</button>").join("") + "</div>" +
+    '<div class="imp-row"><input type="text" id="scan-msg" maxlength="400" placeholder="z. B. Das ist ein Mikrosatellit, 50 cm groß, mit Teleskop" aria-label="Korrektur für Claude"><button type="button" class="btn" id="scan-send">Senden</button></div>';
+  box.querySelectorAll("[data-chip]").forEach(bt => bt.addEventListener("click", () => { const i = document.getElementById("scan-msg"); i.value = bt.dataset.chip + (i.value ? ", " + i.value : ""); i.focus(); }));
+  const send = () => { const i = document.getElementById("scan-msg"), t = i.value.trim(); if (t && !SCAN.busy) scanSend(t); };
+  document.getElementById("scan-send").addEventListener("click", send);
+  document.getElementById("scan-msg").addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); send(); } });
+}
+async function scanSend(text){
+  if (!AI.sample || !SCAN.file) return;
+  SCAN.chat.push({who:"du", text});
+  SCAN.chat.push({who:"claude", text:"… schaut noch einmal auf deine Zeichnung"});
+  scanChatRender(); document.getElementById("scan-send").disabled = true;
+  SCAN.msgs.push({role:"user", content:scanCorrection(text)});
+  let j;
+  try { j = await scanAsk(); }
+  catch(e){
+    SCAN.msgs.pop(); SCAN.chat[SCAN.chat.length - 1].text = scanErr(e);
+    if (e && (e.code === "not_granted" || e.code === "sampling_disabled" || e.code === "capability_disabled")){ AI.sample = null; setAiMode(); }
+    scanChatRender(); return;
+  }
+  SCAN.msgs.push({role:"assistant", content:JSON.stringify(j)});
+  const ans = j && typeof j.antwort === "string" && j.antwort.trim() ? j.antwort.trim().slice(0, 300) : "Ich habe den Entwurf angepasst.";
+  SCAN.chat[SCAN.chat.length - 1].text = ans;
+  scanApply(j);
+}
 async function runScan(file){
-  const go = document.getElementById("ai-go"), stop = document.getElementById("ai-stop"), undo = document.getElementById("ai-undo"), sg = document.getElementById("scan-go");
+  const go = document.getElementById("ai-go"), undo = document.getElementById("ai-undo"), sg = document.getElementById("scan-go");
   const lim = await scanLimits();
   aiOut.hidden = false;
   if (!lim){ aiOut.innerHTML = '<p>Der Zeichnungs-Scanner braucht Claude zum Lesen der Zeichnung. Öffne die Werkstatt über den Claude-Link und erlaube Claude, dann kannst du ein Foto deiner Skizze hochladen.</p>'; return; }
@@ -5659,35 +5777,20 @@ async function runScan(file){
   if (lim.maxBytes && file.size > lim.maxBytes){ aiOut.innerHTML = "<p>Das Bild ist zu groß. Mach ein kleineres Foto oder einen Bildschirmausschnitt.</p>"; return; }
   const text = document.getElementById("ai-text").value.trim();
   const budget = Math.max(0, Number(form.elements.budget.value) || 0), maxkg = Math.max(0, Number(String(form.elements.maxkg.value).replace(",", ".")) || 0), maxcm = parseSize(form.elements.maxcm.value);
-  if (SCAN.url) URL.revokeObjectURL(SCAN.url); SCAN.url = URL.createObjectURL(file);
-  const thumb = '<img alt="Deine Zeichnung" src="' + SCAN.url + '">';
-  aiOut.innerHTML = '<div class="scan">' + thumb + '<p class="muted">Claude schaut sich deine Zeichnung an …</p></div>';
-  go.disabled = true; sg.disabled = true; AI.ctl = new AbortController(); stop.hidden = false;
-  let j = null;
-  try { j = await AI.sample.json(scanPrompt(text, budget, maxkg, maxcm), {images:[file], signal:AI.ctl.signal, modelTier:"default"}); }
+  if (SCAN.url) URL.revokeObjectURL(SCAN.url);
+  Object.assign(SCAN, {url:URL.createObjectURL(file), file, chat:[], base:{text, budget, maxkg, maxcm}, msgs:[{role:"user", content:scanPrompt(text, budget, maxkg, maxcm)}]});
+  aiOut.innerHTML = '<div class="scan"><img alt="Deine Zeichnung" src="' + SCAN.url + '"><p class="muted">Claude schaut sich deine Zeichnung an …</p></div>';
+  go.disabled = true; sg.disabled = true;
+  let j;
+  try { j = await scanAsk(); }
   catch(e){
-    go.disabled = false; sg.disabled = false; stop.hidden = true; AI.ctl = null;
+    go.disabled = false; sg.disabled = false;
     if (e && (e.code === "not_granted" || e.code === "sampling_disabled" || e.code === "capability_disabled")){ AI.sample = null; setAiMode(); aiOut.innerHTML = "<p>Ohne Claude kann die Zeichnung nicht gelesen werden. Beschreibe deinen Satelliten stattdessen oben in Worten.</p>"; return; }
-    aiOut.innerHTML = e && e.code === "cancelled" ? '<p class="muted">Abgebrochen.</p>' : e && e.code === "rate_limited" ? "<p>Claude ist gerade ausgelastet. Versuch es in einer Minute noch einmal.</p>" : "<p>Die Zeichnung konnte nicht gelesen werden. Versuch ein schärferes Foto mit gutem Licht.</p>";
-    return;
+    aiOut.innerHTML = "<p>" + esc(scanErr(e)) + "</p>"; return;
   }
-  stop.hidden = true; AI.ctl = null;
-  let w = cleanWishes(j, parseWishes(text));
-  if (budget) w.budget = budget; if (maxkg) w.maxkg = maxkg; if (maxcm) w.maxcm = maxcm;
-  const erkannt = Array.isArray(j && j.erkannt) ? j.erkannt.filter(x => typeof x === "string" && x.trim()).slice(0, 10).map(x => x.trim().slice(0, 50)) : [];
-  if (!w.verstanden) w.verstanden = erkannt.length ? "Auf deiner Zeichnung: " + erkannt.join(", ") + "." : "Deine Zeichnung.";
-  aiOut.innerHTML = '<div class="scan">' + thumb + '<p class="muted">Suche die günstigste Bauform, die deiner Zeichnung entspricht und alle Prüfungen besteht …</p></div>';
-  await new Promise(r => setTimeout(r, 30));
-  const P = plan(w);
-  const fl = Number(j && j.fluegel);
-  if ([0,2,4].includes(fl) && !P.best.R.station && P.best.c.fluegel !== fl){
-    const c2 = Object.assign(clone(P.best.c), {fluegel:fl}), R2 = compute(c2), fails = R => R.tests.filter(t => t.status === "fail").length;
-    if (fails(R2) <= fails(P.best.R)){ P.best = Object.assign({}, P.best, {c:c2, R:R2, log:P.best.log.concat(fl ? fl + " Solarflügel wie auf deiner Zeichnung." : "Ohne Solarflügel wie auf deiner Zeichnung.")}); }
-  }
+  SCAN.msgs.push({role:"assistant", content:JSON.stringify(j)});
   AI.prev = readForm();
-  writeForm(P.best.c); update(true);
-  showPlan(w, P, "zeichnung");
-  aiOut.insertAdjacentHTML("afterbegin", '<div class="scan">' + thumb + '<div><b>Erkannt:</b>' + (erkannt.length ? "<ul>" + erkannt.map(li).join("") + "</ul>" : ' <span class="muted">nichts Eindeutiges</span>') + "</div></div>");
+  scanApply(j);
   undo.hidden = false; go.disabled = false; sg.disabled = false; go.textContent = "Neuer Entwurf";
 }
 document.getElementById("scan-go").addEventListener("click", async () => {
@@ -5770,6 +5873,10 @@ function movesFor(c, opts){
     if (gl.includes("daten") && fv < 3) put(x => x["stufe_f_" + k] = fv + 1);
     if (gl.some(g => ["kosten","masse"].includes(g)) && fv > 1) put(x => x["stufe_f_" + k] = fv - 1); });
   if ((opts.goals || []).some(g => ["kosten","masse"].includes(g))) Object.keys(TIERINFO).forEach(k => { if (c["nutz_" + k] && tierOf(c, k) > 1) put(x => x["stufe_" + k] = tierOf(c, k) - 1); });
+  Object.keys(TECHNIK).forEach(t => { if (t !== (c.technik || "standard")) put(x => x.technik = t); });
+  GR_KEYS().forEach(k => { const on = k.startsWith("f_") ? c["funk_" + k.slice(2)] : c["nutz_" + k]; if (!on) return;
+    const i = GR_STUFEN.indexOf(Math.round(grOf(c, k)*100));
+    if (i > 0) put(x => x["gr_" + k] = GR_STUFEN[i - 1]); if (i < GR_STUFEN.length - 1) put(x => x["gr_" + k] = GR_STUFEN[i + 1]); });
   // Bauform wechseln (mit anschließender Reparatur)
   Object.keys(FORMATE).forEach(f => {
     if (isStn(f) || f === c.format) return;
@@ -5807,9 +5914,9 @@ function improveSearch(c0, goals, opts){
   }
   return {c, R:Rc, log};
 }
-const FIELD_LABEL = {sh_antrieb:"Antrieb des Raumschiffs", m_tank:"Tankmodule", aufenthalt:"Aufenthalt am Ziel", rakete:"Rakete", format:"Bauform", bahn:"Umlaufbahn", boden:"Bodenstation", lage:"Lageregelung", antrieb:"Antrieb", obc:"Bordcomputer", haut:"Oberfläche", bauweise:"Bauweise", sonne:"Sonnensegel", start:"Start", leben:"Lebenserhaltung",
+const FIELD_LABEL = {technik:"Technikstand", sh_antrieb:"Antrieb des Raumschiffs", m_tank:"Tankmodule", aufenthalt:"Aufenthalt am Ziel", rakete:"Rakete", format:"Bauform", bahn:"Umlaufbahn", boden:"Bodenstation", lage:"Lageregelung", antrieb:"Antrieb", obc:"Bordcomputer", haut:"Oberfläche", bauweise:"Bauweise", sonne:"Sonnensegel", start:"Start", leben:"Lebenserhaltung",
   hoehe:"Bahnhöhe", jahre:"Missionsdauer", segmente:"Felder je Flügel", batterie:"Akku", fluegel:"Solarflügel", crew:"Besatzung", fluege:"Frachtflüge pro Jahr"};
-const FIELD_DICT = {sh_antrieb:SH_ANTRIEB, rakete:RAKETEN, format:FORMATE, bahn:BAHNEN, boden:BODEN, lage:LAGE, antrieb:ANTRIEB, obc:OBC, haut:HAUT, bauweise:BAUWEISE, sonne:SONNE, leben:LEBEN, start:{kauf:{name:"Startplatz kaufen"}, foerder:{name:"Förderprogramm"}}};
+const FIELD_DICT = {technik:TECHNIK, sh_antrieb:SH_ANTRIEB, rakete:RAKETEN, format:FORMATE, bahn:BAHNEN, boden:BODEN, lage:LAGE, antrieb:ANTRIEB, obc:OBC, haut:HAUT, bauweise:BAUWEISE, sonne:SONNE, leben:LEBEN, start:{kauf:{name:"Startplatz kaufen"}, foerder:{name:"Förderprogramm"}}};
 const BOOL_LABEL = Object.assign({magschild:MAGSCHILD.name, schlaf:SCHLAF.name, schwenk:SCHWENK.name, rueckflug:"Rückflug zur Erde", koerper:"Solarzellen am Gehäuse", stern:STERN.name, segel:SEGEL.name, heizung:HEIZ.name, rtg:RTG.name, swingby:SWING.name, schild:"Trümmerschutz", strahl:"Strahlenschutz-Wände"},
   Object.fromEntries(Object.entries(FUNK).map(([k,f]) => ["funk_" + k, f.name])), Object.fromEntries(Object.entries(NUTZ).map(([k,n]) => ["nutz_" + k, n.name])));
 function describeChanges(a, b){
@@ -5819,6 +5926,7 @@ function describeChanges(a, b){
   const unit = {hoehe:" km", jahre:" J.", batterie:" Wh"};
   Object.keys(FUNK).forEach(k => { if (b["funk_" + k] && a["funk_" + k] && ftierOf(a, k) !== ftierOf(b, k)) out.push(FUNK[k].name + ": Stufe " + ftierOf(a, k) + " → " + ftierOf(b, k)); });
   if (stierOf(a) !== stierOf(b) && !isStn(b.format) && (b.koerper || b.fluegel)) out.push("Solarzellen: Stufe " + stierOf(a) + " → " + stierOf(b) + " (" + Math.round(STIER[stierOf(b)].eta*100) + " % Wirkungsgrad)");
+  GR_KEYS().forEach(k => { const on = k.startsWith("f_") ? b["funk_" + k.slice(2)] : b["nutz_" + k]; if (on && grOf(a, k) !== grOf(b, k)) out.push((k.startsWith("f_") ? FUNK[k.slice(2)].name + " (Antenne)" : NUTZ[k].name) + ": Größe " + Math.round(grOf(a, k)*100) + " % → " + Math.round(grOf(b, k)*100) + " %"); });
   Object.keys(TIERINFO).forEach(k => { if (b["nutz_" + k] && a["nutz_" + k] && tierOf(a, k) !== tierOf(b, k)) out.push(NUTZ[k].name + ": Stufe " + tierOf(a, k) + " → " + tierOf(b, k) + " (" + TIERINFO[k][tierOf(b, k) - 1] + ")"); });
   ["m_tank","aufenthalt"].forEach(f => { if (b.format === "SH" && a.format === "SH" && a[f] !== b[f]) out.push(FIELD_LABEL[f] + ": " + a[f] + " → " + b[f]); });
   ["hoehe","jahre","fluegel","segmente","batterie","crew","fluege"].forEach(f => { if (a[f] !== b[f] && b[f] != null && !(f === "hoehe" && BAHNEN[b.bahn].h) && !((f === "segmente") && !b.fluegel) && !(isStn(b.format) && ["fluegel","segmente","batterie"].includes(f))) out.push(FIELD_LABEL[f] + ": " + a[f] + " → " + b[f] + (unit[f] || "")); });
@@ -5826,13 +5934,13 @@ function describeChanges(a, b){
   return out;
 }
 const ALLOWED = {
-  radio: {sh_antrieb:Object.keys(SH_ANTRIEB), rakete:Object.keys(RAKETEN), format:Object.keys(FORMATE), bahn:Object.keys(BAHNEN), boden:Object.keys(BODEN), lage:Object.keys(LAGE), antrieb:Object.keys(ANTRIEB), obc:Object.keys(OBC), haut:Object.keys(HAUT), bauweise:Object.keys(BAUWEISE), sonne:Object.keys(SONNE), start:["kauf","foerder"], leben:Object.keys(LEBEN)},
-  num: {...Object.fromEntries(Object.keys(TIERINFO).map(k => ["stufe_" + k, [1,3]])), ...Object.fromEntries(Object.keys(FUNK).map(k => ["stufe_f_" + k, [1,3]])), stufe_solar:[1,3], hoehe:[300,1200], jahre:[1,50], fluegel:[0,4], segmente:[1,3], batterie:[2,5000], crew:[0,12], fluege:[0,12], ...Object.fromEntries(Object.keys(MODULE).map(k => ["m_" + k, [0, k === "solar" || k === "radiator" ? 12 : 6]])), m_tank:[0,24], aufenthalt:[0,120]},
+  radio: {technik:Object.keys(TECHNIK), sh_antrieb:Object.keys(SH_ANTRIEB), rakete:Object.keys(RAKETEN), format:Object.keys(FORMATE), bahn:Object.keys(BAHNEN), boden:Object.keys(BODEN), lage:Object.keys(LAGE), antrieb:Object.keys(ANTRIEB), obc:Object.keys(OBC), haut:Object.keys(HAUT), bauweise:Object.keys(BAUWEISE), sonne:Object.keys(SONNE), start:["kauf","foerder"], leben:Object.keys(LEBEN)},
+  num: {...Object.fromEntries(Object.keys(TIERINFO).map(k => ["stufe_" + k, [1,3]])), ...Object.fromEntries(Object.keys(FUNK).map(k => ["stufe_f_" + k, [1,3]])), stufe_solar:[1,3], hoehe:[300,1200], jahre:[1,50], fluegel:[0,4], segmente:[1,3], batterie:[2,5000], crew:[0,12], fluege:[0,12], ...Object.fromEntries(Object.keys(MODULE).map(k => ["m_" + k, [0, k === "solar" || k === "radiator" ? 12 : 6]])), m_tank:[0,24], aufenthalt:[0,120], ...Object.fromEntries(GR_KEYS().map(k => ["gr_" + k, [50,200]]))},
   bool: Object.keys(BOOL_LABEL)
 };
 function applyChange(c, f, v){
   if (ALLOWED.radio[f]){ if (ALLOWED.radio[f].includes(String(v))){ c[f] = String(v); return true; } return false; }
-  if (ALLOWED.num[f]){ const n = Number(v); if (!isFinite(n)) return false; c[f] = Math.round(Math.min(ALLOWED.num[f][1], Math.max(ALLOWED.num[f][0], n))); if (f === "fluegel") c[f] = c[f] >= 3 ? 4 : c[f] >= 1 ? 2 : 0; return true; }
+  if (ALLOWED.num[f]){ const n = Number(v); if (!isFinite(n)) return false; c[f] = Math.round(Math.min(ALLOWED.num[f][1], Math.max(ALLOWED.num[f][0], n))); if (f === "fluegel") c[f] = c[f] >= 3 ? 4 : c[f] >= 1 ? 2 : 0; if (f.startsWith("gr_")) c[f] = GR_STUFEN.reduce((a, b) => Math.abs(b - c[f]) < Math.abs(a - c[f]) ? b : a); return true; }
   if (ALLOWED.bool.includes(f)){ c[f] = v === true || v === "true" || v === 1; return true; }
   return false;
 }
