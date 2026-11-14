@@ -649,6 +649,62 @@ function costMode(c, hw, once, run, totalOnce, totalRun){
   const res = once.find(x => x.reserve); if (res){ res.cost = buildSub*0.15; res.build = true; }
   return {totalOnce:buildSub*1.15, totalRun:0, total:buildSub*1.15, full, bau:true};
 }
+/* Lösungsvorschläge nachrechnen: Jeder Rat zu Antrieb, Flug und Rückkehr wird im
+   Hintergrund ausprobiert. Gezeigt wird nur, was die Prüfung wirklich besteht –
+   nie ein Teil, das schon eingebaut ist. Hilft nichts, steht das ehrlich da. */
+const FIX_PROBE = {
+  ziel: c => { const B = BAHNEN[c.bahn], o = [];
+    if (B.swing && !c.swingby) o.push(["Swing-by an Planeten einschalten", {swingby:true}]);
+    if (c.antrieb !== "elek") o.push(["Ionentriebwerk einbauen", {antrieb:"elek"}]);
+    if (B.swing && !c.swingby && c.antrieb !== "elek") o.push(["Ionentriebwerk und Swing-by", {antrieb:"elek", swingby:true}]);
+    if (c.sonne !== "gross" && !B.interstellar) o.push(["großes Sonnensegel", {sonne:"gross", lage: c.lage === "none" ? "mtq" : c.lage}]);
+    if (c.format !== "S") o.push(["Kleinsatellit mit Ionentriebwerk (größerer Tank)" + (B.swing ? " und Swing-by" : ""), {format:"S", antrieb:"elek", swingby:!!B.swing, batterie:Math.max(400, c.batterie)}]);
+    if (B.interstellar && c.jahre < 35) o.push(["Missionsdauer 40 Jahre", {jahre:40}]);
+    return o; },
+  rueckkehr: c => { const o = [];
+    if (c.antrieb !== "elek") o.push(["Ionentriebwerk einbauen", {antrieb:"elek"}]);
+    if (c.format !== "S") o.push(["Kleinsatellit mit Ionentriebwerk (größerer Tank)", {format:"S", antrieb:"elek", batterie:Math.max(400, c.batterie)}]);
+    if (BAHNEN[c.bahn].deep && c.bahn !== "mond") o.push(["Ziel Mond statt " + BAHNEN[c.bahn].name.replace(/^Zu[mr]? /, ""), {bahn:"mond"}, true]);
+    if (BAHNEN[c.bahn].deep) o.push(["Rückkehr aus der Erdumlaufbahn (Ziel: Sonnensynchron)", {bahn:"sso"}, true]);
+    if (c.lage === "none") o.push(["Magnetspulen zum Ausrichten", {lage:"mtq"}]);
+    return o; },
+  leben: c => { const o = [];
+    if (c.antrieb !== "elek") o.push(["Ionentriebwerk einbauen", {antrieb:"elek"}]);
+    if (!c.segel && !BAHNEN[c.bahn].h) o.push(["Bremssegel einbauen", {segel:true}]);
+    if (!BAHNEN[c.bahn].h && c.hoehe > 550) o.push(["niedriger fliegen (550 km)", {hoehe:550}]);
+    if (!BAHNEN[c.bahn].h && c.hoehe < 450) o.push(["höher fliegen (500 km)", {hoehe:500}]);
+    if (c.format !== "S") o.push(["Kleinsatellit mit Ionentriebwerk (größerer Tank)", {format:"S", antrieb:"elek", batterie:Math.max(400, c.batterie)}]);
+    return o; }
+};
+function verifyFixes(R){
+  if (!R || R.station) return R;
+  const nFail = (Rx, id) => Rx.tests.filter(x => x.status === "fail" && x.id !== id && x.id !== "budget").length;
+  R.tests.forEach(t => {
+    const probe = FIX_PROBE[t.id];
+    if (!probe || t.status === "ok") return;
+    let opts = probe(R.c);
+    // Einzelne Änderungen, die die Mission nicht verändern, auch gemeinsam probieren
+    const plain = opts.filter(o => !o[2] && !("format" in o[1]) && !/ und /.test(o[0]));
+    if (plain.length > 1) opts = opts.concat([[plain.map(o => o[0]).join(" + "), Object.assign({}, ...plain.map(o => o[1]))]]);
+    const before = nFail(R, t.id), hits = [], tried = [];
+    for (const [label, ch, alt] of opts){
+      let R2; try { R2 = compute(Object.assign(clone(R.c), ch)); } catch(e){ continue; }
+      const t2 = R2.tests.find(x => x.id === t.id);
+      if (t2 && (t2.status === "ok" || (t.status === "fail" && t2.status === "warn"))) hits.push({label, alt:!!alt, t2, R2, worse:nFail(R2, t.id) > before});
+      else tried.push(label);
+    }
+    // Erst Vorschläge ohne Nebenwirkung und ohne andere Mission, dann der Rest
+    const best = hits.find(h => !h.worse && !h.alt) || hits.find(h => !h.alt) || hits.find(h => !h.worse) || hits[0];
+    if (best){
+      t.fix = (best.alt && tried.length ? "So nicht zu schaffen (nachgerechnet: " + tried.join(", ") + "). Machbar wäre: " : "Nachgerechnet: ") + best.label +
+        " – damit " + (best.t2.status === "ok" ? "besteht diese Prüfung" : "wird es knapp, aber machbar") + " (" + best.t2.val + ")." +
+        (best.worse ? " Achtung: Dafür fallen andere Prüfungen durch, schau sie dir danach an." : "") + (best.R2.total > R.total*1.05 ? " Kostet etwa " + eur(best.R2.total - R.total) + " mehr." : "");
+    } else if (tried.length){
+      t.fix = "Nachgerechnet: " + tried.join(", ") + " – nichts davon reicht. " + (t.id === "leben" ? "Fliege niedriger, damit der Satellit von selbst verglüht." : "Mit einem so kleinen Satelliten ist das nicht zu schaffen. Wähle ein näheres Ziel.");
+    }
+  });
+  return R;
+}
 function computeStation(c){
   const ship = c.format === "SH";
   const B = BAHNEN[c.bahn], deep = !!B.deep, h = B.h || c.hoehe, r = RE + h, T = deep || ship ? 86400 : 2*Math.PI*Math.sqrt(r**3/MU);
@@ -2691,7 +2747,7 @@ function storeSel(){
   }
 }
 function commitManual(){
-  const c = readForm(); R = compute(c); renderResults(); updateInfo(); updateBuildbar(); save(c);
+  const c = readForm(); R = verifyFixes(compute(c)); renderResults(); updateInfo(); updateBuildbar(); save(c);
 }
 function addExtra(t){
   const F = R.F, sc = F.cls === "p" ? 0.5 : F.cube ? 1 : F.cls === "st" ? 30 : 3.2, n = MANUAL.x.length;
@@ -3556,7 +3612,7 @@ function update(force){
   }
   const fmtChanged = c.format !== lastFormat;
   lastFormat = c.format;
-  R = compute(c);
+  R = verifyFixes(compute(c));
   refreshHints(c, R);
   renderResults();
   if (V.ok){
