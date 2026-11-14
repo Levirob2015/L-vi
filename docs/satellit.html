@@ -107,6 +107,7 @@ button,input,select{font:inherit;color:inherit}
 .diff{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:12.5px;font-variant-numeric:tabular-nums}
 .diff span:nth-child(odd){color:var(--muted)}
 .ai-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ai-row > .field:last-child{grid-column:1 / -1}
 .unit{display:flex;align-items:center;border:1px solid var(--line);background:var(--raise);border-radius:6px;overflow:hidden}
 .unit input{border:0;background:transparent;padding:7px 8px;width:100%;min-width:0;font-variant-numeric:tabular-nums}
 .unit i{font-style:normal;color:var(--muted);padding:0 9px 0 2px;font-size:12.5px}
@@ -118,6 +119,8 @@ button,input,select{font:inherit;color:inherit}
 .ai-out .st{font-weight:600}
 .ai-out .st.ok{color:var(--ok)} .ai-out .st.warn{color:var(--warn)} .ai-out .st.fail{color:var(--fail)}
 .ai-out .muted{color:var(--muted)}
+.ai-out .scan{display:grid;grid-template-columns:88px 1fr;gap:10px;align-items:start}
+.ai-out .scan img{width:88px;height:88px;object-fit:contain;background:#fff;border:1px solid var(--line);border-radius:6px}
 #aiMode{font-size:11px}
 .range{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;align-items:center}
 .range input{grid-column:1/-1;width:100%;accent-color:var(--accent)}
@@ -323,6 +326,15 @@ td .dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right
    Tupel je Bauteil: [Masse kg, Volumen in Liter (≈ U), mittlere Leistung W, Preis €]
    p = PocketQube (wird aus c abgeleitet, wenn nicht angegeben), c = CubeSat-Klasse, s = Kleinsatellit
    ===================================================================== */
+/* Größe: "10 cm", "30 x 20 x 10 cm", "1,5 m", "80 mm" -> größte Kante in cm (0 = keine Angabe) */
+function parseSize(str){
+  const t = String(str || "").toLowerCase().replace(/,/g, ".");
+  const nums = (t.match(/\d+(?:\.\d+)?/g) || []).map(Number).filter(n => n > 0 && isFinite(n));
+  if (!nums.length) return 0;
+  const u = (t.match(/(mm|cm|m)(?![a-zäöü²³])/g) || []).pop() || "cm";
+  return Math.round(Math.max(...nums)*({mm:0.1, cm:1, m:100}[u])*10)/10;
+}
+const sizeStr = cm => cm >= 100 ? nf1.format(cm/100).replace(",0", "") + " m" : nf1.format(cm).replace(",0", "") + " cm";
 const monStr = m => nf0.format(m) + (Math.round(m) === 1 ? " Monat" : " Monate");
 const isStn = f => f === "ST" || f === "SH";
 const S0 = 1361, ETA = 0.28, RE = 6371, MU = 398600.4418, D2R = Math.PI / 180, SIGMA = 5.670e-8;
@@ -801,6 +813,11 @@ function computeStation(c){
 
   const len = 13 + 9*(cnt("wohn") + cnt("wohnauf") + cnt("labor") + cnt("lager")) + 6*cnt("knoten") + (ship ? 8 + 5*Math.ceil((fuel ? cnt("tank") : 0)/4) + ({segel:6, antimaterie:5.5, fusion:2.5}[c.sh_antrieb] || 0) + (magS ? 1.6 : 0) : 0);
   const F = Object.assign({}, FORMATE[ship ? "SH" : "ST"], {d:[len*10, 45, 45]});
+  if (c.maxcm > 0){ const edge = len*100;
+    T_("wunschgroesse", "Wunschgröße", edge <= c.maxcm ? "ok" : "fail", sizeStr(edge) + " / " + sizeStr(c.maxcm),
+      "Du möchtest höchstens " + sizeStr(c.maxcm) + ". " + (ship ? "Das Raumschiff" : "Die Station") + " ist etwa " + sizeStr(edge) + " lang – Solarflügel und Radiatoren nicht mitgerechnet.",
+      edge <= c.maxcm ? "" : "Weniger Module" + (ship ? " oder weniger Tankmodule" : "") + " machen sie kürzer.");
+  }
   return {station:true, ship, missionMonths, travel, dvHave, dvNeed, supplyT, supplyCap, c, F, B, cube:false, k:"st", h, T, fe, parts, dry:mass, harness:0, mass, massRes:mass*1.1, vol, volMax:Math.max(1, crew*30), volUnit:" m³",
     P_sun, P_gen, P_cons, ratio, dod, E_ecl, sim, emptyAt, minSoc, contact:0, downGB:1, needGB:1, best:1, bestKey:null, acc:1, needAcc:180, f1:20, fReq:10, L_nat:Infinity,
     tHot:22, tCold:18, tSunSide:120, tShadowSide:-150, tests, P_rtg:0, hw, once, run, totalOnce, totalRun, total, fullTotal:CM.full, bau:CM.bau, launch, BW:BAUWEISE.kauf, funkKeys:[], nutzKeys:[],
@@ -1188,6 +1205,13 @@ function compute(c){
       "Du möchtest höchstens " + kg(c.maxkg) + ". Der Satellit wiegt " + kg(mass) + ", mit 10 % Reserve " + kg(massRes) + ".",
       massRes <= c.maxkg ? "" : "Kleinere Bauform, kleinerer Akku oder leichtere Nutzlast wählen.");
   }
+  if (c.maxcm > 0){ const edge = Math.max(...F.d)*10;
+    const knapp = edge > c.maxcm && edge <= c.maxcm*1.15;
+    T_("wunschgroesse", "Wunschgröße", edge <= c.maxcm ? "ok" : knapp ? "warn" : "fail", sizeStr(edge) + " / " + sizeStr(c.maxcm),
+      "Du möchtest, dass der Satellit höchstens " + sizeStr(c.maxcm) + " groß ist. Die längste Kante des Gehäuses ist " + sizeStr(edge) + " (" + nf1.format(F.d[0]*10).replace(",0", "") + " × " + nf1.format(F.d[2]*10).replace(",0", "") + " × " + nf1.format(F.d[1]*10).replace(",0", "") + " cm). Solarflügel und Antennen klappen erst im All aus und zählen nicht mit." +
+      (knapp ? " Knapp darüber – meist sind das die Führungsschienen, mit denen der Satellit im Startbehälter gleitet. Ein »10-cm-CubeSat« ist mit Schienen 11,35 cm hoch." : ""),
+      edge <= c.maxcm || knapp ? "" : "Eine kleinere Bauform wählen – der KI-Entwurf sucht automatisch eine, die hineinpasst.");
+  }
 
   return {c, F, B, cube, k, h, T, fe, parts, dry, harness, mass, massRes, vol, volMax, P_sun, P_gen, P_cons, ratio, dod, E_ecl,
     sim, emptyAt, minSoc, contact, downGB, needGB, best, bestKey, acc, needAcc, f1, fReq, L_nat, tHot:tHotF, tCold, tSunSide, tShadowSide,
@@ -1234,8 +1258,10 @@ form.innerHTML =
   '<div class="sec ai" style="border-top:0;margin-top:0;padding-top:0"><h2>KI-Entwurf <i id="aiMode"></i></h2>' +
     '<label class="field"><span class="lbl">Was soll dein Satellit machen?</span><textarea id="ai-text" rows="3" placeholder="z. B. Fotos von der Erde machen und eine Grußbotschaft funken. Soll höchstens 1 kg wiegen."></textarea></label>' +
     '<div class="ai-row"><label class="field"><span class="lbl">Budget</span><span class="unit"><input type="number" id="f-budget" name="budget" min="0" step="1000" inputmode="numeric" placeholder="beliebig"><i>€</i></span></label>' +
-    '<label class="field"><span class="lbl">Höchstgewicht</span><span class="unit"><input type="number" id="f-maxkg" name="maxkg" min="0" step="0.05" inputmode="decimal" placeholder="beliebig"><i>kg</i></span></label></div>' +
-    '<div class="ai-btns"><button type="button" class="btn primary" id="ai-go">Entwurf erstellen</button><button type="button" class="btn" id="ai-stop" hidden>Stopp</button><button type="button" class="btn" id="ai-undo" hidden>Rückgängig</button></div>' +
+    '<label class="field"><span class="lbl">Höchstgewicht</span><span class="unit"><input type="number" id="f-maxkg" name="maxkg" min="0" step="0.05" inputmode="decimal" placeholder="beliebig"><i>kg</i></span></label>' +
+    '<label class="field"><span class="lbl">Höchstgröße</span><span class="unit"><input type="text" id="f-maxcm" name="maxcm" maxlength="30" autocomplete="off" placeholder="z. B. 10 cm oder 30×20×10 cm"></span></label></div>' +
+    '<div class="ai-btns"><button type="button" class="btn primary" id="ai-go">Entwurf erstellen</button><button type="button" class="btn" id="ai-stop" hidden>Stopp</button><button type="button" class="btn" id="ai-undo" hidden>Rückgängig</button>' +
+      '<button type="button" class="btn" id="scan-go" title="Foto einer Zeichnung oder Skizze hochladen">Zeichnung scannen</button><input type="file" id="scan-file" accept="image/png,image/jpeg,image/webp,image/gif" hidden></div>' +
     '<div class="field imp"><label class="lbl" for="imp-text">Was soll die KI verbessern?</label><div class="imp-row"><input type="text" id="imp-text" maxlength="200" placeholder="z. B. billiger, leichter, mehr Strom"><button type="button" class="btn" id="imp-go">Verbessern</button></div>' +
     '<div class="imp-chips" id="imp-chips"><button type="button">Alle Probleme beheben</button><button type="button">Billiger</button><button type="button">Leichter</button><button type="button">Mehr Strom</button><button type="button">Mehr Daten</button><button type="button">Mehr Platz</button></div></div>' +
     '<div class="ai-out" id="ai-out" aria-live="polite" hidden></div>' +
@@ -1315,6 +1341,7 @@ function readForm(){
   BOOLS.forEach(k => c[k] = el[k].checked);
   c.budget = Math.max(0, Number(el.budget.value) || 0);
   c.maxkg = Math.max(0, Number(String(el.maxkg.value).replace(",", ".")) || 0);
+  c.maxcm = parseSize(el.maxcm.value);
   c.manuell = JSON.parse(JSON.stringify(MANUAL));
   c.kosten = KOSTEN;
   Object.keys(TIERINFO).forEach(k => { const x = form.querySelector('input[name="stufe_' + k + '"]:checked'); c["stufe_" + k] = x ? Number(x.value) : 2; });
@@ -1341,6 +1368,7 @@ function writeForm(c){
   { const x = form.querySelector('input[name="stufe_solar"][value="' + (c.stufe_solar || 2) + '"]'); if (x) x.checked = true; }
   el.budget.value = c.budget > 0 ? c.budget : "";
   el.maxkg.value = c.maxkg > 0 ? c.maxkg : "";
+  if (parseSize(el.maxcm.value) !== (c.maxcm || 0)) el.maxcm.value = c.maxcm > 0 ? sizeStr(c.maxcm) : "";
 }
 function tupleFor(key, v, k){
   const map = {obc:OBC, lage:LAGE, antrieb:ANTRIEB, haut:HAUT, sonne:SONNE};
@@ -2728,6 +2756,10 @@ function parseWishes(text){
   if (m1) budget = num(m1[1])*1e6; else if (m2) budget = num(m2[1])*1000; else if (m3) budget = num(m3[1]);
   const g1 = t.match(/(\d[\d,.]*)\s*(kg|kilo)/), g2 = t.match(/(\d[\d,.]*)\s*(g|gramm)\b/);
   if (g1) maxkg = num(g1[1]); else if (g2) maxkg = num(g2[1])/1000;
+  let maxcm = null;
+  { const re = /(\d+(?:[.,]\d+)?(?:\s*[x×]\s*\d+(?:[.,]\d+)?){0,2})\s*(mm|cm|m)(?![a-zäöü²³])/g; let mm;
+    while ((mm = re.exec(t))){ const ctx = t.slice(Math.max(0, mm.index - 40), mm.index + mm[0].length + 25);
+      if (/[x×]/.test(mm[1]) || /groß|größe|lang|länge|breit|hoch|maße|abmessung|kante|passt|höchstens|maximal|nicht größer|kleiner als|klein wie|würfel/.test(ctx)){ maxcm = parseSize(mm[0]); break; } } }
   let bauweise = null;
   if (has(/bastler|esp32|arduino|raspberry|hobby-?elektronik|billig|günstig|wenig geld|kleines budget/)) bauweise = "bastler";
   else if (has(/selbst bau|selber bau|selbstbau|diy|löten/)) bauweise = "selbst";
@@ -2748,16 +2780,16 @@ function parseWishes(text){
     if (has(/fernseh|internet|relais|transponder/)) stNutz.push("relay");
   }
   const shDrive = has(/warp|überlicht/) ? "warp" : has(/antimaterie/) ? "antimaterie" : has(/fusion/) ? "fusion" : has(/plasma|vasimr/) ? "plasma" : has(/nuklear.?elektr|reaktor.{0,20}ionen/) ? "nep" : has(/ionen/) ? "ionen" : has(/sonnensegel|segel/) ? "segel" : has(/nuklear|atom|reaktor/) ? "nuklear" : has(/chemisch/) ? "chem" : null;
-  if (shipW) return {station:true, ship:true, titel:"", nutzlast:stNutz, bahn: bahn || "mars", jahre:null, budget, maxkg, rueck: !has(/nur hin|ohne rückkehr|one ?way|ohne rückflug/), antrieb:shDrive, schlaf: has(/kälteschlaf|tiefschlaf|winterschlaf|hibernat/),
+  if (shipW) return {station:true, ship:true, titel:"", nutzlast:stNutz, bahn: bahn || "mars", jahre:null, budget, maxkg, maxcm, rueck: !has(/nur hin|ohne rückkehr|one ?way|ohne rückflug/), antrieb:shDrive, schlaf: has(/kälteschlaf|tiefschlaf|winterschlaf|hibernat/),
     crew: cm ? Math.min(12, Number(cm[1])) : 4, labor: has(/labor|forsch|experiment/), kuppel: has(/kuppel|aussicht|fenster/), gruen: true,
     verstanden: "Ein Raumschiff, das " + (cm ? Number(cm[1]) : 4) + " Personen " + (ZIEL[bahn || "mars"] || "zu ihrem Ziel") + (has(/nur hin|ohne rückkehr|one ?way|ohne rückflug/) ? " bringt (ohne Rückflug)" : " und wieder zurück bringt") + (shDrive ? " – mit " + SH_ANTRIEB[shDrive].name + "." : "."),
     realismus: "Ein bemanntes Raumschiff zu anderen Himmelskörpern kostet zig Milliarden – so etwas schaffen nur Raumfahrtagenturen oder große Firmen."};
-  if (station) return {station:true, titel:"", nutzlast:stNutz, bahn: bahn === "mond" ? "mond" : null, jahre: yr ? Number(yr[1]) : null, budget, maxkg,
+  if (station) return {station:true, titel:"", nutzlast:stNutz, bahn: bahn === "mond" ? "mond" : null, jahre: yr ? Number(yr[1]) : null, budget, maxkg, maxcm,
     crew: cm ? Math.min(12, Number(cm[1])) : 4, labor: has(/labor|forsch|experiment|wissenschaft/), kuppel: has(/kuppel|aussicht|fenster|blick/), gruen: has(/gewächshaus|pflanzen|gemüse|selbstversorg/),
     verstanden: "Eine Raumstation" + (bahn === "mond" ? " in der Umlaufbahn um den Mond" : " in der Erdumlaufbahn") + " für " + (cm ? Number(cm[1]) : 4) + " Personen" + (has(/labor|forsch|experiment/) ? ", mit Labor" : "") + (has(/kuppel|aussicht|fenster/) ? " und Aussichtskuppel" : "") + (stNutz.length ? ". Außen: " + stNutz.map(x => NUTZ[x].name).join(", ") : "") + ".",
     realismus: "Eine Raumstation kostet Milliarden – so etwas bauen Raumfahrtagenturen oder große Firmen, kein Hobbyteam."};
   const stufe = has(/stufe ?3|super ?gut|beste|hochauflösend|profi-?qualität|sehr gut/) ? 3 : has(/stufe ?1|einfach(e|er|es)? (kamera|teleskop|version)|billige (kamera|version)|schlecht/) ? 1 : null;
-  return {titel:"", nutzlast:nutz, funk, bahn, sonne, familie, stufe, jahre: yr ? Number(yr[1]) : null, budget, maxkg, bauweise,
+  return {titel:"", nutzlast:nutz, funk, bahn, sonne, familie, stufe, jahre: yr ? Number(yr[1]) : null, budget, maxkg, maxcm, bauweise,
     verstanden: ({interstellar:"Dein Satellit verlässt wie Voyager das Sonnensystem", mond:"Dein Satellit fliegt zum Mond", mars:"Dein Satellit fliegt zum Mars", venus:"Dein Satellit fliegt zur Venus", jupiter:"Dein Satellit fliegt zum Jupiter", tief:"Dein Satellit reist zu einem Asteroiden"}[bahn] || "") + (sonne ? (bahn ? " – mit einem Sonnensegel" : "Dein Satellit fliegt mit einem Sonnensegel") : "") + (bahn || sonne ? ". " : "") +
       (nutz.length ? "An Bord: " + what + "." : (bahn || sonne ? "Er sendet Funksignale und Messwerte." : "Ein einfacher Satellit, der Funksignale sendet und Messwerte überträgt.")),
     realismus: lander && bahn === "jupiter" ? "Auf dem Jupiter kann man nicht landen – er ist ein Gasriese ohne festen Boden. Das Planetenlabor kann ihn aber aus der Umlaufbahn erforschen." : (nutz.includes("relay") || bahn === "geo") ? "Ein Kommunikationssatellit in hoher Bahn kostet Millionen. Für ein Hobbyprojekt ist ein Amateurfunk-Relais in niedriger Bahn realistischer." : null};
@@ -2777,6 +2809,7 @@ function cleanWishes(w, fallback){
   if (w.station === true){ o.station = true; o.crew = Number(w.crew) >= 0 ? Math.min(12, Math.round(Number(w.crew))) : (o.crew || 4); }
   o.budget = Number(w.budget) > 0 ? Number(w.budget) : o.budget;
   o.maxkg = Number(w.maxkg) > 0 ? Number(w.maxkg) : o.maxkg;
+  o.maxcm = Number(w.maxcm) > 0 ? Math.min(1e6, Number(w.maxcm)) : o.maxcm;
   o.bauweise = BAUWEISE[w.bauweise] ? w.bauweise : o.bauweise;
   if (w.sonnensegel === true) o.sonne = "klein"; else if (w.sonnensegel === false) o.sonne = null;
   if (typeof w.titel === "string" && w.titel.trim()) o.titel = w.titel.trim().slice(0, 40);
@@ -2791,7 +2824,7 @@ function repair(c, R){
   const bad = id => { const t = T(id); return t && t.status !== "ok" ? t.status : null; };
   const k = R.k, maxBat = k === "p" ? 40 : k === "c" ? 250 : 5000;
   // Bauform zu klein oder zu schwer: nicht reparierbar
-  if (bad("masse") === "fail" || bad("volumen") === "fail" || bad("wunschmasse") === "fail") return null;
+  if (bad("masse") === "fail" || bad("volumen") === "fail" || bad("wunschmasse") === "fail" || bad("wunschgroesse") === "fail") return null;
   if (bad("rakete") === "fail" || (bad("rakete") === "warn" && c.start !== "foerder")){
     const nr = c.start === "foerder" ? null : cheapestRocket(R.massRes, c.bahn);
     if (c.start === "foerder" && bad("rakete") === "fail"){ c.start = "kauf"; c.rakete = cheapestRocket(R.massRes, c.bahn); return "Eigene Rakete statt Förder-Mitflug – dorthin fliegt kein Mitflug."; }
@@ -2875,7 +2908,7 @@ function designFor(w, format, bauweise, start){
     funk_lora:w.funk === "lora", funk_uhf:w.funk !== "lora", funk_s:w.funk === "s", funk_x:w.funk === "x", funk_laser:false,
     boden: BAHNEN[bahn].deep ? "dsn" : w.funk === "x" ? "eigen" : w.funk === "lora" ? "tinygs" : "satnogs", start:start || "kauf", lage: optical || nutz.has("relay") || nutz.has("teleskop") || w.sonne ? "mtq" : "none", stern:false,
     antrieb: ["geo","meo"].includes(bahn) ? "elek" : "none", segel:false, sonne:w.sonne || "none", obc:"std", haut:"weiss", heizung:true, bauweise,
-    budget:w.budget || 0, maxkg:w.maxkg || 0, _bahnFix:!!w.bahn,
+    budget:w.budget || 0, maxkg:w.maxkg || 0, maxcm:w.maxcm || 0, _bahnFix:!!w.bahn,
     rtg:far, swingby:!!(w.bahn && BAHNEN[w.bahn] && BAHNEN[w.bahn].swing && (BAHNEN[w.bahn].au || 1) > 3), funk_hga:!!(w.bahn && BAHNEN[w.bahn] && BAHNEN[w.bahn].interstellar)};
   if (c.bahn === "interstellar"){ c.jahre = Math.max(w.jahre || 0, 40); c.obc = "rad"; c.lage = "rw"; c.koerper = false; }
   NUTZ_KEYS.forEach(x => c["nutz_" + x] = nutz.has(x));
@@ -2944,7 +2977,7 @@ function designStation(w){
     const c = Object.assign({}, PRESETS.bake.c, {titel:w.titel || "Raumschiff " + (({mond:"Mond", mars:"Mars", venus:"Venus", tief:"Asteroid", jupiter:"Jupiter", saturn:"Saturn", pluto:"Pluto", interstellar:"Voyager", alphacen:"Alpha Centauri"})[w.bahn] || ""), format:"SH", bauweise:"kauf", start:"kauf", rakete:"schwer",
       bahn:w.bahn || "mars", crew, leben:"zu", schild:true, strahl:true, fluege:0, sh_antrieb: SH_ANTRIEB[w.antrieb] ? w.antrieb : ({jupiter:"nep", saturn:"nep", pluto:"fusion", interstellar:"fusion", alphacen:"antimaterie"}[w.bahn] || "chem"), m_tank: w.antrieb === "segel" || w.antrieb === "warp" ? 0 : w.bahn === "alphacen" ? 4 : 2, schlaf:!!w.schlaf || w.bahn === "alphacen", magschild:false, rueckflug:w.rueck !== false, aufenthalt: w.bahn === "mond" ? 1 : 2,
       ...Object.fromEntries(ST_NUTZ.map(x => ["nutz_" + x, (w.nutzlast || []).includes(x)])), schwenk:false,
-      m_wohn:1, m_wohnauf:0, m_labor: w.labor ? 1 : 0, m_knoten:1, m_lager:0, m_kuppel: w.kuppel ? 1 : 0, m_solar:2, m_radiator:2, budget:w.budget || 0, maxkg:0});
+      m_wohn:1, m_wohnauf:0, m_labor: w.labor ? 1 : 0, m_knoten:1, m_lager:0, m_kuppel: w.kuppel ? 1 : 0, m_solar:2, m_radiator:2, budget:w.budget || 0, maxkg:0, maxcm:w.maxcm || 0});
     if (SH_ANTRIEB[w.antrieb]) c._shKeep = true;
     const log = []; let Rr = compute(c);
     for (let i = 0; i < 80; i++){ const msg = repairStation(c, Rr); if (!msg) break; log.push(msg); Rr = compute(c); }
@@ -2955,7 +2988,7 @@ function designStation(w){
     rakete:"gross", bahn: w.bahn === "mond" ? "mond" : "leo", hoehe:420, jahre:w.jahre || 10, crew, leben: w.gruen ? "zu" : "teil", schild:true, strahl: w.bahn === "mond", fluege:2,
     ...Object.fromEntries(ST_NUTZ.map(x => ["nutz_" + x, (w.nutzlast || []).includes(x)])), schwenk:false,
     m_wohn: crew > 0 ? 1 : 0, m_wohnauf:0, m_labor: w.labor ? 1 : 0, m_knoten:1, m_lager: crew > 3 ? 1 : 0, m_kuppel: w.kuppel ? 1 : 0, m_solar:1, m_radiator:1,
-    budget:w.budget || 0, maxkg:0});
+    budget:w.budget || 0, maxkg:0, maxcm:w.maxcm || 0});
   const log = []; let Rr = compute(c);
   for (let i = 0; i < 50; i++){ const msg = repairStation(c, Rr); if (!msg) break; log.push(msg); Rr = compute(c); }
   return {c, R:Rr, log, hard:Rr.tests.filter(t => t.status === "fail" && t.id !== "budget").length};
@@ -2968,12 +3001,16 @@ function plan(w){
   // Reicht das Budget nicht für einen gekauften Start, auch den kostenlosen Förderplatz prüfen
   if (w.budget && !res.some(r => r.hard === 0 && r.R.total <= w.budget)) res = res.concat(fams.map(f => designFor(w, f, bauweise, "foerder")));
   const okOnes = res.filter(r => r.hard === 0);
-  const pool = okOnes.length ? okOnes : res.slice().sort((a,b) => a.hard - b.hard).slice(0, 1);
+  // Passt nichts ganz: Hat der Bauer eine Größe genannt, bleibt die Näherung in dieser Größe.
+  const sizeOk = r => !r.R.tests.some(t => t.id === "wunschgroesse" && t.status === "fail");
+  const near = w.maxcm && res.some(sizeOk) ? res.filter(sizeOk) : res;
+  const pool = okOnes.length ? okOnes : near.slice().sort((a,b) => a.hard - b.hard || a.R.total - b.R.total).slice(0, 1);
   const inBudget = w.budget ? pool.filter(r => r.R.total <= w.budget) : pool;
   const pick = (inBudget.length ? inBudget : pool).slice().sort((a,b) => a.R.total - b.R.total)[0];
   delete pick.c._bahnFix; delete pick.c._schwarz;
   let lighter = null;
   if (!okOnes.length && w.maxkg){ const alt = plan(Object.assign({}, w, {maxkg:0})); if (alt.possible) lighter = alt.best; }
+  if (!okOnes.length && !lighter && w.maxcm){ const alt = plan(Object.assign({}, w, {maxcm:0})); if (alt.possible) lighter = Object.assign({bySize:true}, alt.best); }
   return {best:pick, possible:okOnes.length > 0, inBudget:!w.budget || inBudget.length > 0, bauweise, lighter};
 }
 
@@ -2989,6 +3026,7 @@ function aiPrompt(text, budget, maxkg){
     ' "jahre": Zahl 1-15 oder null,\n' +
     ' "budget": Euro-Betrag oder null (nur wenn genannt),\n' +
     ' "maxkg": Kilogramm oder null (nur wenn genannt),\n' +
+    ' "maxcm": größte erlaubte Kantenlänge in Zentimetern oder null (nur wenn eine Größe genannt ist; Meter in Zentimeter umrechnen),\n' +
     ' "familie": "c" (wenn ausdrücklich ein CubeSat gewünscht ist) | "p" (PocketQube) | null,\n' +
     ' "station": true | false (true, wenn eine Raumstation für Menschen gewünscht ist),\n' +
     ' "ship": true | false (true, wenn ein bemanntes Raumschiff durchs All zu einem Ziel reisen soll – dann bahn = Ziel),\n' +
@@ -3011,7 +3049,8 @@ function showPlan(w, P, via){
   const {best, possible, inBudget} = P, Rr = best.R, c = best.c;
   const fails = Rr.tests.filter(t => t.status === "fail" && t.id !== "budget");
   let st, cls;
-  if (!possible && P.lighter){ st = "Unter " + kg(w.maxkg) + " ist kein Satellit mit diesen Aufgaben machbar. Der leichteste, der alle Prüfungen besteht: " + P.lighter.R.F.name + " mit " + kg(P.lighter.R.massRes) + " (inkl. Reserve) für " + eur(P.lighter.R.total) + ". Gezeigt wird die beste Annäherung."; cls = "fail"; }
+  if (!possible && P.lighter && P.lighter.bySize){ st = "In " + sizeStr(w.maxcm) + " passt kein Satellit mit diesen Aufgaben. Der kleinste, der alle Prüfungen besteht: " + P.lighter.R.F.name + " (längste Kante " + sizeStr(Math.max(...P.lighter.R.F.d)*10) + ") für " + eur(P.lighter.R.total) + ". Gezeigt wird die beste Annäherung."; cls = "fail"; }
+  else if (!possible && P.lighter){ st = "Unter " + kg(w.maxkg) + " ist kein Satellit mit diesen Aufgaben machbar. Der leichteste, der alle Prüfungen besteht: " + P.lighter.R.F.name + " mit " + kg(P.lighter.R.massRes) + " (inkl. Reserve) für " + eur(P.lighter.R.total) + ". Gezeigt wird die beste Annäherung."; cls = "fail"; }
   else if (!possible){ st = "Keine Bauform besteht alle Prüfungen – hier die beste Annäherung."; cls = "fail"; }
   else if (w.budget && !inBudget && Rr.hw <= w.budget){ st = "Die Bauteile passen in dein Budget: " + eur(Rr.hw) + ". Mit Testmodell, Tests, Zulassung, Bodenstation und Reserve kommen insgesamt " + eur(Rr.total) + " zusammen."; cls = "warn"; }
   else if (w.budget && !inBudget){ st = "Über Budget: die günstigste Variante kostet " + eur(Rr.total) + ", " + eur(Rr.total - w.budget) + " mehr als geplant."; cls = "fail"; }
@@ -3036,24 +3075,24 @@ function showPlan(w, P, via){
     tips.push("Mitflug-Programme und Förderungen nutzen (z. B. ESA »Fly Your Satellite!« für Hochschulgruppen)");
     html += '<p class="muted">So wird es günstiger:</p><ul>' + tips.map(li).join("") + "</ul>";
   }
-  html += '<p class="muted">' + (via === "claude" ? "Beschreibung von Claude gelesen, Bauteile von der Werkstatt berechnet." : "Stichwörter erkannt, Bauteile von der Werkstatt berechnet.") + " Du kannst alles unten weiter anpassen.</p>";
+  html += '<p class="muted">' + (via === "zeichnung" ? "Zeichnung von Claude gelesen, Bauteile von der Werkstatt berechnet und geprüft." : via === "claude" ? "Beschreibung von Claude gelesen, Bauteile von der Werkstatt berechnet." : "Stichwörter erkannt, Bauteile von der Werkstatt berechnet.") + " Du kannst alles unten weiter anpassen.</p>";
   aiOut.innerHTML = html; aiOut.hidden = false;
 }
 async function runAI(){
   const go = document.getElementById("ai-go"), stop = document.getElementById("ai-stop"), undo = document.getElementById("ai-undo");
   const text = document.getElementById("ai-text").value.trim();
-  const budget = Math.max(0, Number(form.elements.budget.value) || 0), maxkg = Math.max(0, Number(String(form.elements.maxkg.value).replace(",", ".")) || 0);
-  if (!text && !budget && !maxkg){ aiOut.hidden = false; aiOut.innerHTML = "<p>Beschreibe kurz, was dein Satellit tun soll – zum Beispiel »Fotos von meiner Stadt machen«, »Funkgrüße an Funkamateure senden« oder »eine Raumstation für 4 Astronauten«.</p>"; return; }
+  const budget = Math.max(0, Number(form.elements.budget.value) || 0), maxkg = Math.max(0, Number(String(form.elements.maxkg.value).replace(",", ".")) || 0), maxcm = parseSize(form.elements.maxcm.value);
+  if (!text && !budget && !maxkg && !maxcm){ aiOut.hidden = false; aiOut.innerHTML = "<p>Beschreibe kurz, was dein Satellit tun soll – zum Beispiel »Fotos von meiner Stadt machen«, »Funkgrüße an Funkamateure senden« oder »eine Raumstation für 4 Astronauten«.</p>"; return; }
   go.disabled = true; go.textContent = "Plane …"; aiOut.hidden = false;
   let w = parseWishes(text), via = "keywords";
-  if (budget) w.budget = budget; if (maxkg) w.maxkg = maxkg;
+  if (budget) w.budget = budget; if (maxkg) w.maxkg = maxkg; if (maxcm) w.maxcm = maxcm;
   if (AI.sample && text){
     aiOut.innerHTML = '<p class="muted">Claude liest deine Beschreibung …</p>';
     AI.ctl = new AbortController(); stop.hidden = false;
     try {
       const j = await AI.sample.json(aiPrompt(text, budget, maxkg), {signal:AI.ctl.signal, modelTier:"quick"});
       w = cleanWishes(j, w); via = "claude";
-      if (budget) w.budget = budget; if (maxkg) w.maxkg = maxkg;
+      if (budget) w.budget = budget; if (maxkg) w.maxkg = maxkg; if (maxcm) w.maxcm = maxcm;
     } catch(e){
       if (e && (e.code === "not_granted" || e.code === "sampling_disabled" || e.code === "capability_disabled")){ AI.sample = null; setAiMode(); }
       if (e && e.code === "cancelled"){ go.disabled = false; go.textContent = "Entwurf erstellen"; stop.hidden = true; aiOut.innerHTML = '<p class="muted">Abgebrochen.</p>'; return; }
@@ -3067,6 +3106,66 @@ async function runAI(){
   showPlan(w, P, via);
   undo.hidden = false; go.disabled = false; go.textContent = "Neuer Entwurf";
 }
+/* Zeichnungs-Scanner: ein Foto einer Skizze wird von Claude gelesen. Was Claude
+   zurückgibt, läuft durch dieselbe Positivliste wie eine Beschreibung (cleanWishes);
+   gebaut und geprüft wird alles von der Werkstatt selbst. */
+const SCAN = {url:null};
+async function scanLimits(){ if (!AI.sample || !AI.sample.limits) return null; try { const l = await AI.sample.limits(); return l && l.images ? l.images : null; } catch(e){ return null; } }
+function scanPrompt(text, budget, maxkg, maxcm){
+  return aiPrompt(
+    "Im Anhang ist ein Foto einer Zeichnung oder Skizze. Darauf ist ein Satellit, eine Raumstation oder ein Raumschiff gezeichnet, das jemand bauen möchte. " +
+    "Lies aus der Zeichnung ab, was gebaut werden soll: die Grundform (kleiner Würfel = CubeSat/PocketQube, lange Röhre aus Modulen = Station, Röhre mit Tanks und Triebwerk = Raumschiff), " +
+    "Solarflügel, Antennen und Parabolschüsseln, Kameras, Teleskope, Sonnensegel, Landekapseln, Labore. Beschriftete Maße gehören in maxcm, ein beschriftetes Gewicht in maxkg, ein Preis in budget. " +
+    "Schreib in »verstanden«, was du auf der Zeichnung erkannt hast. Ist auf dem Bild gar keine Zeichnung eines Raumfahrzeugs, gib nutzlast [] und als verstanden »Auf dem Bild habe ich keine Zeichnung eines Satelliten erkannt.« zurück." +
+    (text ? " Zusätzliche Beschreibung des Bauers: " + text : ""), budget, maxkg).replace(
+    ' "verstanden":', ' "erkannt": ["kurze Stichwörter, was auf der Zeichnung zu sehen ist", ...] (höchstens 10),\n "fluegel": 0 | 2 | 4 | null (Anzahl der gezeichneten Solarflügel),\n "verstanden":') +
+    (maxcm ? "\nHöchstgröße laut Eingabefeld: " + maxcm + " cm." : "");
+}
+async function runScan(file){
+  const go = document.getElementById("ai-go"), stop = document.getElementById("ai-stop"), undo = document.getElementById("ai-undo"), sg = document.getElementById("scan-go");
+  const lim = await scanLimits();
+  aiOut.hidden = false;
+  if (!lim){ aiOut.innerHTML = '<p>Der Zeichnungs-Scanner braucht Claude zum Lesen der Zeichnung. Öffne die Werkstatt über den Claude-Link und erlaube Claude, dann kannst du ein Foto deiner Skizze hochladen.</p>'; return; }
+  if (!lim.mediaTypes.includes(file.type)){ aiOut.innerHTML = "<p>Bitte ein Foto als JPG, PNG, WebP oder GIF hochladen.</p>"; return; }
+  if (lim.maxBytes && file.size > lim.maxBytes){ aiOut.innerHTML = "<p>Das Bild ist zu groß. Mach ein kleineres Foto oder einen Bildschirmausschnitt.</p>"; return; }
+  const text = document.getElementById("ai-text").value.trim();
+  const budget = Math.max(0, Number(form.elements.budget.value) || 0), maxkg = Math.max(0, Number(String(form.elements.maxkg.value).replace(",", ".")) || 0), maxcm = parseSize(form.elements.maxcm.value);
+  if (SCAN.url) URL.revokeObjectURL(SCAN.url); SCAN.url = URL.createObjectURL(file);
+  const thumb = '<img alt="Deine Zeichnung" src="' + SCAN.url + '">';
+  aiOut.innerHTML = '<div class="scan">' + thumb + '<p class="muted">Claude schaut sich deine Zeichnung an …</p></div>';
+  go.disabled = true; sg.disabled = true; AI.ctl = new AbortController(); stop.hidden = false;
+  let j = null;
+  try { j = await AI.sample.json(scanPrompt(text, budget, maxkg, maxcm), {images:[file], signal:AI.ctl.signal, modelTier:"default"}); }
+  catch(e){
+    go.disabled = false; sg.disabled = false; stop.hidden = true; AI.ctl = null;
+    if (e && (e.code === "not_granted" || e.code === "sampling_disabled" || e.code === "capability_disabled")){ AI.sample = null; setAiMode(); aiOut.innerHTML = "<p>Ohne Claude kann die Zeichnung nicht gelesen werden. Beschreibe deinen Satelliten stattdessen oben in Worten.</p>"; return; }
+    aiOut.innerHTML = e && e.code === "cancelled" ? '<p class="muted">Abgebrochen.</p>' : e && e.code === "rate_limited" ? "<p>Claude ist gerade ausgelastet. Versuch es in einer Minute noch einmal.</p>" : "<p>Die Zeichnung konnte nicht gelesen werden. Versuch ein schärferes Foto mit gutem Licht.</p>";
+    return;
+  }
+  stop.hidden = true; AI.ctl = null;
+  let w = cleanWishes(j, parseWishes(text));
+  if (budget) w.budget = budget; if (maxkg) w.maxkg = maxkg; if (maxcm) w.maxcm = maxcm;
+  const erkannt = Array.isArray(j && j.erkannt) ? j.erkannt.filter(x => typeof x === "string" && x.trim()).slice(0, 10).map(x => x.trim().slice(0, 50)) : [];
+  if (!w.verstanden) w.verstanden = erkannt.length ? "Auf deiner Zeichnung: " + erkannt.join(", ") + "." : "Deine Zeichnung.";
+  aiOut.innerHTML = '<div class="scan">' + thumb + '<p class="muted">Suche die günstigste Bauform, die deiner Zeichnung entspricht und alle Prüfungen besteht …</p></div>';
+  await new Promise(r => setTimeout(r, 30));
+  const P = plan(w);
+  const fl = Number(j && j.fluegel);
+  if ([0,2,4].includes(fl) && !P.best.R.station && P.best.c.fluegel !== fl){
+    const c2 = Object.assign(clone(P.best.c), {fluegel:fl}), R2 = compute(c2), fails = R => R.tests.filter(t => t.status === "fail").length;
+    if (fails(R2) <= fails(P.best.R)){ P.best = Object.assign({}, P.best, {c:c2, R:R2, log:P.best.log.concat(fl ? fl + " Solarflügel wie auf deiner Zeichnung." : "Ohne Solarflügel wie auf deiner Zeichnung.")}); }
+  }
+  AI.prev = readForm();
+  writeForm(P.best.c); update(true);
+  showPlan(w, P, "zeichnung");
+  aiOut.insertAdjacentHTML("afterbegin", '<div class="scan">' + thumb + '<div><b>Erkannt:</b>' + (erkannt.length ? "<ul>" + erkannt.map(li).join("") + "</ul>" : ' <span class="muted">nichts Eindeutiges</span>') + "</div></div>");
+  undo.hidden = false; go.disabled = false; sg.disabled = false; go.textContent = "Neuer Entwurf";
+}
+document.getElementById("scan-go").addEventListener("click", async () => {
+  if (!(await scanLimits())){ aiOut.hidden = false; aiOut.innerHTML = '<p>Der Zeichnungs-Scanner braucht Claude zum Lesen der Zeichnung. Öffne die Werkstatt über den Claude-Link und erlaube Claude, dann kannst du ein Foto deiner Skizze hochladen.</p>'; return; }
+  document.getElementById("scan-file").click();
+});
+document.getElementById("scan-file").addEventListener("change", e => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (f) runScan(f); });
 function setAiMode(){
   document.getElementById("aiMode").textContent = AI.sample ? "mit Claude" : "Stichwort-Modus";
 }
