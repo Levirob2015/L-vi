@@ -49,12 +49,11 @@ button.btn:focus-visible, .slot:focus-visible { outline: 2px solid var(--clay); 
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; color: var(--ink-dim); margin: 0; }
 .keys dt { font: 600 12px var(--display); color: var(--ink); white-space: nowrap; }
 .keys dd { margin: 0; }
-#confirm-new[hidden] { display: none !important; }
+[hidden] { display: none !important; }
 #confirm-new { font-size: 13px; color: var(--ink-dim); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
 /* Touch-Steuerung */
-.touch { display: none; }
-body.is-touch .touch { display: block; }
+body:not(.is-touch) .touch { display: none !important; }
 body.is-touch .keys-desktop { display: none; }
 body:not(.is-touch) .keys-touch { display: none; }
 #stick { position: fixed; left: calc(24px + env(safe-area-inset-left, 0px)); bottom: calc(84px + env(safe-area-inset-bottom, 0px)); width: 120px; height: 120px; border-radius: 50%; background: rgba(255,255,255,.08); border: 2px solid rgba(255,255,255,.2); }
@@ -278,11 +277,11 @@ atlas.width = TS*NT; atlas.height = TS;
 // ---------- Three.js ----------
 const container = document.getElementById("game");
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+renderer.setPixelRatio(matchMedia("(pointer: coarse)").matches ? 1 : Math.min(window.devicePixelRatio, 1.5));
 renderer.setSize(window.innerWidth, window.innerHeight);
 container.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(72, window.innerWidth/window.innerHeight, 0.05, 400);
+const camera = new THREE.PerspectiveCamera(72, window.innerWidth/window.innerHeight, 0.05, 220);
 scene.fog = new THREE.Fog(0x9fc6e0, 40, 110);
 
 const tex = new THREE.CanvasTexture(atlas);
