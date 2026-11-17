@@ -182,7 +182,7 @@ body:not(.is-touch) .keys-touch { display: none; }
 <div id="menu">
   <div class="card">
     <h1>Block<em>welt</em></h1>
-    <p class="sub" id="menu-sub">Sammle Holz und Stein, baue Werkzeuge, schmelze Erz, triff Siedler im Dorf und wehr dich nachts gegen Monster. Deine Welt wird in diesem Browser gespeichert.</p>
+    <p class="sub" id="menu-sub">Sammle Holz und Stein, baue Werkzeuge, schmelze Erz, triff Siedler im Dorf und wehr dich nachts gegen Monster. Die Welt ist endlos: Lauf in eine Richtung, und es entsteht immer neues Land mit Wäldern, Bergen, Ozeanen und weiteren Dörfern. Deine Welt wird in diesem Browser gespeichert.</p>
     <div class="buttons">
       <button class="btn primary" id="play" disabled>Welt wird erzeugt …</button>
       <button class="btn" id="newworld">Neue Welt</button>
@@ -574,166 +574,108 @@ function icon(id){
 }
 
 // =====================================================================
-// Welt
+// Welt: unendlich, aus Stücken von 16 × 16 Blöcken
 // =====================================================================
-const SX=160, SZ=160, SY=64, CH=16, WATER_LEVEL=20;
-const NCX=SX/CH, NCZ=SZ/CH, SXZ=SX*SZ;
-const world = new Uint8Array(SX*SY*SZ);
-const sky = new Uint8Array(SX*SY*SZ);
-const blk = new Uint8Array(SX*SY*SZ);
-let colBiome = new Uint8Array(SXZ);
-let seed = 1, edits = {}, village = null;
-const idx = (x,y,z) => (y*SZ + z)*SX + x;
-function get(x,y,z){ if (x<0||z<0||x>=SX||z>=SZ||y<0) return B.stone; if (y>=SY) return 0; return world[idx(x,y,z)]; }
-function topSolid(x,z){ for (let y=SY-1;y>0;y--){ const b=world[idx(x,y,z)]; if (SOLID[b] && !BD[b].see) return y; } return 0; }
+const isTouch = matchMedia("(pointer: coarse)").matches;
+const CH = 16, SY = 80, WATER_LEVEL = 24, CV = CH*CH*SY;
+const RD = isTouch ? 5 : 7;        // Sichtweite in Stücken
+const VR = 112;                     // Kantenlänge eines Dorf-Gebiets (7 Stücke)
+const chunks = new Map();
+const ckey = (cx,cz) => (cx+32768)*65536 + (cz+32768);
+const eKey = (cx,cz) => cx + "," + cz;
+const li = (lx,y,lz) => (((y<<4) + lz)<<4) + lx;
+let seed = 1, edits = {};
+let lastK = -1, lastC = null;
+function chunkAt(cx,cz){ const k = ckey(cx,cz); if (k === lastK) return lastC; const c = chunks.get(k); if (!c) return null; lastK = k; lastC = c; return c; }
+function get(x,y,z){ if (y<0) return B.bedrock; if (y>=SY) return 0; const c = chunkAt(x>>4, z>>4); return c ? c.b[li(x&15,y,z&15)] : B.stone; }
+function getSky(x,y,z){ if (y>=SY) return 15; if (y<0) return 0; const c = chunkAt(x>>4, z>>4); return c ? c.s[li(x&15,y,z&15)] : 0; }
+function getBlk(x,y,z){ if (y<0||y>=SY) return 0; const c = chunkAt(x>>4, z>>4); return c ? c.l[li(x&15,y,z&15)] : 0; }
+const loadedAt = (x,z) => !!chunkAt(Math.floor(x)>>4, Math.floor(z)>>4);
+function topSolid(x,z){ for (let y=SY-1;y>0;y--){ const b=get(x,y,z); if (SOLID[b] && !BD[b].see) return y; } return 0; }
 
-function generate(){
-  world.fill(0);
-  const rnd = mulberry(seed*9973+7);
-  const hts = new Int16Array(SXZ);
-  colBiome = new Uint8Array(SXZ);
-  const S = (x,y,z,b) => { world[idx(x,y,z)] = b; };
-  for (let z=0; z<SZ; z++) for (let x=0; x<SX; x++) {
-    const temp = fbm(x/110+50, z/110+50, seed+11, 2);
-    const biome = temp > .62 ? 1 : temp < .36 ? 2 : 0;
-    const base = fbm(x/64, z/64, seed, 4);
-    const mount = Math.pow(Math.max(0, fbm(x/40+100, z/40+100, seed+5, 3) - .45), 1.6) * 70;
-    let h = Math.floor(10 + base*22 + mount);
-    const ex = Math.min(x, SX-1-x, z, SZ-1-z);
-    if (ex < 10) h = Math.floor(h - (10-ex)*1.4);
-    h = Math.max(4, Math.min(SY-9, h));
-    hts[z*SX+x] = h; colBiome[z*SX+x] = biome;
-    const beach = h <= WATER_LEVEL+1;
-    for (let y=0; y<=h; y++) {
-      let b;
-      if (y === 0 || (y === 1 && rnd() < .5)) b = B.bedrock;
-      else if (y === h) b = (beach || biome === 1) ? B.sand : (biome === 2 || h > 42) ? B.snowgrass : B.grass;
-      else if (y > h-4) b = (beach || biome === 1) ? B.sand : B.dirt;
-      else if (y > h-8 && biome === 1) b = B.sandstone;
-      else b = B.stone;
-      S(x,y,z,b);
-    }
-    if (h < WATER_LEVEL-1 && noise2(x/7, z/7, seed+21) > .68) S(x,h,z,B.clay);
-    for (let y=h+1; y<=WATER_LEVEL; y++) S(x,y,z, (biome === 2 && y === WATER_LEVEL) ? B.ice : B.water);
-  }
-  // Höhlen und Lava
-  for (let z=0; z<SZ; z++) for (let x=0; x<SX; x++) {
-    const h = hts[z*SX+x];
-    const wet = h <= WATER_LEVEL+2;
-    for (let y=2; y<h-3; y++) {
-      if (wet && y > h-7) continue;
-      const n = noise3(x/14, y/9, z/14, seed+77)*.75 + noise3(x/7, y/7, z/7, seed+99)*.25;
-      if (n > .68) S(x,y,z, y <= 5 ? B.lava : 0);
-    }
-  }
-  // Erzadern
-  const vein = (b, count, ymin, ymax, size) => {
-    for (let i=0;i<count;i++){
-      let x=rint(rnd,1,SX-2), y=rint(rnd,ymin,ymax), z=rint(rnd,1,SZ-2);
-      for (let k=0;k<size;k++){
-        if (x>0&&z>0&&x<SX&&z<SZ&&y>0&&y<SY && world[idx(x,y,z)] === B.stone) S(x,y,z,b);
-        const d = rnd()*6|0; if (d===0) x++; else if (d===1) x--; else if (d===2) y++; else if (d===3) y--; else if (d===4) z++; else z--;
-      }
-    }
-  };
-  vein(B.gravel, 60, 4, 50, 12);
-  vein(B.dirt, 40, 10, 50, 12);
-  vein(B.coal_ore, 170, 4, 56, 9);
-  vein(B.iron_ore, 110, 3, 44, 7);
-  vein(B.gold_ore, 34, 2, 26, 6);
-  vein(B.arkan_ore, 26, 2, 16, 5);
-  vein(B.rubin_ore, 30, 3, 34, 3);
-  // Dorf
-  village = buildVillage(rnd, hts);
-  const nearVillage = (x,z,r) => village && Math.hypot(x-village.x, z-village.z) < r;
-  // Bäume
-  for (let z=4; z<SZ-4; z++) for (let x=4; x<SX-4; x++) {
-    const h = hts[z*SX+x], top = world[idx(x,h,z)];
-    if (top !== B.grass && top !== B.snowgrass) continue;
-    if (world[idx(x,h+1,z)] !== 0 || nearVillage(x,z,21)) continue;
-    const forest = noise2(x/30, z/30, seed+3);
-    const chance = colBiome[z*SX+x] === 2 ? .006 : .004 + forest*forest*.05;
-    if (rnd() > chance) continue;
-    const birch = rnd() < .3;
-    const log = birch ? B.birch_log : B.oak_log, lv = birch ? B.birch_leaves : B.oak_leaves;
-    const th = 4 + (rnd()*3|0);
-    if (h + th + 3 >= SY) continue;
-    for (let y=1; y<=th; y++) S(x,h+y,z,log);
-    const tp = h+th;
-    for (let dy=-2; dy<=2; dy++) for (let dx=-2; dx<=2; dx++) for (let dz=-2; dz<=2; dz++) {
-      const rr = dx*dx + dz*dz + dy*dy*1.4;
-      if (rr > 5.5 || (rr > 4 && rnd() < .5)) continue;
-      const X=x+dx, Y=tp+dy+1, Z=z+dz;
-      if (Y<SY && get(X,Y,Z) === 0) S(X,Y,Z,lv);
-    }
-    S(x,tp+1,z,lv);
-  }
-  // Pflanzen
-  for (let z=1; z<SZ-1; z++) for (let x=1; x<SX-1; x++) {
-    const h = hts[z*SX+x];
-    if (world[idx(x,h,z)] !== B.grass || world[idx(x,h+1,z)] !== 0 || nearVillage(x,z,15)) continue;
-    const r0 = rnd();
-    if (r0 < .09) S(x,h+1,z,B.tall_grass);
-    else if (r0 < .1) S(x,h+1,z,B.flower_red);
-    else if (r0 < .11) S(x,h+1,z,B.flower_yellow);
-    else if (r0 < .116) S(x,h+1,z,B.flower_blue);
-    else if (r0 < .119 && noise2(x/30,z/30,seed+3) > .55) S(x,h+1,z,B.mushroom);
-  }
-  for (let i=0;i<1400;i++){
-    const x=rint(rnd,1,SX-2), z=rint(rnd,1,SZ-2), y=rint(rnd,3,40);
-    if (world[idx(x,y,z)] === 0 && world[idx(x,y-1,z)] === B.stone && y < hts[z*SX+x]-3) S(x,y,z,B.mushroom);
-  }
-  // Gespeicherte Änderungen
-  for (const k in edits) world[+k] = edits[k];
-  relight(0, SX-1, 0, SZ-1);
+// Gelände als reine Funktion der Koordinaten, damit jedes Stück einzeln entstehen kann
+function biomeAt(x,z){ const t = fbm(x/110+50, z/110+50, seed+11, 2); return t > .62 ? 1 : t < .36 ? 2 : 0; }
+function hAt(x,z){
+  const base = fbm(x/64, z/64, seed, 4);
+  const mount = Math.pow(Math.max(0, fbm(x/40+100, z/40+100, seed+5, 3) - .45), 1.6) * 95;
+  const ocean = Math.max(0, .44 - fbm(x/300+7, z/300+7, seed+31, 3)) * 80;
+  return Math.max(4, Math.min(SY-9, Math.floor(15 + base*22 + mount - ocean)));
+}
+function treeAt(x,z){
+  const roll = hash2(x,z,seed+7);
+  if (roll > .056) return null;
+  const biome = biomeAt(x,z); if (biome === 1) return null;
+  const forest = noise2(x/30, z/30, seed+3);
+  const chance = biome === 2 ? .006 : .004 + forest*forest*.05;
+  if (roll > chance) return null;
+  const h = hAt(x,z); if (h <= WATER_LEVEL+1 || h + 10 >= SY) return null;
+  if (nearVillage(x,z,21)) return null;
+  return [h, 4 + Math.floor(hash2(x,z,seed+9)*3), hash2(x,z,seed+8) < .3];
 }
 
-function buildVillage(rnd, hts){
-  // Den flachsten trockenen Platz suchen; im Zweifel den besten nehmen, den es gibt
-  let site = null, best = 1e9;
-  for (let r=0; r<=60; r+=3) for (let a=0; a<24; a++) {
-    const cx = Math.round(SX/2 + Math.cos(a/24*6.283)*r), cz = Math.round(SZ/2 + Math.sin(a/24*6.283)*r);
-    if (cx<24||cz<24||cx>SX-24||cz>SZ-24) continue;
-    let mn=99, mx=-1, bad=0, n=0;
-    for (let z=cz-15; z<=cz+15; z+=3) for (let x=cx-15; x<=cx+15; x+=3) {
-      const h = hts[z*SX+x]; n++;
-      if (h <= WATER_LEVEL+1 || colBiome[z*SX+x] === 1) { bad++; continue; }
-      mn = Math.min(mn,h); mx = Math.max(mx,h);
-    }
-    if (bad > n*.5 || mx < 0) continue;
-    const score = (mx-mn) + bad*2 + r*.05;
-    if (score < best) { best = score; site = [cx,cz]; }
+// Dörfer: in jedem Gebiet höchstens eines, als Bauplan vorab berechnet
+const villageCache = new Map();
+function siteScore(cx,cz){
+  let mn=99, mx=-1, bad=0, n=0;
+  for (let z=cz-15; z<=cz+15; z+=3) for (let x=cx-15; x<=cx+15; x+=3) {
+    n++; const h = hAt(x,z);
+    if (h <= WATER_LEVEL+1 || biomeAt(x,z) === 1) { bad++; continue; }
+    mn = Math.min(mn,h); mx = Math.max(mx,h);
   }
-  if (!site) return null;
-  const [vx, vz] = site;
-  const S = (x,y,z,b) => { if (x>=0&&z>=0&&x<SX&&z<SZ&&y>0&&y<SY) world[idx(x,y,z)] = b; };
-  const surf = (x,z) => { for (let y=SY-2;y>0;y--){ const b=world[idx(x,y,z)]; if (SOLID[b] && b!==B.oak_leaves && b!==B.birch_leaves) return y; } return 1; };
-  const fillDown = (x,y,z,b) => { for (let yy=y; yy>0; yy--){ const c=world[idx(x,yy,z)]; if (SOLID[c] && yy<y) break; S(x,yy,z,b); } };
+  if (bad > n*.3 || mx < 0) return Infinity;
+  return (mx-mn) + bad*2;
+}
+function villageIn(rx,rz){
+  const k = ckey(rx,rz);
+  if (villageCache.has(k)) return villageCache.get(k);
+  const home = rx === 0 && rz === 0;
+  let site = null;
+  if (home || hash2(rx,rz,seed+500) < .75) {
+    let best = home ? 1e9 : 10;
+    const tries = home ? 30 : 5;
+    for (let i=0;i<tries;i++){
+      const cx = rx*VR + 28 + Math.floor(hash2(rx*37+i, rz, seed+501)*(VR-56));
+      const cz = rz*VR + 28 + Math.floor(hash2(rx, rz*37+i, seed+502)*(VR-56));
+      const s = siteScore(cx,cz);
+      if (s < best) { best = s; site = [cx,cz]; }
+    }
+  }
+  const v = site ? planVillage(site[0], site[1]) : null;
+  villageCache.set(k, v);
+  return v;
+}
+function nearVillage(x,z,r){ const v = villageIn(Math.floor(x/VR), Math.floor(z/VR)); return !!v && Math.hypot(x-v.x, z-v.z) < r; }
+function planVillage(vx,vz){
+  const ops = new Map(), ground = new Map(), structure = new Set();
+  const gk = (x,z) => x + "," + z;
+  const S = (x,y,z,b) => { if (y<1||y>=SY) return; const k = ckey(x>>4, z>>4); let a = ops.get(k); if (!a) ops.set(k, a = []); a.push(x,y,z,b); };
+  const surf = (x,z) => ground.has(gk(x,z)) ? ground.get(gk(x,z)) : hAt(x,z);
+  const fillDown = (x,y,z,b) => { const h = hAt(x,z); S(x,y,z,b); for (let yy=y-1; yy>h; yy--) S(x,yy,z,b); ground.set(gk(x,z), y); };
   const clearUp = (x,y,z,n) => { for (let yy=y; yy<Math.min(SY,y+n); yy++) S(x,yy,z,0); };
-  const gy = surf(vx,vz);
+  const gy = hAt(vx,vz);
   // Brunnen
   for (let dz=-3; dz<=3; dz++) for (let dx=-3; dx<=3; dx++) {
     const x=vx+dx, z=vz+dz; clearUp(x,gy+1,z,8);
     const ring = Math.max(Math.abs(dx),Math.abs(dz));
     fillDown(x,gy,z, ring >= 2 ? B.gravel : B.cobble);
-    if (ring === 1) { S(x,gy+1,z,B.cobble); }
+    if (ring <= 1) structure.add(gk(x,z));
+    if (ring === 1) S(x,gy+1,z,B.cobble);
     if (ring === 0) { S(x,gy,z,B.water); S(x,gy-1,z,B.water); S(x,gy-2,z,B.cobble); }
     if (Math.abs(dx)===1 && Math.abs(dz)===1) { S(x,gy+2,z,B.oak_log); S(x,gy+3,z,B.oak_log); }
     if (ring <= 1) S(x,gy+4,z,B.oak_planks);
   }
-  // Laternen
-  for (const [dx,dz] of [[-3,-3],[3,-3],[-3,3],[3,3]]) { S(vx+dx,gy+1,vz+dz,B.cobble); S(vx+dx,gy+2,vz+dz,B.torch); }
+  for (const [dx,dz] of [[-3,-3],[3,-3],[-3,3],[3,3]]) { S(vx+dx,gy+1,vz+dz,B.cobble); S(vx+dx,gy+2,vz+dz,B.torch); structure.add(gk(vx+dx,vz+dz)); }
   // Häuser
   const plan = [[-12,-11,"bauer"],[6,-11,"schmied"],[-12,6,"magier"],[6,6,"haendler"],[-3,11,"bauer"]];
   const houses = [];
   for (const [ox,oz,prof] of plan) {
     const hx = vx+ox, hz = vz+oz;
-    const fy = surf(hx+2, hz+2);
+    const fy = Math.max(WATER_LEVEL+1, hAt(hx+2, hz+2));
     for (let z=hz-1; z<=hz+5; z++) for (let x=hx-1; x<=hx+5; x++) {
       clearUp(x, fy+1, z, 9);
       const inside = x>=hx && x<=hx+4 && z>=hz && z<=hz+4;
       fillDown(x, fy, z, inside ? B.cobble : B.dirt);
-      if (!inside) S(x, fy, z, B.grass);
+      if (!inside) S(x, fy, z, B.grass); else structure.add(gk(x,z));
     }
     const wall = prof === "schmied" ? B.cobble : prof === "magier" ? B.stone_bricks : B.oak_planks;
     const roof = prof === "magier" ? B.wool_blue : prof === "haendler" ? B.bricks : B.birch_planks;
@@ -754,91 +696,200 @@ function buildVillage(rnd, hts){
     if (prof === "schmied") { S(hx+3,fy+1,hz+3,B.furnace); S(hx+1,fy+1,hz+3,B.table); }
     if (prof === "magier") { S(hx+3,fy+1,hz+3,B.bookshelf); S(hx+3,fy+2,hz+3,B.bookshelf); S(hx+3,fy+1,hz+1,B.lamp); }
     if (prof === "haendler") { S(hx+3,fy+1,hz+3,B.wool_red); S(hx+3,fy+1,hz+1,B.wool_yellow); }
-    // Weg zum Brunnen
-    let [px,pz] = out;
+    houses.push({ x:hx+2.5, y:fy+1, z:hz+2.5, prof, out });
+  }
+  // Wege zum Brunnen
+  for (const h of houses) {
+    let [px,pz] = h.out;
     for (let s=0; s<40; s++) {
       if (Math.abs(px-vx) <= 3 && Math.abs(pz-vz) <= 3) break;
-      const y = surf(px,pz), b = world[idx(px,y,pz)];
-      if (b===B.grass||b===B.dirt||b===B.sand||b===B.snowgrass) { S(px,y,pz,B.gravel); const a=world[idx(px,y+1,pz)]; if (BD[a].cross) S(px,y+1,pz,0); }
+      const k = gk(px,pz), y = surf(px,pz);
+      if (!structure.has(k) && (ground.has(k) || y > WATER_LEVEL)) { S(px,y,pz,B.gravel); S(px,y+1,pz,0); }
       if (Math.abs(px-vx) > Math.abs(pz-vz)) px += Math.sign(vx-px); else pz += Math.sign(vz-pz);
     }
-    houses.push({ x:hx+2.5, y:fy+1, z:hz+2.5, prof });
   }
-  return { x:vx, z:vz, y:gy, houses };
+  return { x:vx, z:vz, y:gy, houses, ops, spawned:false };
+}
+
+// Ein Stück erzeugen
+function genChunk(cx,cz){
+  const c = { cx, cz, b:new Uint8Array(CV), s:new Uint8Array(CV), l:new Uint8Array(CV), a:null, t:null, dirty:true, top:0 };
+  const x0 = cx*CH, z0 = cz*CH;
+  const rnd = mulberry((hash2(cx,cz,seed)*4294967296)>>>0);
+  const S = (lx,y,lz,b) => { c.b[li(lx,y,lz)] = b; };
+  const hts = new Int16Array(256);
+  for (let lz=0; lz<16; lz++) for (let lx=0; lx<16; lx++) {
+    const x = x0+lx, z = z0+lz, h = hAt(x,z), biome = biomeAt(x,z);
+    hts[lz*16+lx] = h;
+    const beach = h <= WATER_LEVEL+1;
+    for (let y=0; y<=h; y++) {
+      let b;
+      if (y === 0 || (y === 1 && rnd() < .5)) b = B.bedrock;
+      else if (y === h) b = (beach || biome === 1) ? B.sand : (biome === 2 || h > 52) ? B.snowgrass : B.grass;
+      else if (y > h-4) b = (beach || biome === 1) ? B.sand : B.dirt;
+      else if (y > h-8 && biome === 1) b = B.sandstone;
+      else b = B.stone;
+      S(lx,y,lz,b);
+    }
+    if (h < WATER_LEVEL-1 && noise2(x/7, z/7, seed+21) > .68) S(lx,h,lz,B.clay);
+    for (let y=h+1; y<=WATER_LEVEL; y++) S(lx,y,lz, (biome === 2 && y === WATER_LEVEL) ? B.ice : B.water);
+    const wet = h <= WATER_LEVEL+2;
+    for (let y=2; y<h-3; y++) {
+      if (wet && y > h-7) continue;
+      const n = noise3(x/14, y/9, z/14, seed+77)*.75 + noise3(x/7, y/7, z/7, seed+99)*.25;
+      if (n > .68) S(lx,y,lz, y <= 5 ? B.lava : 0);
+    }
+  }
+  // Erzadern (bleiben innerhalb des Stücks)
+  const vein = (b, per, ymin, ymax, size) => {
+    const count = Math.floor(per) + (rnd() < per % 1 ? 1 : 0);
+    for (let i=0;i<count;i++){
+      let x = rnd()*16|0, y = rint(rnd,ymin,ymax), z = rnd()*16|0;
+      for (let k=0;k<size;k++){
+        if (x>=0&&x<16&&z>=0&&z<16&&y>0&&y<SY && c.b[li(x,y,z)] === B.stone) S(x,y,z,b);
+        const d = rnd()*6|0; if (d===0) x++; else if (d===1) x--; else if (d===2) y++; else if (d===3) y--; else if (d===4) z++; else z--;
+      }
+    }
+  };
+  vein(B.gravel, .6, 4, 60, 12);
+  vein(B.dirt, .4, 10, 60, 12);
+  vein(B.coal_ore, 1.8, 4, 66, 9);
+  vein(B.iron_ore, 1.1, 3, 50, 7);
+  vein(B.gold_ore, .36, 2, 28, 6);
+  vein(B.arkan_ore, .28, 2, 16, 5);
+  vein(B.rubin_ore, .32, 3, 38, 3);
+  // Dorf
+  const v = villageIn(Math.floor(x0/VR), Math.floor(z0/VR));
+  if (v) { const a = v.ops.get(ckey(cx,cz)); if (a) for (let i=0;i<a.length;i+=4) S(a[i]-x0, a[i+1], a[i+2]-z0, a[i+3]); }
+  // Bäume (auch die vom Nachbarstück ragen herüber)
+  const inC = (X,Z) => X>=x0 && X<x0+16 && Z>=z0 && Z<z0+16;
+  for (let z=z0-2; z<z0+18; z++) for (let x=x0-2; x<x0+18; x++) {
+    const tr = treeAt(x,z); if (!tr) continue;
+    const [h, th, birch] = tr;
+    const log = birch ? B.birch_log : B.oak_log, lv = birch ? B.birch_leaves : B.oak_leaves;
+    if (inC(x,z)) for (let y=1; y<=th; y++) S(x-x0,h+y,z-z0,log);
+    const tp = h+th;
+    for (let dy=-2; dy<=2; dy++) for (let dx=-2; dx<=2; dx++) for (let dz=-2; dz<=2; dz++) {
+      const X=x+dx, Y=tp+dy+1, Z=z+dz;
+      if (!inC(X,Z) || Y >= SY) continue;
+      const rr = dx*dx + dz*dz + dy*dy*1.4;
+      if (rr > 5.5 || (rr > 4 && hash3(X,Y,Z,seed+10) < .5)) continue;
+      if (c.b[li(X-x0,Y,Z-z0)] === 0) S(X-x0,Y,Z-z0,lv);
+    }
+    if (inC(x,z) && tp+1 < SY && c.b[li(x-x0,tp+1,z-z0)] === 0) S(x-x0,tp+1,z-z0,lv);
+  }
+  // Pflanzen
+  for (let lz=0; lz<16; lz++) for (let lx=0; lx<16; lx++) {
+    const h = hts[lz*16+lx], x = x0+lx, z = z0+lz;
+    if (h+1 >= SY || c.b[li(lx,h,lz)] !== B.grass || c.b[li(lx,h+1,lz)] !== 0) continue;
+    const r0 = hash2(x,z,seed+13);
+    if (r0 > .12 || nearVillage(x,z,15)) continue;
+    if (r0 < .09) S(lx,h+1,lz,B.tall_grass);
+    else if (r0 < .1) S(lx,h+1,lz,B.flower_red);
+    else if (r0 < .11) S(lx,h+1,lz,B.flower_yellow);
+    else if (r0 < .116) S(lx,h+1,lz,B.flower_blue);
+    else if (r0 < .119 && noise2(x/30,z/30,seed+3) > .55) S(lx,h+1,lz,B.mushroom);
+  }
+  for (let i=0;i<14;i++){
+    const lx = rnd()*16|0, lz = rnd()*16|0, y = rint(rnd,3,44);
+    if (c.b[li(lx,y,lz)] === 0 && c.b[li(lx,y-1,lz)] === B.stone && y < hts[lz*16+lx]-3) S(lx,y,lz,B.mushroom);
+  }
+  // Gespeicherte Änderungen
+  const e = edits[eKey(cx,cz)];
+  if (e) for (const k in e) c.b[+k] = e[k];
+  for (let i=CV-1; i>=0; i--) if (c.b[i]) { c.top = i >> 8; break; }
+  chunks.set(ckey(cx,cz), c); lastK = -1;
+  relightRegion(x0-8, x0+CH+7, z0-8, z0+CH+7);
+  for (let dz=-1; dz<=1; dz++) for (let dx=-1; dx<=1; dx++) { const n = chunkAt(cx+dx, cz+dz); if (n) n.dirty = true; }
+  return c;
+}
+function ensureArea(x,z,r){
+  const pcx = Math.floor(x)>>4, pcz = Math.floor(z)>>4;
+  for (let dz=-r; dz<=r; dz++) for (let dx=-r; dx<=r; dx++) if (!chunkAt(pcx+dx,pcz+dz)) genChunk(pcx+dx,pcz+dz);
 }
 
 // =====================================================================
-// Licht (Himmelslicht und Blocklicht, mit Ausbreitung)
+// Licht (Himmelslicht und Blocklicht, mit Ausbreitung über Stückgrenzen)
 // =====================================================================
-const QS = 1<<22, QM = QS-1, Q = new Int32Array(QS);
-function spread(arr, t, x0,x1,z0,z1, isSky){
-  let h = 0;
-  while (h < t) {
-    const i = Q[h++ & QM], L = arr[i];
-    if (L <= 1) continue;
-    const x = i % SX, rr = (i - x) / SX, z = rr % SZ, y = (rr - z) / SZ;
-    for (let d=0; d<6; d++) {
-      let nx=x, ny=y, nz=z;
-      if (d===0) nx--; else if (d===1) nx++; else if (d===2) ny--; else if (d===3) ny++; else if (d===4) nz--; else nz++;
-      if (nx<x0||nx>x1||nz<z0||nz>z1||ny<0||ny>=SY) continue;
-      const n = (ny*SZ+nz)*SX+nx, a = LT[world[n]];
-      if (a < 0) continue;
-      const nl = (isSky && d===2 && L===15 && a===0) ? 15 : L-1-a;
-      if (nl > arr[n]) { arr[n] = nl; Q[t++ & QM] = n; }
-    }
+const LQS = 1<<21, LQM = LQS-1, LQ = new Int32Array(LQS);
+function relightRegion(x0,x1,z0,z1){
+  const W = x1-x0+3, D = z1-z0+3, LAY = W*D, N = LAY*SY;
+  const lb = new Uint8Array(N), ls = new Uint8Array(N), ll = new Uint8Array(N);
+  for (let lz=0; lz<D; lz++) for (let lx=0; lx<W; lx++) {
+    const x = x0-1+lx, z = z0-1+lz, c = chunkAt(x>>4, z>>4);
+    let i = lz*W+lx;
+    if (!c) { for (let y=0; y<SY; y++, i+=LAY) lb[i] = B.stone; continue; }
+    const border = lx === 0 || lz === 0 || lx === W-1 || lz === D-1;
+    let ci = li(x&15, 0, z&15);
+    for (let y=0; y<SY; y++, i+=LAY, ci+=256) { lb[i] = c.b[ci]; if (border) { ls[i] = c.s[ci]; ll[i] = c.l[ci]; } }
   }
-}
-function pushBorder(arr, x0,x1,z0,z1, t){
-  const push = (x,z) => { for (let y=0;y<SY;y++){ const i=(y*SZ+z)*SX+x; if (arr[i]>1) Q[t++ & QM]=i; } };
-  if (x0>0) for (let z=z0;z<=z1;z++) push(x0-1,z);
-  if (x1<SX-1) for (let z=z0;z<=z1;z++) push(x1+1,z);
-  if (z0>0) for (let x=x0;x<=x1;x++) push(x,z0-1);
-  if (z1<SZ-1) for (let x=x0;x<=x1;x++) push(x,z1+1);
-  return t;
-}
-function relight(x0,x1,z0,z1){
-  x0=Math.max(0,x0); z0=Math.max(0,z0); x1=Math.min(SX-1,x1); z1=Math.min(SZ-1,z1);
-  const w=x1-x0+1, dd=z1-z0+1, n=w*dd*SY;
-  const oldS = new Uint8Array(n), oldB = new Uint8Array(n);
-  let k = 0;
-  for (let y=0;y<SY;y++) for (let z=z0;z<=z1;z++){ let i=(y*SZ+z)*SX+x0; for (let x=x0;x<=x1;x++,i++,k++){ oldS[k]=sky[i]; oldB[k]=blk[i]; sky[i]=0; blk[i]=0; } }
+  const spreadL = (arr, t, isSky) => {
+    let h = 0;
+    while (h < t) {
+      const i = LQ[h++ & LQM], L = arr[i];
+      if (L <= 1) continue;
+      const r = i % LAY, y = (i - r) / LAY, lx = r % W, lz = (r - lx) / W;
+      for (let d=0; d<6; d++) {
+        let n;
+        if (d===0) { if (lx <= 1) continue; n = i-1; }
+        else if (d===1) { if (lx >= W-2) continue; n = i+1; }
+        else if (d===2) { if (y <= 0) continue; n = i-LAY; }
+        else if (d===3) { if (y >= SY-1) continue; n = i+LAY; }
+        else if (d===4) { if (lz <= 1) continue; n = i-W; }
+        else { if (lz >= D-2) continue; n = i+W; }
+        const a = LT[lb[n]]; if (a < 0) continue;
+        const nl = (isSky && d===2 && L===15 && a===0) ? 15 : L-1-a;
+        if (nl > arr[n]) { arr[n] = nl; LQ[t++ & LQM] = n; }
+      }
+    }
+  };
+  const seedBorder = (arr, t) => {
+    for (let lz=0; lz<D; lz++) for (let lx=0; lx<W; lx++) {
+      if (!(lx === 0 || lz === 0 || lx === W-1 || lz === D-1)) continue;
+      for (let y=0, i=lz*W+lx; y<SY; y++, i+=LAY) if (arr[i] > 1) LQ[t++ & LQM] = i;
+    }
+    return t;
+  };
   let t = 0;
-  for (let z=z0;z<=z1;z++) for (let x=x0;x<=x1;x++){ let L=15; for (let y=SY-1;y>=0;y--){ const i=(y*SZ+z)*SX+x, a=LT[world[i]]; if (a<0) break; L-=a; if (L<=0) break; sky[i]=L; Q[t++ & QM]=i; } }
-  t = pushBorder(sky, x0,x1,z0,z1, t);
-  spread(sky, t, x0,x1,z0,z1, true);
+  for (let lz=1; lz<D-1; lz++) for (let lx=1; lx<W-1; lx++) {
+    let L = 15;
+    for (let y=SY-1; y>=0; y--) { const i = y*LAY + lz*W + lx, a = LT[lb[i]]; if (a < 0) break; L -= a; if (L <= 0) break; ls[i] = L; LQ[t++ & LQM] = i; }
+  }
+  t = seedBorder(ls, t); spreadL(ls, t, true);
   t = 0;
-  for (let y=0;y<SY;y++) for (let z=z0;z<=z1;z++){ let i=(y*SZ+z)*SX+x0; for (let x=x0;x<=x1;x++,i++){ const e=EM[world[i]]; if (e){ blk[i]=e; Q[t++ & QM]=i; } } }
-  t = pushBorder(blk, x0,x1,z0,z1, t);
-  spread(blk, t, x0,x1,z0,z1, false);
-  let cx0=1e9, cx1=-1, cz0=1e9, cz1=-1; k = 0;
-  for (let y=0;y<SY;y++) for (let z=z0;z<=z1;z++){ let i=(y*SZ+z)*SX+x0; for (let x=x0;x<=x1;x++,i++,k++){ if (sky[i]!==oldS[k]||blk[i]!==oldB[k]){ if(x<cx0)cx0=x; if(x>cx1)cx1=x; if(z<cz0)cz0=z; if(z>cz1)cz1=z; } } }
-  return cx1 < 0 ? null : [cx0,cx1,cz0,cz1];
+  for (let lz=1; lz<D-1; lz++) for (let lx=1; lx<W-1; lx++) for (let y=0, i=lz*W+lx; y<SY; y++, i+=LAY) { const e = EM[lb[i]]; if (e) { ll[i] = e; LQ[t++ & LQM] = i; } }
+  t = seedBorder(ll, t); spreadL(ll, t, false);
+  let bx0 = 1e9, bx1 = -1e9, bz0 = 1e9, bz1 = -1e9;
+  for (let lz=1; lz<D-1; lz++) for (let lx=1; lx<W-1; lx++) {
+    const x = x0-1+lx, z = z0-1+lz, c = chunkAt(x>>4, z>>4); if (!c) continue;
+    let ci = li(x&15, 0, z&15), changed = false;
+    for (let y=0, i=lz*W+lx; y<SY; y++, i+=LAY, ci+=256) { if (c.s[ci] !== ls[i] || c.l[ci] !== ll[i]) { c.s[ci] = ls[i]; c.l[ci] = ll[i]; changed = true; } }
+    if (changed) { if (x<bx0) bx0=x; if (x>bx1) bx1=x; if (z<bz0) bz0=z; if (z>bz1) bz1=z; }
+  }
+  return bx1 < bx0 ? null : [bx0,bx1,bz0,bz1];
 }
 const LC = new Float32Array(16);
 for (let l=0;l<16;l++) LC[l] = l === 0 ? 0.03 : 0.04 + 0.96*Math.pow(0.8, 15-l);
 let dayF = 1;
 function lightAt(x,y,z){
   x=Math.floor(x); y=Math.floor(y); z=Math.floor(z);
-  if (x<0||z<0||x>=SX||z>=SZ||y>=SY) return 1;
-  if (y<0) return .1;
-  const i = idx(x,y,z);
-  return Math.max(LC[sky[i]]*dayF, LC[blk[i]]);
+  if (y >= SY) return dayF;
+  return Math.max(LC[getSky(x,y,z)]*dayF, LC[getBlk(x,y,z)]);
 }
-function effLight(x,y,z){ const i = idx(x,y,z); return Math.max(blk[i], sky[i] - Math.round((1-dayF)*12)); }
+function effLight(x,y,z){ return Math.max(getBlk(x,y,z), getSky(x,y,z) - Math.round((1-dayF)*12)); }
 
 // =====================================================================
 // Grafik
 // =====================================================================
 const container = $("game");
-const isTouch = matchMedia("(pointer: coarse)").matches;
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
 renderer.setPixelRatio(isTouch ? 1 : Math.min(window.devicePixelRatio, 1.5));
 renderer.setSize(window.innerWidth, window.innerHeight);
 container.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(72, window.innerWidth/window.innerHeight, 0.05, 220);
+const FOG = { far: RD*CH - 6, near: RD*CH*.45 };
+const camera = new THREE.PerspectiveCamera(72, window.innerWidth/window.innerHeight, 0.05, FOG.far + 40);
 camera.rotation.order = "YXZ";
-const FOG = { near: 40, far: 110 };
 scene.fog = new THREE.Fog(0x9fc6e0, FOG.near, FOG.far);
 const ambient = new THREE.AmbientLight(0xffffff, .62); scene.add(ambient);
 const dirLight = new THREE.DirectionalLight(0xffffff, .5); dirLight.position.set(.4, 1, .25); scene.add(dirLight);
@@ -853,7 +904,7 @@ void main(){ vec4 t = texture2D(map, vUv); if (t.a < uCut) discard;
   vec3 l = max(vec3(vL.x * uDay), vL.y * vec3(1.0, 0.86, 0.62)); l = max(l, vec3(0.03));
   vec3 c = t.rgb * l * vL.z; float f = smoothstep(uNear, uFar, vDepth);
   gl_FragColor = vec4(mix(c, uFog, f), t.a); }`;
-const mkUniforms = cut => ({ map:{ value:tex }, uDay:{ value:1 }, uFog:{ value:new THREE.Color() }, uNear:{ value:40 }, uFar:{ value:110 }, uCut:{ value:cut } });
+const mkUniforms = cut => ({ map:{ value:tex }, uDay:{ value:1 }, uFog:{ value:new THREE.Color() }, uNear:{ value:FOG.near }, uFar:{ value:FOG.far }, uCut:{ value:cut } });
 const matOpaque = new THREE.ShaderMaterial({ uniforms: mkUniforms(.5), vertexShader: VS, fragmentShader: FS, side: THREE.DoubleSide });
 const matTrans  = new THREE.ShaderMaterial({ uniforms: mkUniforms(.01), vertexShader: VS, fragmentShader: FS, transparent: true, depthWrite: false, side: THREE.DoubleSide });
 
@@ -880,38 +931,40 @@ function faceVisible(b, n){
 }
 const tileUV = (t, u, v) => [ ((t % AC) + .002 + u*.996) / AC, 1 - (Math.floor(t / AC) + 1) / AR + (.002 + v*.996) / AR ];
 
-const chunks = [];
-function buildChunk(cx, cz){
-  const key = cz*NCX+cx, old = chunks[key];
-  if (old) for (const m of [old.a, old.b]) if (m) { scene.remove(m); m.geometry.dispose(); }
+function disposeMesh(c){ for (const m of [c.a, c.t]) if (m) { scene.remove(m); m.geometry.dispose(); } c.a = c.t = null; }
+function buildChunk(c){
+  c.dirty = false; disposeMesh(c);
   const A = { p:[], uv:[], l:[], i:[] }, Bm = { p:[], uv:[], l:[], i:[] };
-  const x0=cx*CH, z0=cz*CH;
-  for (let y=0; y<SY; y++) for (let z=z0; z<z0+CH; z++) for (let x=x0; x<x0+CH; x++) {
-    const ci = idx(x,y,z), b = world[ci];
+  const x0 = c.cx*CH, z0 = c.cz*CH, ymax = Math.min(SY-1, c.top+1);
+  for (let y=0; y<=ymax; y++) for (let lz=0; lz<16; lz++) for (let lx=0; lx<16; lx++) {
+    const ci = li(lx,y,lz), b = c.b[ci];
     if (!b) continue;
-    const d = BD[b];
+    const d = BD[b], x = x0+lx, z = z0+lz;
     if (d.cross) {
-      const ls = d.glow ? 1 : LC[sky[ci]], lb = d.glow ? 1 : LC[blk[ci]];
+      const ls = d.glow ? 1 : LC[c.s[ci]], lb = d.glow ? 1 : LC[c.l[ci]];
       for (const q of CROSS) {
         const base = A.p.length/3;
-        q.forEach((c, v) => { A.p.push(x+c[0], y+c[1], z+c[2]); A.uv.push(...tileUV(d.tSide, v&1, v>>1)); A.l.push(ls, lb, 1); });
+        q.forEach((cc, v) => { A.p.push(x+cc[0], y+cc[1], z+cc[2]); A.uv.push(...tileUV(d.tSide, v&1, v>>1)); A.l.push(ls, lb, 1); });
         A.i.push(base, base+1, base+2, base+2, base+1, base+3);
       }
       continue;
     }
     const T2 = d.trans ? Bm : A;
-    const lowerTop = d.liquid && get(x,y+1,z) !== b;
+    const lowerTop = d.liquid && (y+1 >= SY || c.b[li(lx,y+1,lz)] !== b);
     for (const f of FACES) {
-      const nx=x+f.d[0], ny=y+f.d[1], nz=z+f.d[2];
-      const n = get(nx,ny,nz);
+      const ny = y+f.d[1];
+      if (ny < 0) continue;
+      const nlx = lx+f.d[0], nlz = lz+f.d[2];
+      let n, nS, nL;
+      if (ny >= SY) { n = 0; nS = 15; nL = 0; }
+      else if (nlx>=0 && nlx<16 && nlz>=0 && nlz<16) { const ni = li(nlx,ny,nlz); n = c.b[ni]; nS = c.s[ni]; nL = c.l[ni]; }
+      else { const nx = x+f.d[0], nz = z+f.d[2]; n = get(nx,ny,nz); nS = getSky(nx,ny,nz); nL = getBlk(nx,ny,nz); }
       if (!faceVisible(b,n)) continue;
-      let ls = 1, lb = 0;
-      if (d.glow) { ls = 1; lb = 1; }
-      else if (ny < SY && nx>=0 && nz>=0 && nx<SX && nz<SZ && ny >= 0) { const ni = idx(nx,ny,nz); ls = LC[sky[ni]]; lb = LC[blk[ni]]; }
+      const ls = d.glow ? 1 : LC[nS], lb = d.glow ? 1 : LC[nL];
       const sh = d.glow ? 1 : f.s, tile = d[f.k], base = T2.p.length/3;
       for (let v=0; v<4; v++) {
-        const c = f.c[v];
-        T2.p.push(x+c[0], y+c[1] - (lowerTop && c[1]===1 ? .12 : 0), z+c[2]);
+        const cc = f.c[v];
+        T2.p.push(x+cc[0], y+cc[1] - (lowerTop && cc[1]===1 ? .12 : 0), z+cc[2]);
         T2.uv.push(...tileUV(tile, f.uv[v][0], f.uv[v][1]));
         T2.l.push(ls, lb, sh);
       }
@@ -929,30 +982,57 @@ function buildChunk(cx, cz){
     if (mat === matTrans) m.renderOrder = 1;
     scene.add(m); return m;
   };
-  chunks[key] = { a: make(A, matOpaque), b: make(Bm, matTrans) };
+  c.a = make(A, matOpaque); c.t = make(Bm, matTrans);
 }
-function buildAll(){ for (let cz=0; cz<NCZ; cz++) for (let cx=0; cx<NCX; cx++) buildChunk(cx,cz); }
+
+// Stücke rund um den Spieler laden, bauen und wieder entladen
+let genList = [], lastPC = "";
+function streamChunks(budgetGen, budgetMesh){
+  const pcx = Math.floor(player.x)>>4, pcz = Math.floor(player.z)>>4;
+  const key = pcx + "," + pcz;
+  if (key !== lastPC || !genList.length) {
+    lastPC = key;
+    for (const [k,c] of chunks) if (Math.max(Math.abs(c.cx-pcx), Math.abs(c.cz-pcz)) > RD+3) { disposeMesh(c); chunks.delete(k); }
+    lastK = -1;
+    genList = [];
+    const R2 = (RD+1.5)*(RD+1.5);
+    for (let dz=-RD-1; dz<=RD+1; dz++) for (let dx=-RD-1; dx<=RD+1; dx++) {
+      const d2 = dx*dx+dz*dz; if (d2 > R2) continue;
+      if (!chunkAt(pcx+dx, pcz+dz)) genList.push([pcx+dx, pcz+dz, d2]);
+    }
+    genList.sort((a,b) => b[2]-a[2]);
+  }
+  for (let i=0; i<budgetGen && genList.length; i++) { const [cx,cz] = genList.pop(); if (!chunkAt(cx,cz)) genChunk(cx,cz); }
+  const cand = [], M2 = (RD+.5)*(RD+.5);
+  for (const c of chunks.values()) {
+    if (!c.dirty) continue;
+    const dx = c.cx-pcx, dz = c.cz-pcz, d2 = dx*dx+dz*dz;
+    if (d2 > M2) continue;
+    if (!chunks.has(ckey(c.cx+1,c.cz)) || !chunks.has(ckey(c.cx-1,c.cz)) || !chunks.has(ckey(c.cx,c.cz+1)) || !chunks.has(ckey(c.cx,c.cz-1))) continue;
+    cand.push([c, d2]);
+  }
+  cand.sort((a,b) => a[1]-b[1]);
+  for (let i=0; i<budgetMesh && i<cand.length; i++) buildChunk(cand[i][0]);
+}
+function clearWorld(){ for (const c of chunks.values()) disposeMesh(c); chunks.clear(); lastK = -1; genList = []; lastPC = ""; villageCache.clear(); }
 
 function setBlock(x,y,z,b){
-  if (x<0||z<0||x>=SX||z>=SZ||y<1||y>=SY) return;
-  const i = idx(x,y,z);
-  world[i] = b; edits[i] = b;
-  const touched = new Set();
-  const cx = Math.floor(x/CH), cz = Math.floor(z/CH);
-  touched.add(cz*NCX+cx);
-  if (x%CH===0 && cx>0) touched.add(cz*NCX+cx-1);
-  if (x%CH===CH-1 && cx<NCX-1) touched.add(cz*NCX+cx+1);
-  if (z%CH===0 && cz>0) touched.add((cz-1)*NCX+cx);
-  if (z%CH===CH-1 && cz<NCZ-1) touched.add((cz+1)*NCX+cx);
-  const bb = relight(x-15, x+15, z-15, z+15);
-  if (bb) {
-    for (let qz=Math.max(0,Math.floor((bb[2]-1)/CH)); qz<=Math.min(NCZ-1,Math.floor((bb[3]+1)/CH)); qz++)
-      for (let qx=Math.max(0,Math.floor((bb[0]-1)/CH)); qx<=Math.min(NCX-1,Math.floor((bb[1]+1)/CH)); qx++) touched.add(qz*NCX+qx);
-  }
-  for (const k of touched) buildChunk(k % NCX, Math.floor(k / NCX));
+  if (y<1||y>=SY) return;
+  const cx = x>>4, cz = z>>4, c = chunkAt(cx,cz);
+  if (!c) return;
+  const i = li(x&15,y,z&15);
+  c.b[i] = b; if (y > c.top) c.top = y;
+  const ek = eKey(cx,cz); (edits[ek] || (edits[ek] = {}))[i] = b;
+  const touched = new Set([c]);
+  const add = (qx,qz) => { const n = chunkAt(qx,qz); if (n) touched.add(n); };
+  if ((x&15) === 0) add(cx-1,cz); if ((x&15) === 15) add(cx+1,cz);
+  if ((z&15) === 0) add(cx,cz-1); if ((z&15) === 15) add(cx,cz+1);
+  const bb = relightRegion(x-15, x+15, z-15, z+15);
+  if (bb) for (let qz=(bb[2]-1)>>4; qz<=(bb[3]+1)>>4; qz++) for (let qx=(bb[0]-1)>>4; qx<=(bb[1]+1)>>4; qx++) add(qx,qz);
+  for (const t of touched) buildChunk(t);
   // Pflanzen und Fackeln fallen ab, wenn ihr Untergrund verschwindet
   if (!SOLID[b] && y+1 < SY) {
-    const above = world[idx(x,y+1,z)];
+    const above = get(x,y+1,z);
     if (BD[above].cross) { setBlock(x,y+1,z,0); if (mode === "survival") giveDrops(above); }
   }
   scheduleSave();
@@ -973,7 +1053,7 @@ clouds.rotation.x = -Math.PI/2; clouds.position.y = SY + 18; scene.add(clouds);
 // =====================================================================
 // Spieler
 // =====================================================================
-const player = { x: SX/2+.5, y: 40, z: SZ/2+.5, vx:0, vy:0, vz:0, yaw:0, pitch:0, onGround:false, fly:false,
+const player = { x: 56.5, y: 60, z: 56.5, vx:0, vy:0, vz:0, yaw:0, pitch:0, onGround:false, fly:false,
   hp:20, food:20, mana:20, air:10, armor:null, dead:false, invT:0, kb:0, fallFrom:null, spawn:null };
 const PW = .3, PH = 1.8, EYE = 1.62;
 let mode = "survival";
@@ -1000,16 +1080,21 @@ function moveBody(o, axis, amt, hw, h){
 const blockAtFeet = (o, dy) => get(Math.floor(o.x), Math.floor(o.y+dy), Math.floor(o.z));
 function findSpawn(){
   if (player.spawn) return player.spawn;
-  const cx = village ? village.x : Math.floor(SX/2), cz = village ? village.z + 4 : Math.floor(SZ/2);
-  for (let r=0; r<50; r++) for (let a=0; a<8; a++) {
+  const v = villageIn(0,0);
+  const cx = v ? v.x : 56, cz = v ? v.z + 4 : 56;
+  ensureArea(cx, cz, 2);
+  for (let r=0; r<28; r++) for (let a=0; a<8; a++) {
     const X = cx + Math.round(Math.cos(a*Math.PI/4)*r), Z = cz + Math.round(Math.sin(a*Math.PI/4)*r);
-    if (X<1||Z<1||X>=SX-1||Z>=SZ-1) continue;
-    const y = topSolid(X,Z);
-    if (world[idx(X,y,Z)] !== B.water && !BD[world[idx(X,y,Z)]].see && !boxHits(X+.5,y+1,Z+.5,PW,PH)) return [X+.5, y+1, Z+.5];
+    const y = topSolid(X,Z), b = get(X,y,Z);
+    if (b !== B.water && !BD[b].see && !boxHits(X+.5,y+1,Z+.5,PW,PH)) return [X+.5, y+1, Z+.5];
   }
-  return [SX/2, SY-2, SZ/2];
+  return [cx+.5, SY-2, cz+.5];
 }
-function placePlayerAtSpawn(){ const s = findSpawn(); player.x=s[0]; player.y=s[1]; player.z=s[2]; player.vx=player.vy=player.vz=0; player.fallFrom=null; }
+function placePlayerAtSpawn(){
+  const s = findSpawn(); ensureArea(s[0], s[2], 2);
+  player.x=s[0]; player.y=s[1]; player.z=s[2]; player.vx=player.vy=player.vz=0; player.fallFrom=null;
+  for (let k=0; k<SY && boxHits(player.x,player.y,player.z,PW,PH); k++) player.y++;
+}
 function lookDir(){ const cp = Math.cos(player.pitch); return [-Math.sin(player.yaw)*cp, Math.sin(player.pitch), -Math.cos(player.yaw)*cp]; }
 
 function raycast(maxD){
@@ -1023,8 +1108,8 @@ function raycast(maxD){
   let tz = dz>0 ? (z+1-oz)*tdz : dz<0 ? (oz-z)*tdz : Infinity;
   let px=x, py=y, pz=z, t=0;
   while (t <= maxD) {
-    if (x>=0 && z>=0 && x<SX && z<SZ && y>=0 && y<SY) {
-      const b = world[idx(x,y,z)];
+    if (y>=0 && y<SY) {
+      const b = get(x,y,z);
       if (b && !BD[b].liquid) return { x,y,z, px,py,pz, b, t };
     }
     px=x; py=y; pz=z;
@@ -1177,6 +1262,7 @@ function canStand(x,y,z,hw,h){ return !boxHits(x,y,z,hw,h) && SOLID[get(Math.flo
 
 function updateEnt(e, dt){
   const T = e.T;
+  if (!loadedAt(e.x, e.z)) return;
   const dx = player.x-e.x, dz = player.z-e.z, dy = player.y-e.y, dist = Math.hypot(dx,dz) || .001;
   e.atkCD -= dt; e.shootCD -= dt; e.hurtT -= dt; e.kb -= dt;
   let mx=0, mz=0, spd=T.speed, faceYaw=null;
@@ -1233,7 +1319,7 @@ function updateEnt(e, dt){
   if (blockAtFeet(e, .2) === B.lava) { e.burnT += dt; if (e.burnT > .5) { e.burnT = 0; hurtEnt(e, 3, e.x, e.z, 0); } }
   if (T.burns && dayF > .6) {
     const hx=Math.floor(e.x), hy=Math.floor(e.y+T.h-.1), hz=Math.floor(e.z);
-    if (hy < SY && hy >= 0 && sky[idx(hx,hy,hz)] === 15) { e.burnT += dt; e.hurtT = Math.max(e.hurtT, .05); if (e.burnT > 1) { e.burnT = 0; hurtEnt(e, 2, e.x, e.z, 0); } }
+    if (getSky(hx,hy,hz) === 15) { e.burnT += dt; e.hurtT = Math.max(e.hurtT, .05); if (e.burnT > 1) { e.burnT = 0; hurtEnt(e, 2, e.x, e.z, 0); } }
   }
   if (e.dead) return;
   // Ausrichtung & Animation
@@ -1262,7 +1348,7 @@ function spawnTick(){
   for (const e of ents) { if (e.T.kind === "monster") mons++; else if (e.T.kind === "animal") anis++; }
   const a = Math.random()*6.283, d = 18 + Math.random()*26;
   const x = Math.floor(player.x + Math.sin(a)*d), z = Math.floor(player.z + Math.cos(a)*d);
-  if (x<2||z<2||x>=SX-2||z>=SZ-2) return;
+  if (!loadedAt(x,z) || !loadedAt(x+1,z+1) || !loadedAt(x-1,z-1)) return;
   const top = topSolid(x,z);
   if (mons < 12) {
     const surface = Math.random() < .5;
@@ -1273,15 +1359,27 @@ function spawnTick(){
       spawnEnt(type, x+.5, y + (type === "glutling" ? .5 : 0), z+.5);
     }
   }
-  if (anis < 10 && Math.random() < .35 && top+1 < SY && world[idx(x,top,z)] === B.grass && sky[idx(x,top+1,z)] === 15 && canStand(x+.5, top+1, z+.5, .45, 1.4)) {
+  if (anis < 10 && Math.random() < .35 && top+1 < SY && get(x,top,z) === B.grass && getSky(x,top+1,z) === 15 && canStand(x+.5, top+1, z+.5, .45, 1.4)) {
     spawnEnt(["schaf","kuh","huhn"][Math.random()*3|0], x+.5, top+1, z+.5);
   }
 }
-function spawnSettlers(){
+function resetEntities(){
   for (const e of ents) removeEnt(e);
   ents.length = 0;
-  if (village) for (const h of village.houses) spawnEnt("siedler", h.x, h.y, h.z, { prof:h.prof, home:[h.x,h.y,h.z] });
+  manageVillages();
   for (let i=0;i<14;i++) spawnTick();
+}
+// Siedler erscheinen, wenn man in die Nähe eines Dorfes kommt
+function manageVillages(){
+  const rx = Math.floor(player.x/VR), rz = Math.floor(player.z/VR);
+  for (let dz=-1; dz<=1; dz++) for (let dx=-1; dx<=1; dx++) {
+    const v = villageIn(rx+dx, rz+dz);
+    if (!v || v.spawned || Math.hypot(v.x-player.x, v.z-player.z) > 90) continue;
+    if (!v.houses.every(h => loadedAt(h.x,h.z))) continue;
+    v.spawned = true;
+    for (const h of v.houses) spawnEnt("siedler", h.x, h.y, h.z, { prof:h.prof, home:[h.x,h.y,h.z], village:v });
+  }
+  for (const e of ents) if (e.village && !e.dead && Math.hypot(e.village.x-player.x, e.village.z-player.z) > 120) { removeEnt(e); e.village.spawned = false; }
 }
 
 // Geschosse
@@ -1699,7 +1797,7 @@ function newWorld(m){
   mode = m; seed = (Math.random()*1e9)|0; edits = {}; inv.fill(null); player.armor = null; player.spawn = null; furnaceHeat = 0;
   Object.assign(player, { hp:20, food:20, mana:20, air:10, dead:false, fly:false, yaw:0, pitch:0 });
   for (const p of projs) p.life = 0;
-  generate(); buildAll(); player.spawn = findSpawn(); placePlayerAtSpawn(); spawnSettlers();
+  clearWorld(); player.spawn = null; player.spawn = findSpawn(); placePlayerAtSpawn(); resetEntities(); streamChunks(0, 60);
   dayTime = .27; barsKey = ""; renderHotbar(); updateMenu(); saveNow(); startPlaying();
 }
 $("new-survival").addEventListener("click", () => newWorld("survival"));
@@ -1793,7 +1891,7 @@ $("t-menu").addEventListener("click", () => { if (!uiOpen) pause(); });
 // =====================================================================
 // Speichern
 // =====================================================================
-const SAVE_KEY = "blockwelt-v2";
+const SAVE_KEY = "blockwelt-v3";
 let saveTimer = null;
 function saveNow(){
   if (!ready) return;
@@ -1809,9 +1907,10 @@ const DAY_LEN = 600;
 let dayTime = .27;
 const skyDay = new THREE.Color(0x9fc6e0), skyDusk = new THREE.Color(0xe8a070), skyNight = new THREE.Color(0x0b1220), waterTint = new THREE.Color(0x1d4a7a), lavaTint = new THREE.Color(0xc04010);
 const tmpC = new THREE.Color();
-let last = performance.now(), fpsAcc = 0, fpsN = 0, fps = 0, foodT = 0, regenT = 0, starveT = 0, airT = 0, lavaT = 0, manaT = 0, autosaveT = 0;
+let villageT = 0, last = performance.now(), fpsAcc = 0, fpsN = 0, fps = 0, foodT = 0, regenT = 0, starveT = 0, airT = 0, lavaT = 0, manaT = 0, autosaveT = 0;
 
 function updatePlayer(dt){
+  if (!loadedAt(player.x, player.z)) return;
   let fx = 0, fz = 0;
   if (keys.KeyW || keys.ArrowUp) fz -= 1;
   if (keys.KeyS || keys.ArrowDown) fz += 1;
@@ -1861,6 +1960,8 @@ function tick(now){
   const dt = Math.min(.05, (now - last)/1000); last = now;
   fpsAcc += dt; fpsN++; if (fpsAcc > .5) { fps = Math.round(fpsN/fpsAcc); fpsAcc = 0; fpsN = 0; }
   if (!ready) return;
+  streamChunks(isTouch ? 1 : 2, isTouch ? 2 : 3);
+  villageT -= dt; if (villageT <= 0) { villageT = 1; manageVillages(); }
   const active = playing && !player.dead;
   if (playing) {
     dayTime = (dayTime + dt/DAY_LEN) % 1;
@@ -1870,7 +1971,7 @@ function tick(now){
     for (let i=ents.length-1;i>=0;i--) {
       const e = ents[i]; if (e.dead) { ents.splice(i,1); continue; }
       const d = Math.hypot(e.x-player.x, e.z-player.z);
-      if ((e.T.kind === "monster" && (d > 60 || (dayF > .7 && d > 30 && e.T.burns))) || (e.T.kind === "animal" && d > 90) || e.y < -5) { removeEnt(e); ents.splice(i,1); }
+      if ((e.T.kind === "monster" && (d > 60 || (dayF > .7 && d > 30 && e.T.burns))) || (e.T.kind === "animal" && d > 70) || e.y < -5) { removeEnt(e); ents.splice(i,1); }
     }
     updateProjs(dt);
     spawnT -= dt; if (spawnT <= 0) { spawnT = .5; spawnTick(); }
@@ -1929,11 +2030,11 @@ function boot(){
     Object.assign(player, { hp: saved.hp ?? 20, food: saved.food ?? 20, mana: saved.mana ?? 20, dead: !!saved.dead });
     player.spawn = saved.spawn || null; sel_ = saved.sel || 0;
   } else seed = (Math.random()*1e9)|0;
-  generate(); buildAll();
   if (!player.spawn) player.spawn = findSpawn();
-  if (saved && Array.isArray(saved.p)) { [player.x, player.y, player.z, player.yaw, player.pitch] = saved.p; if (boxHits(player.x,player.y,player.z,PW,PH)) placePlayerAtSpawn(); }
+  if (saved && Array.isArray(saved.p)) { [player.x, player.y, player.z, player.yaw, player.pitch] = saved.p; ensureArea(player.x, player.z, 2); if (boxHits(player.x,player.y,player.z,PW,PH)) placePlayerAtSpawn(); }
   else placePlayerAtSpawn();
-  spawnSettlers();
+  resetEntities();
+  streamChunks(0, 60);
   ready = true;
   $("play").disabled = false; $("play").textContent = saved ? "Weiterspielen" : "Spielen";
   renderHotbar(); updateMenu(); selectSlot(sel_);
