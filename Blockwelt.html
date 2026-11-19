@@ -130,6 +130,14 @@ body:not(.is-touch) .keys-touch { display: none; }
 #t-menu { right: calc(14px + env(safe-area-inset-right, 0px)); top: calc(12px + env(safe-area-inset-top, 0px)); width: 44px; height: 44px; border-radius: 8px; }
 #t-mode.place { background: rgba(200,121,74,.6); }
 #t-fly.on { background: rgba(127,174,78,.6); }
+.slot.ench img { filter: drop-shadow(0 0 2px #d7b8ff) drop-shadow(0 0 4px #8f6ae0); }
+#xpbar { position: relative; flex: 1 0 100%; height: 6px; margin-top: 12px; background: rgba(0,0,0,.45); border-radius: 3px; }
+#xpbar i { display: block; height: 100%; width: 0; background: #8fdc4a; border-radius: 3px; }
+#xpbar span { position: absolute; left: 50%; top: -15px; transform: translateX(-50%); font: 700 12px/1 var(--display); color: #b4f06a; }
+.xpchip { color: #c7f0a2; }
+.enchlist { font-size: 12px; color: #cdb6ff; }
+.ench-items { display: flex; flex-wrap: wrap; gap: 6px; }
+.ench-items .slot { width: 48px; height: 48px; }
 @media (prefers-reduced-motion: reduce) { #blockname, #hurt { transition: none; } .toast { animation-duration: 3s; } }
 </style>
 
@@ -140,7 +148,7 @@ body:not(.is-touch) .keys-touch { display: none; }
 <div id="hud-top"><b>BLOCKWELT</b><br><span id="stats"></span></div>
 <div id="toasts"></div>
 <div id="blockname"></div>
-<div id="bars"><div class="pips" id="hearts"></div><div class="pips" id="food"></div><div class="pips" id="air" hidden></div><div id="manabar" hidden><i></i></div></div>
+<div id="bars"><div class="pips" id="hearts"></div><div class="pips" id="food"></div><div class="pips" id="air" hidden></div><div id="manabar" hidden><i></i></div><div id="xpbar"><i></i><span>0</span></div></div>
 <div id="hotbar"></div>
 
 <div class="touch" id="stick"><div id="knob"></div></div>
@@ -168,6 +176,20 @@ body:not(.is-touch) .keys-touch { display: none; }
   <div class="sheet">
     <header><h2 id="trade-title">Handel</h2><button class="sm ghost" id="trade-close">Schließen</button></header>
     <div class="body" id="trade-body"></div>
+  </div>
+</div>
+
+<div id="chest" class="overlay" hidden>
+  <div class="sheet">
+    <header><h2>Truhe</h2><button class="sm ghost" id="chest-close">Schließen</button></header>
+    <div class="body" id="chest-body"></div>
+  </div>
+</div>
+
+<div id="ench" class="overlay" hidden>
+  <div class="sheet">
+    <header><h2 id="ench-title">Zaubertisch</h2><button class="sm ghost" id="ench-close">Schließen</button></header>
+    <div class="body" id="ench-body"></div>
   </div>
 </div>
 
@@ -227,6 +249,8 @@ body:not(.is-touch) .keys-touch { display: none; }
         <li>Aus Bruchstein baust du einen Schmelzofen. Darin wird Erz zu Barren und Sand zu Glas.</li>
         <li>Arkankristalle findest du tief unten. Aus ihnen entstehen Zauberstäbe, Tränke und die beste Ausrüstung.</li>
         <li>Die Siedler im Dorf tauschen Rubine gegen nützliche Dinge.</li>
+        <li>Mit Kämpfen und Abbauen sammelst du Erfahrung. Am Zaubertisch oder mit einem Zauberbuch verbesserst du damit Waffen, Werkzeuge und Rüstung. Bücherregale rund um den Tisch erlauben stärkere Zauber.</li>
+        <li>Mit einer Hacke machst du aus Gras Ackerboden. Weizensamen findest du im hohen Gras.</li>
       </ol>
     </details>
   </div>
@@ -307,24 +331,65 @@ defBlock("torch",        { name:"Fackel", all:"torch", cross:true, solid:false, 
 defBlock("flower_red",   { name:"Mohnblume", all:"flower_red", cross:true, solid:false, hard:0 });
 defBlock("flower_yellow",{ name:"Löwenzahn", all:"flower_yellow", cross:true, solid:false, hard:0 });
 defBlock("flower_blue",  { name:"Kornblume", all:"flower_blue", cross:true, solid:false, hard:0 });
-defBlock("tall_grass",   { name:"Grasbüschel", all:"tall_grass", cross:true, solid:false, hard:0, drop:null });
+defBlock("tall_grass",   { name:"Grasbüschel", all:"tall_grass", cross:true, solid:false, hard:0, drop: r => r() < .14 ? [["seeds",1]] : [] });
 defBlock("mushroom",     { name:"Pilz", all:"mushroom", cross:true, solid:false, hard:0 });
+defBlock("spruce_log",   { name:"Fichtenstamm", top:"spruce_top", side:"spruce_log", bottom:"spruce_top", hard:2, tool:"axe" });
+defBlock("spruce_leaves",{ name:"Fichtennadeln", all:"spruce_leaves", hard:.2, see:true, atten:1, drop: r => r() < .08 ? [["stick",1]] : [] });
+defBlock("spruce_planks",{ name:"Fichtenbretter", all:"spruce_planks", hard:2, tool:"axe" });
+defBlock("cherry_log",   { name:"Kirschstamm", top:"cherry_top", side:"cherry_log", bottom:"cherry_top", hard:2, tool:"axe" });
+defBlock("cherry_leaves",{ name:"Kirschblüten", all:"cherry_leaves", hard:.2, see:true, atten:1, drop: r => r() < .1 ? [["apple",1]] : [] });
+defBlock("cherry_planks",{ name:"Kirschbretter", all:"cherry_planks", hard:2, tool:"axe" });
+defBlock("granite",      { name:"Granit", all:"granite", hard:1.5, tool:"pick", need:0 });
+defBlock("marble",       { name:"Marmor", all:"marble", hard:1.5, tool:"pick", need:0 });
+defBlock("slate",        { name:"Schiefer", all:"slate", hard:2.2, tool:"pick", need:0 });
+defBlock("polished_granite", { name:"Polierter Granit", all:"polished_granite", hard:1.5, tool:"pick", need:0 });
+defBlock("polished_marble",  { name:"Polierter Marmor", all:"polished_marble", hard:1.5, tool:"pick", need:0 });
+defBlock("obsidian",     { name:"Obsidian", all:"obsidian", hard:12, tool:"pick", need:2 });
+defBlock("copper_ore",   { name:"Kupfererz", all:"ore_copper", hard:3, tool:"pick", need:1 });
+defBlock("lazur_ore",    { name:"Lazurerz", all:"ore_lazur", hard:3, tool:"pick", need:1, drop: r => [["lazur", 3 + (r()*4|0)]] });
+defBlock("mond_ore",     { name:"Mondsteinerz", all:"ore_mond", hard:4, tool:"pick", need:3, light:4, drop:"mondstein" });
+defBlock("iron_block",   { name:"Eisenblock", all:"block_iron", hard:4, tool:"pick", need:1 });
+defBlock("gold_block",   { name:"Goldblock", all:"block_gold", hard:4, tool:"pick", need:1 });
+defBlock("copper_block", { name:"Kupferblock", all:"block_copper", hard:4, tool:"pick", need:1 });
+defBlock("rubin_block",  { name:"Rubinblock", all:"block_rubin", hard:4, tool:"pick", need:1 });
+defBlock("lazur_block",  { name:"Lazurblock", all:"block_lazur", hard:4, tool:"pick", need:1 });
+defBlock("mond_block",   { name:"Mondsteinblock", all:"block_mond", hard:5, tool:"pick", need:2, light:9, glow:true });
+defBlock("pumpkin",      { name:"Kürbis", top:"pumpkin_top", side:"pumpkin_side", bottom:"pumpkin_top", hard:1, tool:"axe" });
+defBlock("jack",         { name:"Kürbislaterne", top:"pumpkin_top", side:"jack_side", bottom:"pumpkin_top", hard:1, tool:"axe", light:15 });
+defBlock("melon",        { name:"Melone", top:"melon_top", side:"melon_side", bottom:"melon_top", hard:1, tool:"axe", drop: r => [["melon_slice", 3 + (r()*4|0)]] });
+defBlock("cactus",       { name:"Kaktus", top:"cactus_top", side:"cactus_side", bottom:"cactus_top", hard:.4, see:true, atten:0 });
+defBlock("sugarcane",    { name:"Zuckerrohr", all:"sugarcane", cross:true, solid:false, hard:0 });
+defBlock("hay",          { name:"Heuballen", top:"hay_top", side:"hay_side", bottom:"hay_top", hard:.5 });
+defBlock("farmland",     { name:"Ackerboden", top:"farmland", side:"dirt", bottom:"dirt", hard:.6, tool:"shovel", drop:"dirt" });
+defBlock("wheat_0",      { name:"Weizen", all:"wheat_0", cross:true, solid:false, hard:0, crop:1, item:false, drop:"seeds" });
+defBlock("wheat_1",      { name:"Weizen", all:"wheat_1", cross:true, solid:false, hard:0, crop:2, item:false, drop:"seeds" });
+defBlock("wheat_2",      { name:"Weizen", all:"wheat_2", cross:true, solid:false, hard:0, crop:3, item:false, drop:"seeds" });
+defBlock("wheat_3",      { name:"Reifer Weizen", all:"wheat_3", cross:true, solid:false, hard:0, crop:4, item:false, drop: r => [["wheat",1],["seeds",1 + (r()*2|0)]] });
+defBlock("chest",        { name:"Truhe", top:"chest_top", side:"chest_front", bottom:"chest_top", hard:2.5, tool:"axe" });
+defBlock("bed",          { name:"Bett", top:"bed_top", side:"bed_side", bottom:"oak_planks", hard:.4 });
+defBlock("ench_table",   { name:"Zaubertisch", top:"ench_top", side:"ench_side", bottom:"obsidian", hard:5, tool:"pick", need:0, light:7 });
+defBlock("wool_green",   { name:"Grüne Wolle", all:"wool_green", hard:.8 });
+defBlock("wool_black",   { name:"Schwarze Wolle", all:"wool_black", hard:.8 });
+defBlock("wool_purple",  { name:"Lila Wolle", all:"wool_purple", hard:.8 });
+defBlock("wool_orange",  { name:"Orange Wolle", all:"wool_orange", hard:.8 });
+for (const k of ["coal_ore","iron_ore","gold_ore","arkan_ore","rubin_ore","copper_ore","lazur_ore","mond_ore"]) BD[B[k]].ore = true;
 
 const NB = BD.length;
 const LT = new Int8Array(NB), EM = new Uint8Array(NB), SOLID = new Uint8Array(NB);
 BD.forEach((d,i) => { LT[i] = d.atten; EM[i] = d.light; SOLID[i] = d.solid ? 1 : 0; });
 const GROUPS = {
-  "#planks": ["oak_planks","birch_planks"],
-  "#log": ["oak_log","birch_log"],
-  "#fuel": ["coal","oak_log","birch_log","oak_planks","birch_planks","stick"],
+  "#planks": ["oak_planks","birch_planks","spruce_planks","cherry_planks"],
+  "#log": ["oak_log","birch_log","spruce_log","cherry_log"],
+  "#fuel": ["coal","oak_log","birch_log","spruce_log","cherry_log","oak_planks","birch_planks","spruce_planks","cherry_planks","stick"],
+  "#wool": ["wool"],
 };
 const GROUP_NAMES = { "#planks":"Bretter (beliebig)", "#log":"Baumstamm (beliebig)", "#fuel":"Brennstoff" };
-const HEAT = { coal:8, oak_log:3, birch_log:3, oak_planks:2, birch_planks:2, stick:1 };
+const HEAT = { coal:8, oak_log:3, birch_log:3, spruce_log:3, cherry_log:3, oak_planks:2, birch_planks:2, spruce_planks:2, cherry_planks:2, stick:1 };
 
 // =====================================================================
 // Texturen (selbst gezeichnet)
 // =====================================================================
-const TS = 16, AC = 16, AR = 4;
+const TS = 16, AC = 16, AR = 8;
 const atlas = document.createElement("canvas");
 atlas.width = TS*AC; atlas.height = TS*AR;
 const TILE = {};
@@ -399,6 +464,62 @@ const shade = (rgb, k) => `rgb(${Math.max(0,Math.min(255,rgb[0]*k))|0},${Math.ma
   tile("flower_blue", () => flower([70,110,230], "#e8e0f8"));
   tile("tall_grass", () => { for (let b=0;b<6;b++){ let x=2+b*2+(r()*2|0), h=6+(r()*7|0); for (let y=15;y>15-h;y--){ P(x,y,shade(GREEN,.8+r()*.4)); if (r()<.25) x+=r()<.5?-1:1; } } });
   tile("mushroom", () => { for (let y=9;y<16;y++){ P(7,y,"#e8dcc4"); P(8,y,"#d6c8ac"); } for (let y=5;y<9;y++) for (let x=4;x<12;x++) P(x,y,shade([150,98,64],.9+r()*.2)); for (let x=5;x<11;x++) P(x,4,shade([150,98,64],1.1)); });
+  const bark = (rgb) => { for (let x=0;x<TS;x++){ const k=(x%3===0)?.72:.9+r()*.2; for (let y=0;y<TS;y++) P(x,y,shade(rgb,k*(.92+r()*.16))); } };
+  const rings = (rgb, edge) => { for (let y=0;y<TS;y++) for (let x=0;x<TS;x++){ const d=Math.hypot(x-7.5,y-7.5); P(x,y, d>7 ? shade(edge,.85) : shade(rgb, Math.floor(d)%3===0?.8:1)); } };
+  const metal = (rgb) => { noise(rgb,.08); for (let i=0;i<16;i++){ P(i,0,shade(rgb,1.3)); P(0,i,shade(rgb,1.3)); P(i,15,shade(rgb,.6)); P(15,i,shade(rgb,.6)); } for (let i=3;i<13;i++){ P(i,3,shade(rgb,.8)); P(3,i,shade(rgb,.8)); P(i,12,shade(rgb,1.15)); P(12,i,shade(rgb,1.15)); } };
+  const polished = (rgb) => { noise(rgb,.06); for (let i=0;i<16;i++){ P(i,0,shade(rgb,1.12)); P(0,i,shade(rgb,1.12)); P(i,15,shade(rgb,.8)); P(15,i,shade(rgb,.8)); } };
+  const slateBase = () => { for (let y=0;y<TS;y++) for (let x=0;x<TS;x++) P(x,y,shade([72,74,82], (y%4===0?.82:1)*(.9+r()*.18))); };
+  const wheat = (stage) => { const h = [4,7,10,13][stage], c = stage === 3 ? [214,176,72] : stage === 2 ? [150,170,60] : [80,150,50];
+    for (let b=0;b<5;b++){ const x=2+b*3; for (let y=15;y>15-h;y--) P(x,y,shade(c,.85+r()*.3)); if (stage>=2) { P(x-1,16-h,shade(c,1.1)); P(x+1,17-h,shade(c,1.1)); P(x,15-h,shade(c,1.2)); } } };
+
+  tile("spruce_log", () => bark([74,52,34]));
+  tile("spruce_top", () => rings([150,112,72],[74,52,34]));
+  tile("spruce_leaves", () => leaves([38,82,58]));
+  tile("spruce_planks", () => planks([128,90,54]));
+  tile("cherry_log", () => { for (let y=0;y<TS;y++) for (let x=0;x<TS;x++) P(x,y,shade([88,50,52],(y%5===0?.75:1)*(.9+r()*.18))); });
+  tile("cherry_top", () => rings([214,150,140],[88,50,52]));
+  tile("cherry_leaves", () => { for (let y=0;y<TS;y++) for (let x=0;x<TS;x++){ if (r()<.16) continue; P(x,y, r()<.12 ? "#fff0f4" : shade([234,156,188],.8+r()*.35)); } });
+  tile("cherry_planks", () => planks([222,168,158]));
+  tile("granite", () => { noise([160,104,86],.25); dots("#d8a890",14); dots("#6a4438",10); });
+  tile("marble", () => { noise([232,230,224],.07); let x=0, y=r()*16|0; for (let i=0;i<22;i++){ P(x,y,"#a8a8ae"); x++; if (x>15) { x=0; y=r()*16|0; } y=(y+(r()<.5?1:-1)+16)%16; } });
+  tile("slate", slateBase);
+  tile("polished_granite", () => polished([168,110,92]));
+  tile("polished_marble", () => polished([236,234,228]));
+  tile("obsidian", () => { noise([30,22,44],.5); dots("#5a3a8a",10); dots("#0c0814",8); });
+  tile("ore_copper", () => ore([206,112,70]));
+  tile("ore_lazur", () => ore([42,72,206]));
+  tile("ore_mond", () => { slateBase(); for (let c=0;c<4;c++){ const cx=2+r()*11|0, cy=2+r()*11|0; for (let k=0;k<5;k++) P(cx+(r()*3|0)-1, cy+(r()*3|0)-1, shade([170,236,244], .85+r()*.3)); P(cx,cy,"#ffffff"); } });
+  tile("block_iron", () => metal([214,214,220]));
+  tile("block_gold", () => metal([242,200,64]));
+  tile("block_copper", () => metal([206,116,74]));
+  tile("block_rubin", () => metal([212,36,62]));
+  tile("block_lazur", () => metal([40,72,196]));
+  tile("block_mond", () => metal([170,232,242]));
+  tile("pumpkin_top", () => { for (let y=0;y<TS;y++) for (let x=0;x<TS;x++) P(x,y,shade([222,130,30],.88+r()*.16)); for (let y=6;y<10;y++) for (let x=6;x<10;x++) P(x,y,"#5a7a2a"); });
+  tile("pumpkin_side", () => { for (let y=0;y<TS;y++) for (let x=0;x<TS;x++) P(x,y,shade([222,130,30],(x%4===0?.75:1)*(.9+r()*.14))); });
+  tile("jack_side", () => { for (let y=0;y<TS;y++) for (let x=0;x<TS;x++) P(x,y,shade([222,130,30],(x%4===0?.75:1)*(.9+r()*.14))); for (const [x,y] of [[7,3],[8,3],[6,4],[9,4],[5,5],[10,5],[7,4],[8,4],[6,5],[9,5],[7,5],[8,5],[4,7],[11,7],[5,8],[6,8],[7,8],[8,8],[9,8],[10,8],[6,10],[9,10],[7,11],[8,11],[7,10],[8,10],[6,9],[7,9],[8,9],[9,9]]) P(x,y,"#ffe27a"); });
+  tile("melon_side", () => { for (let y=0;y<TS;y++) for (let x=0;x<TS;x++) P(x,y,shade(((x+(y>>2))%4<2)?[86,156,52]:[42,104,34],.9+r()*.16)); });
+  tile("melon_top", () => { for (let y=0;y<TS;y++) for (let x=0;x<TS;x++){ const d=Math.hypot(x-7.5,y-7.5); P(x,y,shade(Math.floor(d)%3===0?[42,104,34]:[86,156,52],.9+r()*.16)); } });
+  tile("cactus_side", () => { for (let y=0;y<TS;y++) for (let x=0;x<TS;x++) P(x,y, (x===0||x===15) ? "rgba(0,0,0,0)" : shade([62,134,62],(x%4===1?.75:1)*(.9+r()*.15))); for (let i=0;i<8;i++) P(1+(r()*14|0), r()*16|0, "#e6f2c8"); });
+  tile("cactus_top", () => { for (let y=0;y<TS;y++) for (let x=0;x<TS;x++) P(x,y, (x===0||y===0||x===15||y===15) ? "rgba(0,0,0,0)" : shade([82,150,70],(Math.max(Math.abs(x-7.5),Math.abs(y-7.5))>5?.8:1)*(.92+r()*.12))); });
+  tile("sugarcane", () => { for (const x of [3,7,11]) for (let y=0;y<16;y++){ P(x,y,shade([130,190,90],y%5===0?.7:.95+r()*.1)); P(x+1,y,shade([110,170,80],.9)); } P(5,6,"#7ab84a"); P(10,3,"#7ab84a"); P(13,9,"#7ab84a"); });
+  tile("hay_top", () => { for (let y=0;y<TS;y++) for (let x=0;x<TS;x++) P(x,y,shade([216,182,72], .85+((x*7+y*3)%5)/20+r()*.08)); });
+  tile("hay_side", () => { for (let y=0;y<TS;y++) for (let x=0;x<TS;x++) P(x,y, (y===4||y===11) ? "#7a4a22" : shade([216,182,72],(x%3===0?.8:1)*(.9+r()*.14))); });
+  tile("farmland", () => { for (let y=0;y<TS;y++) for (let x=0;x<TS;x++) P(x,y,shade([94,62,40],(y%4===0?.7:1)*(.9+r()*.16))); });
+  tile("wheat_0", () => wheat(0));
+  tile("wheat_1", () => wheat(1));
+  tile("wheat_2", () => wheat(2));
+  tile("wheat_3", () => wheat(3));
+  tile("chest_top", () => { planks([156,104,52]); for (let i=0;i<16;i++){ P(i,0,"#4a2e14"); P(0,i,"#4a2e14"); P(i,15,"#4a2e14"); P(15,i,"#4a2e14"); } });
+  tile("chest_front", () => { planks([156,104,52]); for (let i=0;i<16;i++){ P(i,0,"#4a2e14"); P(0,i,"#4a2e14"); P(i,15,"#4a2e14"); P(15,i,"#4a2e14"); P(i,6,"#4a2e14"); } for (let y=5;y<9;y++) for (let x=7;x<9;x++) P(x,y,"#d8d8de"); P(7,8,"#8a8a90"); });
+  tile("bed_top", () => { for (let y=0;y<TS;y++) for (let x=0;x<TS;x++) P(x,y, y<5 ? shade([238,236,228],.92+r()*.08) : shade([176,40,44], (y===5?.8:1)*(.9+r()*.12))); });
+  tile("bed_side", () => { for (let y=0;y<TS;y++) for (let x=0;x<TS;x++) P(x,y, y<8 ? shade([176,40,44],.9+r()*.12) : y<11 ? shade([238,236,228],.92) : shade([140,98,58],.9+r()*.14)); });
+  tile("ench_top", () => { noise([30,22,44],.4); for (let y=3;y<13;y++) for (let x=2;x<14;x++) P(x,y, (x===2||x===13||y===3||y===12) ? "#d8b04a" : shade([120,30,46],.9+r()*.12)); for (let y=5;y<11;y++){ P(7,y,"#f4ecd8"); P(8,y,"#e8dcc0"); P(6,y,"#f4ecd8"); P(9,y,"#e8dcc0"); } P(5,6,"#c79bff"); P(10,9,"#c79bff"); });
+  tile("ench_side", () => { noise([30,22,44],.4); for (let y=0;y<5;y++) for (let x=0;x<16;x++) P(x,y, y===4 ? "#d8b04a" : shade([120,30,46],.9+r()*.12)); dots("#9f6aff",6); });
+  tile("wool_green", () => woolT([70,130,52]));
+  tile("wool_black", () => woolT([34,34,40]));
+  tile("wool_purple", () => woolT([120,62,176]));
+  tile("wool_orange", () => woolT([226,128,42]));
 })();
 BD.forEach(d => { if (d.top) { d.tTop = TILE[d.top]; d.tSide = TILE[d.side]; d.tBottom = TILE[d.bottom]; } });
 
@@ -431,20 +552,39 @@ defItem("apple",       { name:"Apfel", art:"apple", food:4 });
 defItem("wand_fire",   { name:"Feuerstab", art:"wand_fire", stack:1, dur:250, wand:"fire", desc:"Schießt Feuerbälle. Kostet 4 Mana." });
 defItem("wand_bolt",   { name:"Blitzstab", art:"wand_bolt", stack:1, dur:200, wand:"bolt", desc:"Ein Blitz trifft sofort. Kostet 9 Mana." });
 defItem("wand_heal",   { name:"Lebensstab", art:"wand_heal", stack:1, dur:120, wand:"heal", desc:"Heilt dich um 6 Punkte. Kostet 12 Mana." });
-defItem("armor_iron",  { name:"Eisenrüstung", art:"armor_iron", stack:1, armor:.4, desc:"Hält 40 % des Schadens ab." });
-defItem("armor_gold",  { name:"Goldrüstung", art:"armor_gold", stack:1, armor:.3, desc:"Hält 30 % des Schadens ab und gibt mehr Mana." });
-defItem("armor_arkan", { name:"Arkanrüstung", art:"armor_arkan", stack:1, armor:.65, desc:"Hält 65 % des Schadens ab." });
+defItem("armor_leather",{ name:"Lederrüstung", art:{ armor:true, col:[150,96,56] }, stack:1, armor:.2, desc:"Hält 20 % des Schadens ab." });
+defItem("armor_copper",{ name:"Kupferrüstung", art:{ armor:true, col:[206,116,74] }, stack:1, armor:.3, desc:"Hält 30 % des Schadens ab." });
+defItem("armor_iron",  { name:"Eisenrüstung", art:{ armor:true, col:[220,220,226] }, stack:1, armor:.4, desc:"Hält 40 % des Schadens ab." });
+defItem("armor_gold",  { name:"Goldrüstung", art:{ armor:true, col:[244,204,70] }, stack:1, armor:.3, desc:"Hält 30 % des Schadens ab und gibt mehr Mana." });
+defItem("armor_arkan", { name:"Arkanrüstung", art:{ armor:true, col:[170,100,236] }, stack:1, armor:.65, desc:"Hält 65 % des Schadens ab." });
+defItem("armor_mond",  { name:"Mondsteinrüstung", art:{ armor:true, col:[160,228,240] }, stack:1, armor:.75, desc:"Hält 75 % des Schadens ab." });
+defItem("copper",      { name:"Kupferbarren", art:"copper" });
+defItem("lazur",       { name:"Lazurstein", art:"lazur", desc:"Blauer Stein. Wird zum Verzaubern gebraucht." });
+defItem("mondstein",   { name:"Mondstein", art:"mondstein", desc:"Der härteste Stein der Welt, ganz tief unten." });
+defItem("leather",     { name:"Leder", art:"leather" });
+defItem("paper",       { name:"Papier", art:"paper" });
+defItem("book",        { name:"Buch", art:"book" });
+defItem("seeds",       { name:"Weizensamen", art:"seeds", plant:"wheat_0", desc:"Auf Ackerboden pflanzen." });
+defItem("wheat",       { name:"Weizen", art:"wheat" });
+defItem("bread",       { name:"Brot", art:"bread", food:5 });
+defItem("melon_slice", { name:"Melonenscheibe", art:"melon_slice", food:2 });
+defItem("pumpkin_pie", { name:"Kürbiskuchen", art:"pumpkin_pie", food:8 });
+defItem("zauberbuch",  { name:"Zauberbuch", art:"zauberbuch", stack:1, desc:"Rechtsklick öffnet die Verzauberung, überall. Erlaubt Zauber bis Stufe II." });
 const MATS = [
   ["wood","Holz","#planks",0,2,60,[150,110,60]],
   ["stone","Stein","cobble",1,4,130,[140,140,144]],
+  ["copper","Kupfer","copper",1,5,190,[214,124,78]],
   ["iron","Eisen","iron",2,6,250,[226,226,232]],
+  ["gold","Gold","gold",1,12,40,[246,206,70]],
   ["arkan","Arkan","arkan",3,9,1500,[176,104,240]],
+  ["mond","Mondstein","mondstein",4,12,2600,[168,232,244]],
 ];
 const TOOLTYPES = [
-  ["pick","spitzhacke",3,2,[2,3,4,5]],
-  ["axe","axt",3,2,[3,4,5,7]],
-  ["shovel","schaufel",1,2,[1.5,2.5,3,4]],
-  ["sword","schwert",2,1,[4,5,6,8]],
+  ["pick","spitzhacke",3,2,[2,3,3.5,4,2,5,6]],
+  ["axe","axt",3,2,[3,4,4.5,5,3,7,8]],
+  ["shovel","schaufel",1,2,[1.5,2.5,2.8,3,1.5,4,4.5]],
+  ["sword","schwert",2,1,[4,5,5.5,6,4,8,9]],
+  ["hoe","hacke",2,2,[1,1,1,1,1,1.5,2]],
 ];
 const RECIPES = [];
 const R = (out, n, ins, st) => RECIPES.push({ out, n, ins, st: st || null });
@@ -468,7 +608,33 @@ R("wool_blue", 1, [["wool",1],["flower_blue",1]]);
 R("furnace", 1, [["cobble",8]], "table");
 R("stone_bricks", 4, [["stone",4]], "table");
 R("bricks", 1, [["brick",4]], "table");
-R("bookshelf", 1, [["#planks",6],["string",2]], "table");
+R("bookshelf", 1, [["#planks",6],["book",3]], "table");
+R("spruce_planks", 4, [["spruce_log",1]]);
+R("cherry_planks", 4, [["cherry_log",1]]);
+R("polished_granite", 4, [["granite",4]], "table");
+R("polished_marble", 4, [["marble",4]], "table");
+R("paper", 3, [["sugarcane",3]]);
+R("book", 1, [["paper",3],["leather",1]]);
+R("chest", 1, [["#planks",8]], "table");
+R("bed", 1, [["#wool",3],["#planks",3]], "table");
+R("ench_table", 1, [["book",1],["arkan",2],["obsidian",4]], "table");
+R("zauberbuch", 1, [["book",1],["arkan",2],["lazur",3]], "table");
+R("hay", 1, [["wheat",9]]);
+R("wheat", 9, [["hay",1]]);
+R("bread", 1, [["wheat",3]]);
+R("pumpkin_pie", 1, [["pumpkin",1],["wheat",1],["apple",1]]);
+R("jack", 1, [["pumpkin",1],["torch",1]]);
+R("melon", 1, [["melon_slice",9]], "table");
+R("wool_green", 1, [["wool",1],["cactus",1]]);
+R("wool_black", 1, [["wool",1],["coal",1]]);
+R("wool_purple", 1, [["wool",1],["flower_red",1],["flower_blue",1]]);
+R("wool_orange", 1, [["wool",1],["flower_red",1],["flower_yellow",1]]);
+R("armor_leather", 1, [["leather",8]], "table");
+R("armor_copper", 1, [["copper",8]], "table");
+R("armor_mond", 1, [["mondstein",8]], "table");
+GROUPS["#wool"] = ["wool","wool_red","wool_yellow","wool_blue","wool_green","wool_black","wool_purple","wool_orange"];
+GROUP_NAMES["#wool"] = "Wolle (beliebig)";
+for (const [blk, it] of [["iron_block","iron"],["gold_block","gold"],["copper_block","copper"],["rubin_block","rubin"],["lazur_block","lazur"],["mond_block","mondstein"]]) { R(blk, 1, [[it,9]], "table"); R(it, 9, [[blk,1]]); }
 R("lamp", 2, [["arkan",1],["glass",4]], "table");
 R("snow", 1, [["snowgrass",1]], "table");
 R("bow", 1, [["stick",3],["string",3]], "table");
@@ -487,6 +653,7 @@ R("glass", 1, [["sand",1]], "furnace");
 R("stone", 1, [["cobble",1]], "furnace");
 R("iron", 1, [["iron_ore",1]], "furnace");
 R("gold", 1, [["gold_ore",1]], "furnace");
+R("copper", 1, [["copper_ore",1]], "furnace");
 R("meat_cooked", 1, [["meat_raw",1]], "furnace");
 R("brick", 4, [["clay",1]], "furnace");
 R("coal", 1, [["#log",1]], "furnace");
@@ -508,10 +675,12 @@ function drawItemArt(art, g){
   const stickL = (c1,c2) => { line(2,13,10,5,c1); line(3,13,11,5,c2); };
   if (typeof art === "object") {
     const c = art.col, light = shade(c,1.2), mid = shade(c,1), dark = shade(c,.7);
+    if (art.armor) { for (let y=2;y<15;y++) for (let x=1;x<15;x++){ const shoulder = y<6 && (x<6 || x>9); const body = y>=5 && x>=3 && x<=12; if (shoulder || body) P(x,y, shade(c, x<8 ? 1.1 : .85)); } line(7,6,7,13,shade(c,.6)); return; }
     if (art.tool === "sword") { line(2,13,4,11,"#6b4a28"); line(3,13,5,11,"#80592f"); line(2,10,6,14,"#4a3a2a"); line(5,10,13,2,mid); line(6,10,13,3,dark); line(5,9,12,2,light); P(13,2,light); return; }
     stickL("#6b4a28","#80592f");
     if (art.tool === "pick") { line(5,2,9,2,mid); line(10,3,12,5,mid); line(13,6,13,10,mid); line(5,3,9,3,dark); line(10,4,12,6,dark); line(12,7,12,10,dark); P(4,3,light); P(13,11,light); }
     else if (art.tool === "axe") { for (let y=2;y<9;y++) for (let x=8;x<14;x++){ if (x+y>=12 && x-y<=8) P(x,y, x>11 ? light : (x+y)%3 ? mid : dark); } }
+    else if (art.tool === "hoe") { line(7,2,12,2,mid); line(7,3,11,3,dark); P(12,3,light); P(12,4,mid); }
     else if (art.tool === "shovel") { for (let y=1;y<7;y++) for (let x=9;x<15;x++){ const d=Math.hypot(x-11.8,y-3.6); if (d<2.8) P(x,y, d<1.4 ? light : mid); } line(9,6,10,7,dark); }
     return;
   }
@@ -519,11 +688,21 @@ function drawItemArt(art, g){
     case "stick": stickL("#6b4a28","#8a6336"); break;
     case "coal": blob(8,8.5,5,[42,42,46],.5); P(6,6,"#77777c"); P(9,7,"#66666a"); break;
     case "flint": blob(8,8,4.5,[64,66,72],.4); line(6,5,10,9,"#8a8c92"); break;
-    case "iron": case "gold": case "brick": {
-      const c = art === "iron" ? [222,222,228] : art === "gold" ? [246,206,70] : [178,82,58];
+    case "iron": case "gold": case "brick": case "copper": {
+      const c = art === "iron" ? [222,222,228] : art === "gold" ? [246,206,70] : art === "copper" ? [214,120,72] : [178,82,58];
       for (let y=6;y<11;y++) for (let x=2+(10-y);x<12+(10-y)-2;x++) P(x,y, shade(c, y===6 ? 1.2 : y===10 ? .7 : 1)); break; }
     case "arkan": for (let y=1;y<15;y++){ const hw = y<6 ? (y-1)*.9 : (15-y)*.5; for (let x=Math.round(8-hw);x<=Math.round(8+hw);x++) P(x,y, x===8 ? "#f2dcff" : shade([170,96,236], x<8 ? 1.15 : .85)); } break;
     case "rubin": for (let y=3;y<14;y++){ const hw = y<6 ? 2+(y-3) : Math.max(0,(14-y)*.62); for (let x=Math.round(8-hw);x<=Math.round(8+hw);x++) P(x,y, (x+y)%4===0 ? "#ffd0d8" : shade([214,30,58], x<8 ? 1.15 : .85)); } break;
+    case "lazur": blob(8,8.5,5,[40,78,206],.4); P(6,6,"#9ab8ff"); P(9,9,"#7a9cf0"); P(10,6,"#9ab8ff"); break;
+    case "mondstein": for (let y=1;y<15;y++){ const hw = y<6 ? (y-1)*.9 : (15-y)*.5; for (let x=Math.round(8-hw);x<=Math.round(8+hw);x++) P(x,y, x===8 ? "#ffffff" : shade([150,224,238], x<8 ? 1.12 : .85)); } break;
+    case "leather": for (let y=3;y<14;y++) for (let x=3;x<13;x++) if (!((x===3||x===12)&&(y===3||y===13))) P(x,y,shade([146,92,52],.9+hash2(x,y,3)*.2)); break;
+    case "paper": for (let y=2;y<14;y++) for (let x=3;x<13;x++) P(x,y, y%3===0 && x>4 && x<11 ? "#c8c4b8" : "#f4f1e8"); break;
+    case "book": case "zauberbuch": { const c = art === "book" ? [124,72,38] : [104,52,168]; for (let y=2;y<14;y++) for (let x=3;x<13;x++) P(x,y, x===12 ? "#f4f1e8" : shade(c, x===3 ? .7 : 1)); if (art === "zauberbuch") { P(7,6,"#f2d26a"); P(8,7,"#f2d26a"); P(7,8,"#f2d26a"); P(6,7,"#f2d26a"); } else line(5,5,10,5,"#d8b070"); break; }
+    case "seeds": for (const [x,y] of [[5,6],[8,5],[10,8],[6,10],[9,11],[4,8],[11,5]]) { P(x,y,"#5a8a2a"); P(x+1,y,"#7aa83a"); } break;
+    case "wheat": for (let b=0;b<4;b++){ line(4+b*2,14,7+b*2,3,"#c8a040"); P(7+b*2,2,"#e8c860"); P(6+b*2,4,"#e8c860"); } break;
+    case "bread": for (let y=5;y<12;y++) for (let x=2;x<14;x++){ const d=Math.hypot((x-7.5)/6,(y-8.5)/3.4); if (d<1) P(x,y,shade([206,146,72], y<7 ? 1.15 : .95)); } line(5,6,6,8,"#8a5a2a"); line(8,6,9,8,"#8a5a2a"); break;
+    case "melon_slice": for (let y=4;y<14;y++) for (let x=2;x<14;x++){ const d=Math.hypot(x-8,y-13); if (d<9 && y<13) P(x,y, d>7.8 ? "#3e8a2a" : d>7 ? "#e8f0c8" : (x+y)%5===0 ? "#2a1a1a" : "#e04a4a"); } break;
+    case "pumpkin_pie": blob(8,9,5.5,[214,140,60],.2); for (let x=3;x<14;x++) P(x,9,"#f0c880"); break;
     case "feather": line(3,13,12,3,"#e6e6e0"); for (let i=0;i<7;i++){ P(5+i,10-i,"#ffffff"); P(6+i,12-i,"#cfcfc8"); } break;
     case "string": for (let x=2;x<14;x++) P(x, 8+Math.round(Math.sin(x*.9)*3), "#e8e8e8"); break;
     case "bone": line(4,11,11,4,"#ece6d4"); line(5,11,12,4,"#d6cfb8"); P(3,11,"#ece6d4"); P(4,12,"#ece6d4"); P(3,12,"#d6cfb8"); P(12,3,"#ece6d4"); P(11,3,"#ece6d4"); P(12,4,"#d6cfb8"); break;
@@ -610,7 +789,8 @@ function treeAt(x,z){
   if (roll > chance) return null;
   const h = hAt(x,z); if (h <= WATER_LEVEL+1 || h + 10 >= SY) return null;
   if (nearVillage(x,z,21)) return null;
-  return [h, 4 + Math.floor(hash2(x,z,seed+9)*3), hash2(x,z,seed+8) < .3];
+  const kind = biome === 2 ? "spruce" : noise2(x/45+300, z/45+300, seed+17) > .72 ? "cherry" : hash2(x,z,seed+8) < .3 ? "birch" : "oak";
+  return [h, (kind === "spruce" ? 6 : 4) + Math.floor(hash2(x,z,seed+9)*3), kind];
 }
 
 // Dörfer: in jedem Gebiet höchstens eines, als Bauplan vorab berechnet
@@ -728,7 +908,7 @@ function genChunk(cx,cz){
       else if (y === h) b = (beach || biome === 1) ? B.sand : (biome === 2 || h > 52) ? B.snowgrass : B.grass;
       else if (y > h-4) b = (beach || biome === 1) ? B.sand : B.dirt;
       else if (y > h-8 && biome === 1) b = B.sandstone;
-      else b = B.stone;
+      else b = y < 10 + ((hash3(x,y,z,seed+3) * 3) | 0) ? B.slate : B.stone;
       S(lx,y,lz,b);
     }
     if (h < WATER_LEVEL-1 && noise2(x/7, z/7, seed+21) > .68) S(lx,h,lz,B.clay);
@@ -737,7 +917,7 @@ function genChunk(cx,cz){
     for (let y=2; y<h-3; y++) {
       if (wet && y > h-7) continue;
       const n = noise3(x/14, y/9, z/14, seed+77)*.75 + noise3(x/7, y/7, z/7, seed+99)*.25;
-      if (n > .68) S(lx,y,lz, y <= 5 ? B.lava : 0);
+      if (n > .68) S(lx,y,lz, y <= 5 ? (y === 5 && hash3(x,y,z,seed+4) < .3 ? B.obsidian : B.lava) : 0);
     }
   }
   // Erzadern (bleiben innerhalb des Stücks)
@@ -746,7 +926,7 @@ function genChunk(cx,cz){
     for (let i=0;i<count;i++){
       let x = rnd()*16|0, y = rint(rnd,ymin,ymax), z = rnd()*16|0;
       for (let k=0;k<size;k++){
-        if (x>=0&&x<16&&z>=0&&z<16&&y>0&&y<SY && c.b[li(x,y,z)] === B.stone) S(x,y,z,b);
+        if (x>=0&&x<16&&z>=0&&z<16&&y>0&&y<SY) { const o = c.b[li(x,y,z)]; if (o === B.stone || o === B.slate) S(x,y,z,b); }
         const d = rnd()*6|0; if (d===0) x++; else if (d===1) x--; else if (d===2) y++; else if (d===3) y--; else if (d===4) z++; else z--;
       }
     }
@@ -758,6 +938,11 @@ function genChunk(cx,cz){
   vein(B.gold_ore, .36, 2, 28, 6);
   vein(B.arkan_ore, .28, 2, 16, 5);
   vein(B.rubin_ore, .32, 3, 38, 3);
+  vein(B.granite, .45, 6, 64, 26);
+  vein(B.marble, .4, 6, 64, 26);
+  vein(B.copper_ore, 1.3, 10, 70, 8);
+  vein(B.lazur_ore, .55, 4, 32, 6);
+  vein(B.mond_ore, .14, 2, 11, 3);
   // Dorf
   const v = villageIn(Math.floor(x0/VR), Math.floor(z0/VR));
   if (v) { const a = v.ops.get(ckey(cx,cz)); if (a) for (let i=0;i<a.length;i+=4) S(a[i]-x0, a[i+1], a[i+2]-z0, a[i+3]); }
@@ -765,16 +950,26 @@ function genChunk(cx,cz){
   const inC = (X,Z) => X>=x0 && X<x0+16 && Z>=z0 && Z<z0+16;
   for (let z=z0-2; z<z0+18; z++) for (let x=x0-2; x<x0+18; x++) {
     const tr = treeAt(x,z); if (!tr) continue;
-    const [h, th, birch] = tr;
-    const log = birch ? B.birch_log : B.oak_log, lv = birch ? B.birch_leaves : B.oak_leaves;
+    const [h, th, kind] = tr;
+    const log = B[kind + "_log"], lv = B[kind + "_leaves"];
     if (inC(x,z)) for (let y=1; y<=th; y++) S(x-x0,h+y,z-z0,log);
     const tp = h+th;
-    for (let dy=-2; dy<=2; dy++) for (let dx=-2; dx<=2; dx++) for (let dz=-2; dz<=2; dz++) {
-      const X=x+dx, Y=tp+dy+1, Z=z+dz;
-      if (!inC(X,Z) || Y >= SY) continue;
-      const rr = dx*dx + dz*dz + dy*dy*1.4;
-      if (rr > 5.5 || (rr > 4 && hash3(X,Y,Z,seed+10) < .5)) continue;
-      if (c.b[li(X-x0,Y,Z-z0)] === 0) S(X-x0,Y,Z-z0,lv);
+    if (kind === "spruce") {
+      for (let dy=-4; dy<=1; dy++) { const rad = dy >= 0 ? (dy === 1 ? 0 : 1) : (dy % 2 === 0 ? 2 : 1);
+        for (let dx=-rad; dx<=rad; dx++) for (let dz=-rad; dz<=rad; dz++) {
+          if (Math.abs(dx)+Math.abs(dz) > rad+1) continue;
+          const X=x+dx, Y=tp+dy, Z=z+dz; if (!inC(X,Z) || Y >= SY || Y <= h) continue;
+          if (c.b[li(X-x0,Y,Z-z0)] === 0) S(X-x0,Y,Z-z0,lv);
+        } }
+    } else {
+      const R = kind === "cherry" ? 3 : 2, lim = kind === "cherry" ? 9.5 : 5.5;
+      for (let dy=-2; dy<=2; dy++) for (let dx=-R; dx<=R; dx++) for (let dz=-R; dz<=R; dz++) {
+        const X=x+dx, Y=tp+dy+1, Z=z+dz;
+        if (!inC(X,Z) || Y >= SY) continue;
+        const rr = dx*dx + dz*dz + dy*dy*(kind === "cherry" ? 2.5 : 1.4);
+        if (rr > lim || (rr > lim-1.5 && hash3(X,Y,Z,seed+10) < .5)) continue;
+        if (c.b[li(X-x0,Y,Z-z0)] === 0) S(X-x0,Y,Z-z0,lv);
+      }
     }
     if (inC(x,z) && tp+1 < SY && c.b[li(x-x0,tp+1,z-z0)] === 0) S(x-x0,tp+1,z-z0,lv);
   }
@@ -789,6 +984,17 @@ function genChunk(cx,cz){
     else if (r0 < .11) S(lx,h+1,lz,B.flower_yellow);
     else if (r0 < .116) S(lx,h+1,lz,B.flower_blue);
     else if (r0 < .119 && noise2(x/30,z/30,seed+3) > .55) S(lx,h+1,lz,B.mushroom);
+  }
+  // Kürbisse, Melonen, Kakteen, Zuckerrohr
+  for (let lz=0; lz<16; lz++) for (let lx=0; lx<16; lx++) {
+    const h = hts[lz*16+lx], x = x0+lx, z = z0+lz;
+    if (h+4 >= SY || c.b[li(lx,h+1,lz)] !== 0) continue;
+    const top = c.b[li(lx,h,lz)], r1 = hash2(x,z,seed+14);
+    if (top === B.grass && r1 < .0025 && !nearVillage(x,z,15)) S(lx,h+1,lz, r1 < .0014 ? B.pumpkin : B.melon);
+    else if (top === B.sand && biomeAt(x,z) === 1 && r1 < .006) { const ch = 1 + Math.floor(hash2(x,z,seed+15)*3); for (let k=1;k<=ch;k++) S(lx,h+k,lz,B.cactus); }
+    else if ((top === B.sand || top === B.grass) && h === WATER_LEVEL+1 && r1 < .05) {
+      if ([[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dz]) => hAt(x+dx,z+dz) <= WATER_LEVEL)) { const ch = 1 + Math.floor(hash2(x,z,seed+16)*3); for (let k=1;k<=ch;k++) S(lx,h+k,lz,B.sugarcane); }
+    }
   }
   for (let i=0;i<14;i++){
     const lx = rnd()*16|0, lz = rnd()*16|0, y = rint(rnd,3,44);
@@ -1030,6 +1236,7 @@ function setBlock(x,y,z,b){
   const bb = relightRegion(x-15, x+15, z-15, z+15);
   if (bb) for (let qz=(bb[2]-1)>>4; qz<=(bb[3]+1)>>4; qz++) for (let qx=(bb[0]-1)>>4; qx<=(bb[1]+1)>>4; qx++) add(qx,qz);
   for (const t of touched) buildChunk(t);
+  const ck = x+","+y+","+z; if (BD[b].crop && BD[b].crop < 4) crops.add(ck); else crops.delete(ck);
   // Pflanzen und Fackeln fallen ab, wenn ihr Untergrund verschwindet
   if (!SOLID[b] && y+1 < SY) {
     const above = get(x,y+1,z);
@@ -1054,7 +1261,7 @@ clouds.rotation.x = -Math.PI/2; clouds.position.y = SY + 18; scene.add(clouds);
 // Spieler
 // =====================================================================
 const player = { x: 56.5, y: 60, z: 56.5, vx:0, vy:0, vz:0, yaw:0, pitch:0, onGround:false, fly:false,
-  hp:20, food:20, mana:20, air:10, armor:null, dead:false, invT:0, kb:0, fallFrom:null, spawn:null };
+  hp:20, food:20, mana:20, air:10, armor:null, xp:0, dead:false, invT:0, kb:0, fallFrom:null, spawn:null };
 const PW = .3, PH = 1.8, EYE = 1.62;
 let mode = "survival";
 function boxHits(px,py,pz,hw,h){
@@ -1080,8 +1287,17 @@ function moveBody(o, axis, amt, hw, h){
 const blockAtFeet = (o, dy) => get(Math.floor(o.x), Math.floor(o.y+dy), Math.floor(o.z));
 function findSpawn(){
   if (player.spawn) return player.spawn;
-  const v = villageIn(0,0);
-  const cx = v ? v.x : 56, cz = v ? v.z + 4 : 56;
+  // Nächstes Dorf suchen, sonst das nächste trockene Land
+  let v = null;
+  for (let r=0; r<=4 && !v; r++) for (let rz=-r; rz<=r && !v; rz++) for (let rx=-r; rx<=r && !v; rx++) {
+    if (Math.max(Math.abs(rx), Math.abs(rz)) === r) v = villageIn(rx, rz);
+  }
+  let cx = 56, cz = 56;
+  if (v) { cx = v.x; cz = v.z + 4; }
+  else outer: for (let r=0; r<3000; r+=8) for (let a=0; a<24; a++) {
+    const x = Math.round(56 + Math.cos(a/24*6.283)*r), z = Math.round(56 + Math.sin(a/24*6.283)*r);
+    if (hAt(x,z) > WATER_LEVEL+2) { cx = x; cz = z; break outer; }
+  }
   ensureArea(cx, cz, 2);
   for (let r=0; r<28; r++) for (let a=0; a<8; a++) {
     const X = cx + Math.round(Math.cos(a*Math.PI/4)*r), Z = cz + Math.round(Math.sin(a*Math.PI/4)*r);
@@ -1168,18 +1384,69 @@ function addItem(id, n, quiet){
 function consumeHeld(n=1){ if (mode === "creative") return; const s = held(); if (!s) return; s.n -= n; if (s.n <= 0) inv[sel_] = null; renderHotbar(); }
 function wearHeld(k=1){
   if (mode === "creative") return; const s = held(); if (!s) return; const it = ITEMS[s.id]; if (!it.dur) return;
+  const hb = elv(s, "haltbar"); if (hb && Math.random() > 1/(hb+1)) return;
   s.d += k; if (s.d >= it.dur) { inv[sel_] = null; toast(`${it.name} ist zerbrochen`); sfx("hurt"); }
   renderHotbar();
 }
-function giveDrops(b, harvest=true){
+const SMELT = { iron_ore:"iron", gold_ore:"gold", copper_ore:"copper", sand:"glass", cobble:"stone" };
+const ORE_XP = { coal_ore:1, copper_ore:1, iron_ore:1, gold_ore:2, lazur_ore:2, rubin_ore:3, arkan_ore:3, mond_ore:6 };
+function giveDrops(b, harvest=true, tool=null){
   const d = BD[b];
   if (!harvest || d.drop === null) return;
   let list;
   if (d.drop === undefined) list = [[d.key,1]];
   else if (typeof d.drop === "string") list = [[d.drop,1]];
   else list = d.drop(Math.random);
-  for (const [id,n] of list) if (n > 0 && ITEMS[id]) addItem(id,n);
+  const smelt = elv(tool, "schmelz"), luck = elv(tool, "glueck");
+  for (let [id,n] of list) {
+    if (smelt && SMELT[id]) id = SMELT[id];
+    if (luck && d.ore) n += Math.floor(Math.random()*(luck+1));
+    if (n > 0 && ITEMS[id]) addItem(id,n);
+  }
+  if (d.ore) addXp(ORE_XP[d.key] || 1);
 }
+
+// =====================================================================
+// Zauber und Erfahrung
+// =====================================================================
+const ENCH = {
+  schaerfe:    { name:"Schärfe", max:5, for:["sword","axe"], desc:"Mehr Schaden" },
+  feuer:       { name:"Feuerklinge", max:2, for:["sword","axe"], desc:"Setzt Gegner in Brand" },
+  wucht:       { name:"Wucht", max:2, for:["sword","axe"], desc:"Stößt Gegner weiter weg" },
+  lebensraub:  { name:"Lebensraub", max:3, for:["sword","axe"], desc:"Treffer heilen dich manchmal" },
+  beute:       { name:"Beute", max:3, for:["sword"], desc:"Mehr Beute von Tieren und Monstern" },
+  tempo:       { name:"Tempo", max:5, for:["pick","axe","shovel","hoe"], desc:"Schneller abbauen" },
+  glueck:      { name:"Glück", max:3, for:["pick"], desc:"Mehr Erz und Edelsteine" },
+  schmelz:     { name:"Schmelzhitze", max:1, for:["pick","shovel"], desc:"Erz und Sand kommen gleich geschmolzen heraus" },
+  haltbar:     { name:"Haltbarkeit", max:3, for:["pick","axe","shovel","hoe","sword","bow","wand"], desc:"Nutzt sich langsamer ab" },
+  schutz:      { name:"Schutz", max:4, for:["armor"], desc:"Weniger Schaden von allem" },
+  feuerschutz: { name:"Feuerschutz", max:4, for:["armor"], desc:"Weniger Schaden durch Feuer und Lava" },
+  dornen:      { name:"Dornen", max:3, for:["armor"], desc:"Angreifer verletzen sich an dir" },
+  atem:        { name:"Atmung", max:3, for:["armor"], desc:"Länger unter Wasser bleiben" },
+  kraft:       { name:"Kraft", max:5, for:["bow"], desc:"Pfeile treffen härter" },
+  flamme:      { name:"Flammenpfeil", max:1, for:["bow"], desc:"Pfeile setzen in Brand" },
+  unendlich:   { name:"Unendlichkeit", max:1, for:["bow"], desc:"Verbraucht keine Pfeile mehr" },
+  manaspar:    { name:"Manasparer", max:3, for:["wand"], desc:"Zauber kosten weniger Mana" },
+  macht:       { name:"Zaubermacht", max:3, for:["wand"], desc:"Zauber wirken stärker" },
+};
+const ROMAN = ["","I","II","III","IV","V"];
+function enchCat(it){ if (it.tool) return it.tool; if (it.armor) return "armor"; if (it.ranged) return "bow"; if (it.wand) return "wand"; return null; }
+const elv = (slot, k) => slot && slot.ench ? (slot.ench[k] || 0) : 0;
+function enchText(slot){ return slot && slot.ench ? Object.entries(slot.ench).map(([k,l]) => ENCH[k].name + " " + ROMAN[l]).join(", ") : ""; }
+const xpNeed = l => 7 + l*2;
+function xpLevel(){ let l = 0, x = player.xp || 0; while (x >= xpNeed(l)) { x -= xpNeed(l); l++; } return { l, into:x, need:xpNeed(l) }; }
+function addXp(n){
+  if (mode !== "survival" || n <= 0) return;
+  const before = xpLevel().l; player.xp = (player.xp || 0) + n;
+  const after = xpLevel().l; if (after > before) { toast(`Erfahrungsstufe ${after}`); sfx("pick"); }
+}
+function spendLevels(L){ const { l, into } = xpLevel(); let x = 0; for (let i=0;i<l-L;i++) x += xpNeed(i); player.xp = x + Math.min(into, xpNeed(l-L)-1); }
+function addSlot(st){
+  if (ITEMS[st.id].stack > 1 && !st.ench) { addItem(st.id, st.n); return; }
+  const i = inv.indexOf(null);
+  if (i >= 0) { inv[i] = st; renderHotbar(); } else toast("Rucksack voll");
+}
+const maxAir = () => 10 + 5*elv(player.armor, "atem");
 
 // =====================================================================
 // Wesen: Tiere, Monster, Siedler
@@ -1214,7 +1481,7 @@ const SKINS = [0xe2b896, 0xc68c62, 0x8d5a3b, 0xf0d0b2, 0xa86f48];
 const ETYPES = {
   schaf:    { name:"Schaf", w:.9, h:1.25, hp:8, speed:1.4, kind:"animal", drops:[["wool",1,2],["meat_raw",1,1]],
     build(k){ k.box(k.root,.8,.62,1.0,0xe9e4d6,0,.8,0); const head=k.pivot(k.root,0,.95,.5); k.box(head,.38,.38,.36,0x4a4038,0,0,.16); k.box(head,.42,.14,.3,0xe9e4d6,0,.2,.1); k.box(head,.06,.06,.02,0x111111,-.1,.05,.345); k.box(head,.06,.06,.02,0x111111,.1,.05,.345); return { legs: quadLegs(k,0x4a4038,.5,.5,.24,.3,.17), head }; } },
-  kuh:      { name:"Kuh", w:.9, h:1.4, hp:10, speed:1.3, kind:"animal", drops:[["meat_raw",1,3]],
+  kuh:      { name:"Kuh", w:.9, h:1.4, hp:10, speed:1.3, kind:"animal", drops:[["meat_raw",1,3],["leather",0,2]],
     build(k){ k.box(k.root,.86,.7,1.25,0x6b4a33,0,.95,0); k.box(k.root,.88,.32,.42,0xefe9dd,0,1.0,.12); const head=k.pivot(k.root,0,1.15,.72); k.box(head,.48,.46,.4,0x6b4a33,0,0,0); k.box(head,.36,.2,.1,0xe5b8a8,0,-.1,.24); k.box(head,.08,.16,.08,0xd8d0b8,-.28,.24,0); k.box(head,.08,.16,.08,0xd8d0b8,.28,.24,0); k.box(head,.06,.06,.02,0x111111,-.12,.08,.205); k.box(head,.06,.06,.02,0x111111,.12,.08,.205); return { legs: quadLegs(k,0x4a3220,.6,.6,.26,.4,.2), head }; } },
   huhn:     { name:"Huhn", w:.5, h:.75, hp:4, speed:1.5, kind:"animal", drops:[["feather",0,2],["meat_raw",1,1]],
     build(k){ k.box(k.root,.38,.38,.5,0xf4f2ea,0,.45,0); k.box(k.root,.06,.26,.32,0xe0ddd2,-.22,.48,0); k.box(k.root,.06,.26,.32,0xe0ddd2,.22,.48,0); const head=k.pivot(k.root,0,.72,.24); k.box(head,.24,.3,.22,0xf4f2ea,0,0,0); k.box(head,.1,.06,.12,0xe8b030,0,-.02,.16); k.box(head,.08,.1,.12,0xd03030,0,.18,.02); const legs=[k.pivot(k.root,-.08,.26,0),k.pivot(k.root,.08,.26,0)]; legs.forEach(l=>k.box(l,.05,.26,.05,0xe8b030,0,-.13,0)); return { legs, head }; } },
@@ -1244,19 +1511,20 @@ function spawnEnt(type, x,y,z, extra){
   scene.add(k.root); ents.push(e); return e;
 }
 function removeEnt(e){ e.dead = true; scene.remove(e.root); e.mats.forEach(m => m.dispose()); }
-function hurtEnt(e, dmg, fromX, fromZ, kb=6){
+function hurtEnt(e, dmg, fromX, fromZ, kb=6, byPlayer=true){
   if (e.dead) return;
   e.hp -= dmg; e.hurtT = .3;
   const dx = e.x-fromX, dz = e.z-fromZ, d = Math.hypot(dx,dz) || 1;
   e.vx = dx/d*kb; e.vz = dz/d*kb; e.vy = Math.max(e.vy, kb ? 4.5 : e.vy); e.kb = kb ? .25 : 0;
   if (e.T.kind !== "monster") e.flee = 3;
   sfx("hit");
-  if (e.hp <= 0) killEnt(e, true);
+  if (e.hp <= 0) killEnt(e, byPlayer);
 }
 function killEnt(e, byPlayer){
   removeEnt(e);
-  if (byPlayer && e.T.drops && mode === "survival") for (const [id, a, b, ch] of e.T.drops) { if (ch !== undefined && Math.random() > ch) continue; const n = rint(Math.random, a, b); if (n > 0) addItem(id, n); }
-  if (byPlayer) toast(`${e.T.name} besiegt`);
+  const loot = e.lootLv || 0;
+  if (byPlayer && e.T.drops && mode === "survival") for (const [id, a, b, ch] of e.T.drops) { if (ch !== undefined && Math.random() > ch) continue; const n = rint(Math.random, a, b + loot); if (n > 0) addItem(id, n); }
+  if (byPlayer) { toast(`${e.T.name} besiegt`); addXp(e.T.kind === "monster" ? (e.type === "glutling" ? 8 : 5) : e.T.kind === "animal" ? 1 + (Math.random()*2|0) : 0); }
 }
 function canStand(x,y,z,hw,h){ return !boxHits(x,y,z,hw,h) && SOLID[get(Math.floor(x),Math.floor(y)-1,Math.floor(z))] && !BD[get(Math.floor(x),Math.floor(y),Math.floor(z))].liquid; }
 
@@ -1316,11 +1584,12 @@ function updateEnt(e, dt){
   moveBody(e, "y", e.vy*dt, hw, T.h);
   if (!T.fly && (!okX || !okZ)) { if (e.onGround) e.vy = 7.6; else if (T.climb) e.vy = 3.5; }
   // Lava, Sonne
-  if (blockAtFeet(e, .2) === B.lava) { e.burnT += dt; if (e.burnT > .5) { e.burnT = 0; hurtEnt(e, 3, e.x, e.z, 0); } }
+  if (blockAtFeet(e, .2) === B.lava) { e.burnT += dt; if (e.burnT > .5) { e.burnT = 0; hurtEnt(e, 3, e.x, e.z, 0, false); } }
   if (T.burns && dayF > .6) {
     const hx=Math.floor(e.x), hy=Math.floor(e.y+T.h-.1), hz=Math.floor(e.z);
-    if (getSky(hx,hy,hz) === 15) { e.burnT += dt; e.hurtT = Math.max(e.hurtT, .05); if (e.burnT > 1) { e.burnT = 0; hurtEnt(e, 2, e.x, e.z, 0); } }
+    if (getSky(hx,hy,hz) === 15) { e.burnT += dt; e.hurtT = Math.max(e.hurtT, .05); if (e.burnT > 1) { e.burnT = 0; hurtEnt(e, 2, e.x, e.z, 0, false); } }
   }
+  if (e.fireT > 0) { e.fireT -= dt; e.fireTick = (e.fireTick || 0) + dt; e.hurtT = Math.max(e.hurtT, .05); if (e.fireTick >= 1) { e.fireTick = 0; hurtEnt(e, 1, e.x, e.z, 0); } }
   if (e.dead) return;
   // Ausrichtung & Animation
   const sp = Math.hypot(e.vx, e.vz);
@@ -1383,12 +1652,12 @@ function manageVillages(){
 }
 
 // Geschosse
-function shoot(kind, x,y,z, vx,vy,vz, owner, dmg){
+function shoot(kind, x,y,z, vx,vy,vz, owner, dmg, fire){
   let mesh;
   if (kind === "arrow") { mesh = new THREE.Mesh(getBox(.06,.06,.6), new THREE.MeshLambertMaterial({ color: 0x8a6336 })); }
   else { mesh = new THREE.Mesh(getBox(.3,.3,.3), new THREE.MeshBasicMaterial({ color: 0xff8a20 })); }
   mesh.position.set(x,y,z); scene.add(mesh);
-  projs.push({ kind, x,y,z, vx,vy,vz, owner, dmg, life:5, mesh });
+  projs.push({ kind, x,y,z, vx,vy,vz, owner, dmg, fire: !!fire, life:5, mesh });
 }
 function updateProjs(dt){
   for (const p of projs) {
@@ -1400,9 +1669,9 @@ function updateProjs(dt){
       if (SOLID[get(Math.floor(p.x),Math.floor(p.y),Math.floor(p.z))]) { p.life = 0; break; }
       if (p.owner === "player") {
         for (const e of ents) { if (e.dead) continue; const hw = e.T.w/2+.15;
-          if (p.x>e.x-hw && p.x<e.x+hw && p.z>e.z-hw && p.z<e.z+hw && p.y>e.y && p.y<e.y+e.T.h) { hurtEnt(e, p.dmg, p.x-p.vx, p.z-p.vz, 4); p.life = 0; break; } }
+          if (p.x>e.x-hw && p.x<e.x+hw && p.z>e.z-hw && p.z<e.z+hw && p.y>e.y && p.y<e.y+e.T.h) { hurtEnt(e, p.dmg, p.x-p.vx, p.z-p.vz, 4); if (p.fire && !e.dead) e.fireT = Math.max(e.fireT || 0, 4); p.life = 0; break; } }
       } else if (!player.dead && Math.abs(p.x-player.x) < PW+.15 && Math.abs(p.z-player.z) < PW+.15 && p.y > player.y && p.y < player.y+PH) {
-        hurtPlayer(p.dmg, p.owner, p.kind === "fire" ? "Ein Feuerball hat dich getroffen." : "Ein Pfeil hat dich getroffen."); p.life = 0;
+        hurtPlayer(p.dmg, p.owner, p.kind === "fire" ? "Ein Feuerball hat dich getroffen." : "Ein Pfeil hat dich getroffen.", p.kind === "fire" ? "fire" : null); p.life = 0;
       }
     }
     p.mesh.position.set(p.x,p.y,p.z);
@@ -1421,10 +1690,17 @@ function bolt(x0,y0,z0,x1,y1,z1){
 // =====================================================================
 // Kampf, Schaden, Tod
 // =====================================================================
-function armorFactor(){ return player.armor ? ITEMS[player.armor].armor : 0; }
-function hurtPlayer(dmg, src, why){
+function armorFactor(kind){
+  if (!player.armor) return 0;
+  let f = ITEMS[player.armor.id].armor + .04*elv(player.armor, "schutz");
+  if (kind === "fire") f += .15*elv(player.armor, "feuerschutz");
+  return Math.min(.85, f);
+}
+function hurtPlayer(dmg, src, why, kind){
   if (mode !== "survival" || player.dead || player.invT > 0) return;
-  dmg = Math.max(1, Math.round(dmg * (1 - armorFactor())));
+  dmg = Math.max(1, Math.round(dmg * (1 - armorFactor(kind))));
+  const thorns = elv(player.armor, "dornen");
+  if (thorns && src && src.T && !src.dead && Math.random() < .3*thorns) hurtEnt(src, thorns + 1, player.x, player.z, 3);
   player.hp -= dmg; player.invT = .5;
   if (src && src.x !== undefined) { const dx=player.x-src.x, dz=player.z-src.z, d=Math.hypot(dx,dz)||1; player.vx = dx/d*7; player.vz = dz/d*7; player.vy = Math.max(player.vy, 5); player.kb = .2; }
   const h = $("hurt"); h.style.transition = "none"; h.style.opacity = 1; requestAnimationFrame(() => { h.style.transition = ""; h.style.opacity = 0; });
@@ -1437,10 +1713,10 @@ function die(why){
   openUI("death"); saveNow();
 }
 function respawn(){
-  player.dead = false; player.hp = 20; player.food = 20; player.air = 10; player.mana = maxMana();
+  player.dead = false; player.hp = 20; player.food = 20; player.air = maxAir(); player.mana = maxMana();
   placePlayerAtSpawn(); closeUI(); saveNow();
 }
-const maxMana = () => player.armor === "armor_gold" ? 30 : 20;
+const maxMana = () => player.armor && player.armor.id === "armor_gold" ? 30 : 20;
 
 // =====================================================================
 // Abbauen, Bauen, Benutzen
@@ -1458,17 +1734,18 @@ function breakTime(b){
   if (mode === "creative") return .12;
   if (d.hard === 0) return .05;
   const s = held(), it = s && ITEMS[s.id];
-  const speed = it && it.tool && it.tool === d.tool ? it.speed : 1;
+  const speed = (it && it.tool && it.tool === d.tool ? it.speed : 1) * (1 + .3*elv(s, "tempo"));
   return d.hard * 1.5 / speed * (canHarvest(b) ? 1 : 3.33);
 }
 function finishBreak(h){
-  const b = h.b, harvest = canHarvest(b);
+  const b = h.b, harvest = canHarvest(b), tool = held();
+  if (b === B.chest) { const k = h.x+","+h.y+","+h.z, c = chests[k]; if (c) { for (const st of c) if (st) addSlot(st); delete chests[k]; } }
   setBlock(h.x,h.y,h.z,0);
   sfx("break");
   if (mode === "survival") {
-    giveDrops(b, harvest);
+    giveDrops(b, harvest, tool);
     if (!harvest) toast("Dafür brauchst du eine bessere Spitzhacke");
-    const s = held(), it = s && ITEMS[s.id];
+    const s = tool, it = s && ITEMS[s.id];
     if (it && it.tool && BD[b].hard > 0) wearHeld(it.tool === "sword" ? 2 : 1);
   }
 }
@@ -1490,11 +1767,27 @@ function attack(){
   const eh = entRay(3.6), h = raycast(5.5);
   if (!eh || (h && h.t < eh.t)) return false;
   attackCD = .45;
-  const s = held(), it = s && ITEMS[s.id];
-  const dmg = it && it.dmg ? it.dmg : 1;
-  hurtEnt(eh.e, dmg, player.x, player.z, 6);
+  const s = held(), it = s && ITEMS[s.id], e = eh.e;
+  const dmg = (it && it.dmg ? it.dmg : 1) + 1.25*elv(s, "schaerfe");
+  e.lootLv = elv(s, "beute");
+  hurtEnt(e, dmg, player.x, player.z, 6 + 4*elv(s, "wucht"));
+  const fl = elv(s, "feuer"); if (fl && !e.dead) e.fireT = Math.max(e.fireT || 0, 2.5*fl);
+  const lr = elv(s, "lebensraub"); if (lr && Math.random() < .2*lr) player.hp = Math.min(20, player.hp + 1);
   if (it && it.dmg) wearHeld(it.tool === "sword" ? 1 : 2);
   return true;
+}
+function countNear(b, r){
+  const px=Math.floor(player.x), py=Math.floor(player.y), pz=Math.floor(player.z); let n = 0;
+  for (let y=py-1;y<=py+2;y++) for (let z=pz-r;z<=pz+r;z++) for (let x=px-r;x<=px+r;x++) if (get(x,y,z) === b) n++;
+  return n;
+}
+function sleepIn(h){
+  player.spawn = [h.x+.5, h.y+1, h.z+.5];
+  if (dayF < .45) {
+    if (ents.some(e => e.T.kind === "monster" && !e.dead && Math.hypot(e.x-player.x, e.z-player.z) < 10)) { toast("Monster sind in der Nähe, du kannst nicht schlafen"); return; }
+    dayTime = .26; toast("Guten Morgen! Hier wachst du künftig auf.");
+  } else toast("Hier wachst du künftig auf. Schlafen kannst du nur nachts.");
+  scheduleSave();
 }
 function stationNear(b, r=4){
   const px=Math.floor(player.x), py=Math.floor(player.y), pz=Math.floor(player.z);
@@ -1505,9 +1798,23 @@ function useAction(sneak){
   if (useCD > 0) return;
   const eh = entRay(4.5), h = raycast(5.5);
   if (eh && (!h || eh.t < h.t) && eh.e.T.kind === "npc") return openTrade(eh.e);
-  if (h && !sneak && (h.b === B.table || h.b === B.furnace)) return openInv("craft");
+  if (h && !sneak) {
+    if (h.b === B.table || h.b === B.furnace) return openInv("craft");
+    if (h.b === B.chest) return openChest(h.x,h.y,h.z);
+    if (h.b === B.ench_table) return openEnch(true);
+    if (h.b === B.bed) { useCD = .4; return sleepIn(h); }
+  }
   const s = held(); if (!s) return;
   const it = ITEMS[s.id];
+  if (s.id === "zauberbuch") return openEnch(false);
+  if (it.tool === "hoe" && h && (h.b === B.grass || h.b === B.dirt || h.b === B.snowgrass)) {
+    if (get(h.x,h.y+1,h.z) !== 0) { toast("Über dem Boden muss Platz sein"); return; }
+    setBlock(h.x,h.y,h.z,B.farmland); wearHeld(); sfx("place"); useCD = .2; return;
+  }
+  if (it.plant) {
+    if (!h || h.b !== B.farmland || get(h.x,h.y+1,h.z) !== 0) { toast("Samen pflanzt du auf Ackerboden"); return; }
+    setBlock(h.x,h.y+1,h.z,B[it.plant]); consumeHeld(); sfx("place"); useCD = .15; return;
+  }
   if (it.food) {
     if (player.food >= 20 && mode === "survival") { toast("Du bist satt"); return; }
     player.food = Math.min(20, player.food + it.food); consumeHeld(); sfx("eat"); toast(`${it.name} gegessen`);
@@ -1520,14 +1827,15 @@ function useAction(sneak){
   }
   if (it.wand) { castWand(it); return; }
   if (it.ranged) {
-    if (mode === "survival" && countItem("arrow") < 1) { toast("Du hast keine Pfeile"); return; }
-    if (mode === "survival") removeItem("arrow", 1);
+    const inf = elv(s, "unendlich");
+    if (mode === "survival" && !inf && countItem("arrow") < 1) { toast("Du hast keine Pfeile"); return; }
+    if (mode === "survival" && !inf) removeItem("arrow", 1);
     const [dx,dy,dz] = lookDir(), sp = 32;
-    shoot("arrow", player.x+dx*.5, player.y+EYE+dy*.5, player.z+dz*.5, dx*sp, dy*sp, dz*sp, "player", 6);
+    shoot("arrow", player.x+dx*.5, player.y+EYE+dy*.5, player.z+dz*.5, dx*sp, dy*sp, dz*sp, "player", 6 + 1.5*elv(s, "kraft"), elv(s, "flamme") > 0);
     wearHeld(); sfx("bow"); useCD = .55; renderHotbar(); return;
   }
   if (it.armor) {
-    const old = player.armor; player.armor = s.id; inv[sel_] = old ? { id:old, n:1, d:0 } : null;
+    const old = player.armor; player.armor = s; inv[sel_] = old || null;
     player.mana = Math.min(player.mana, maxMana());
     toast(`${it.name} angezogen`); renderHotbar(); useCD = .3; return;
   }
@@ -1536,7 +1844,9 @@ function useAction(sneak){
     const cur = get(h.px,h.py,h.pz);
     if (cur && !BD[cur].liquid && !(BD[cur].cross && cur !== B.torch)) return;
     if (h.py < 1 || h.py >= SY) return;
-    if (d.cross && !SOLID[get(h.px,h.py-1,h.pz)]) { toast("Das braucht festen Boden darunter"); return; }
+    const below = get(h.px,h.py-1,h.pz);
+    if (b === B.sugarcane) { if (![B.grass,B.dirt,B.sand,B.sugarcane].includes(below)) { toast("Zuckerrohr wächst nur auf Erde oder Sand"); return; } }
+    else if (d.cross && !SOLID[below]) { toast("Das braucht festen Boden darunter"); return; }
     if (d.solid) {
       const hit = (ex,ey,ez,hw,hh) => Math.max(h.px, ex-hw) < Math.min(h.px+1, ex+hw) && Math.max(h.py, ey) < Math.min(h.py+1, ey+hh) && Math.max(h.pz, ez-hw) < Math.min(h.pz+1, ez+hw);
       if (hit(player.x,player.y,player.z,PW,PH)) return;
@@ -1546,16 +1856,17 @@ function useAction(sneak){
   }
 }
 function castWand(it){
-  const cost = { fire:4, bolt:9, heal:12 }[it.wand];
+  const s = held(), pw = 1 + .25*elv(s, "macht");
+  const cost = Math.max(1, Math.round({ fire:4, bolt:9, heal:12 }[it.wand] * (1 - .2*elv(s, "manaspar"))));
   if (mode === "survival" && player.mana < cost) { toast("Nicht genug Mana"); useCD = .3; return; }
   if (mode === "survival") player.mana -= cost;
   const [dx,dy,dz] = lookDir(), ex = player.x, ey = player.y+EYE-.15, ez = player.z;
-  if (it.wand === "fire") shoot("fire", ex+dx*.6, ey+dy*.6, ez+dz*.6, dx*20, dy*20, dz*20, "player", 7);
+  if (it.wand === "fire") shoot("fire", ex+dx*.6, ey+dy*.6, ez+dz*.6, dx*20, dy*20, dz*20, "player", 7*pw, true);
   else if (it.wand === "bolt") {
     const eh = entRay(32), h = raycast(32);
-    let t = 32; if (h) t = h.t; if (eh && eh.t < t) { t = eh.t; hurtEnt(eh.e, 13, player.x, player.z, 8); }
+    let t = 32; if (h) t = h.t; if (eh && eh.t < t) { t = eh.t; hurtEnt(eh.e, 13*pw, player.x, player.z, 8); }
     bolt(ex+dx*.5, ey-.1, ez+dz*.5, ex+dx*t, ey+dy*t, ez+dz*t);
-  } else { player.hp = Math.min(20, player.hp + 6); toast("Geheilt"); }
+  } else { player.hp = Math.min(20, player.hp + Math.round(6*pw)); toast("Geheilt"); }
   wearHeld(); sfx("magic"); useCD = it.wand === "fire" ? .35 : .6;
 }
 
@@ -1565,12 +1876,12 @@ function castWand(it){
 const hotbarEl = $("hotbar"), nameEl = $("blockname");
 let nameTimer;
 function slotHTML(s, i, extra){
-  const cls = "slot" + (extra || "");
+  const cls = "slot" + (extra || "") + (s && s.ench ? " ench" : "");
   if (!s) return `<button class="${cls}" data-i="${i}" aria-label="Leeres Feld"></button>`;
   const it = ITEMS[s.id];
   const dur = it.dur && s.d > 0 ? `<span class="dur"><i style="width:${Math.max(0,100-s.d/it.dur*100)}%"></i></span>` : "";
   const n = s.n > 1 ? `<span class="n">${s.n}</span>` : "";
-  return `<button class="${cls}" data-i="${i}" aria-label="${it.name}" title="${it.name}"><img src="${icon(s.id)}" alt="">${n}${dur}</button>`;
+  return `<button class="${cls}" data-i="${i}" aria-label="${it.name}" title="${it.name}${s.ench ? " (" + enchText(s) + ")" : ""}"><img src="${icon(s.id)}" alt="">${n}${dur}</button>`;
 }
 function renderHotbar(){
   let h = "";
@@ -1597,7 +1908,8 @@ function renderBars(){
   const surv = mode === "survival";
   const underwater = blockAtFeet(player, EYE) === B.water;
   const showMana = surv && (player.mana < maxMana() || inv.some(s => s && ITEMS[s.id].wand));
-  const key = [surv, player.hp, player.food, Math.ceil(player.air), underwater, showMana, Math.round(player.mana), maxMana()].join("|");
+  const xi = xpLevel();
+  const key = [surv, player.hp, player.food, Math.ceil(player.air), underwater, showMana, Math.round(player.mana), maxMana(), player.xp].join("|");
   if (key === barsKey) return; barsKey = key;
   $("bars").hidden = !surv;
   if (!surv) return;
@@ -1608,18 +1920,20 @@ function renderBars(){
   if (underwater) { let s=""; for (let i=0;i<Math.ceil(player.air);i++) s += "<span>○</span>"; $("air").innerHTML = s; }
   $("manabar").hidden = !showMana;
   $("manabar").firstChild.style.width = (player.mana / maxMana() * 100) + "%";
+  $("xpbar").firstChild.style.width = (xi.into / xi.need * 100) + "%";
+  $("xpbar").lastChild.textContent = xi.l;
 }
 
 // Rucksack-Fenster
 let uiOpen = null, invTab = "bag", picked = null, craftQuery = "";
 function openUI(which){
   uiOpen = which; for (const k in keys) keys[k] = false; mouseL = false; touchMine = false;
-  $("inv").hidden = which !== "inv"; $("trade").hidden = which !== "trade"; $("death").hidden = which !== "death";
+  $("inv").hidden = which !== "inv"; $("trade").hidden = which !== "trade"; $("death").hidden = which !== "death"; $("chest").hidden = which !== "chest"; $("ench").hidden = which !== "ench";
   if (document.pointerLockElement) document.exitPointerLock();
 }
 function closeUI(){
   uiOpen = null; picked = null;
-  $("inv").hidden = $("trade").hidden = $("death").hidden = true;
+  $("inv").hidden = $("trade").hidden = $("death").hidden = $("chest").hidden = $("ench").hidden = true;
   renderHotbar();
   if (playing) requestLock();
 }
@@ -1633,10 +1947,11 @@ function renderInv(){
     for (let i=9;i<36;i++) top += slotHTML(inv[i], i, picked === i ? " picked" : "");
     for (let i=0;i<9;i++) hot += slotHTML(inv[i], i, picked === i ? " picked" : i === sel_ ? " active" : "");
     const p = picked !== null && inv[picked] ? ITEMS[inv[picked].id] : null;
-    const ar = player.armor ? `<button class="slot" data-armor="1" title="${ITEMS[player.armor].name}"><img src="${icon(player.armor)}" alt=""></button>` : `<button class="slot" data-armor="1" aria-label="Rüstungsfeld"></button>`;
+    const ar = player.armor ? `<button class="slot${player.armor.ench ? " ench" : ""}" data-armor="1" title="${ITEMS[player.armor.id].name}"><img src="${icon(player.armor.id)}" alt=""></button>` : `<button class="slot" data-armor="1" aria-label="Rüstungsfeld"></button>`;
+    const ps = picked !== null ? inv[picked] : null;
     body.innerHTML = `<p class="hint">Tippe ein Feld an und dann ein zweites, um Dinge zu verschieben, zu tauschen oder zu stapeln. Die untere Reihe ist deine Schnellleiste. Rüstung legst du in das Rüstungsfeld links unten.</p>
       <div class="igrid">${top}</div><div class="igrid hot">${hot}</div>
-      <div class="inforow">${ar}<div class="info">${p ? `<b>${p.name}</b><br>${describe(p)}` : player.armor ? `<b>Rüstung:</b> ${ITEMS[player.armor].name}` : "Noch keine Rüstung angezogen."}</div>
+      <div class="inforow">${ar}<div class="info">${p ? `<b>${p.name}</b><br>${describe(p)}${ps && ps.ench ? `<br><span class="enchlist">${enchText(ps)}</span>` : ""}` : player.armor ? `<b>Rüstung:</b> ${ITEMS[player.armor.id].name}${player.armor.ench ? `<br><span class="enchlist">${enchText(player.armor)}</span>` : ""}` : "Noch keine Rüstung angezogen."}</div>
       ${p ? `<button class="sm ghost" id="drop-btn">Wegwerfen</button>` : ""}</div>`;
   } else if (invTab === "craft") {
     const st = { table: stationNear(B.table), furnace: stationNear(B.furnace) };
@@ -1698,6 +2013,7 @@ function craft(i, times){
       furnaceHeat -= 1;
     }
     addItem(r.out, r.n, true); made += r.n;
+    if (r.st === "furnace" && ["iron","gold","copper"].includes(r.out)) addXp(1);
   }
   if (made) { toast(`+${made} ${ITEMS[r.out].name}`); sfx("pick"); }
   renderInv(); renderHotbar(); scheduleSave();
@@ -1708,8 +2024,8 @@ $("inv-body").addEventListener("click", e => {
   if (e.target.id === "drop-btn" && picked !== null) { inv[picked] = null; picked = null; renderInv(); renderHotbar(); return; }
   const a = e.target.closest("[data-armor]");
   if (a) {
-    if (picked !== null && inv[picked] && ITEMS[inv[picked].id].armor) { const old = player.armor; player.armor = inv[picked].id; inv[picked] = old ? { id:old, n:1, d:0 } : null; picked = null; }
-    else if (picked === null && player.armor) { if (spaceFor(player.armor) > 0) { addItem(player.armor, 1, true); player.armor = null; } }
+    if (picked !== null && inv[picked] && ITEMS[inv[picked].id].armor) { const old = player.armor; player.armor = inv[picked]; inv[picked] = old || null; picked = null; }
+    else if (picked === null && player.armor) { const i = inv.indexOf(null); if (i >= 0) { inv[i] = player.armor; player.armor = null; } else toast("Rucksack voll"); }
     player.mana = Math.min(player.mana, maxMana()); renderInv(); renderHotbar(); return;
   }
   const s = e.target.closest("[data-i]"); if (!s) return;
@@ -1747,9 +2063,102 @@ $("trade-body").addEventListener("click", e => {
   const b = e.target.closest("[data-trade]"); if (!b) return;
   const [give, [gid, gn]] = OFFERS[tradeWith.prof].list[+b.dataset.trade];
   if (mode !== "creative") { if (!give.every(([id,n]) => countItem(id) >= n)) return; if (spaceFor(gid) < gn) { toast("Rucksack voll"); return; } give.forEach(([id,n]) => removeItem(id,n)); }
-  addItem(gid, gn); sfx("pick"); renderTrade();
+  addItem(gid, gn); addXp(2); sfx("pick"); renderTrade();
 });
 $("trade-close").addEventListener("click", closeUI);
+
+// Truhen
+let chests = {}, chestKey = null, chestPick = null;
+function openChest(x,y,z){
+  chestKey = x+","+y+","+z;
+  if (!chests[chestKey]) chests[chestKey] = new Array(27).fill(null);
+  chestPick = null; openUI("chest"); renderChest();
+}
+function renderChest(){
+  const c = chests[chestKey], P = chestPick;
+  const cell = (arr, i, w) => slotHTML(arr[i], i, P && P.w === w && P.i === i ? " picked" : "").replace("data-i=", "data-" + w + "=");
+  let a = "", top = "", hot = "";
+  for (let i=0;i<27;i++) a += cell(c, i, "c");
+  for (let i=9;i<36;i++) top += cell(inv, i, "v");
+  for (let i=0;i<9;i++) hot += cell(inv, i, "v");
+  $("chest-body").innerHTML = `<p class="hint">Tippe ein Feld an und dann ein zweites, um Dinge zwischen Truhe und Rucksack zu verschieben.</p><div class="igrid">${a}</div><p class="hint"><b>Dein Rucksack</b></p><div class="igrid">${top}</div><div class="igrid hot">${hot}</div>`;
+}
+$("chest-body").addEventListener("click", e => {
+  const el = e.target.closest("[data-c],[data-v]"); if (!el) return;
+  const w = el.dataset.c !== undefined ? "c" : "v", i = +(el.dataset.c !== undefined ? el.dataset.c : el.dataset.v);
+  const arr = q => q === "c" ? chests[chestKey] : inv;
+  if (!chestPick) { if (arr(w)[i]) chestPick = { w, i }; }
+  else if (chestPick.w === w && chestPick.i === i) chestPick = null;
+  else {
+    const A = arr(chestPick.w), Bv = arr(w), a = A[chestPick.i], b = Bv[i];
+    if (a && b && a.id === b.id && ITEMS[a.id].stack > 1) { const k = Math.min(ITEMS[a.id].stack - b.n, a.n); b.n += k; a.n -= k; if (!a.n) A[chestPick.i] = null; }
+    else { A[chestPick.i] = b; Bv[i] = a; }
+    chestPick = null;
+  }
+  renderChest(); renderHotbar(); scheduleSave();
+});
+$("chest-close").addEventListener("click", closeUI);
+
+// Verzaubern
+let enchSrc = { fromTable:false, max:2, shelves:0 }, enchPick = null;
+function openEnch(fromTable){
+  const shelves = fromTable ? countNear(B.bookshelf, 3) : 0;
+  enchSrc = { fromTable, shelves, max: fromTable ? Math.min(5, 2 + Math.floor(shelves/3)) : 2 };
+  enchPick = null; openUI("ench"); renderEnch();
+}
+function enchTargets(){ const out = []; inv.forEach((st,i) => { if (st && enchCat(ITEMS[st.id])) out.push(i); }); if (player.armor) out.push(-1); return out; }
+const targetSlot = i => i === -1 ? player.armor : inv[i];
+function renderEnch(){
+  const lv = xpLevel().l, lz = countItem("lazur"), creative = mode === "creative";
+  const tg = enchTargets();
+  if (enchPick !== null && !tg.includes(enchPick)) enchPick = null;
+  const items = tg.map(i => { const st = targetSlot(i); return `<button class="slot${st.ench ? " ench" : ""}${enchPick === i ? " picked" : ""}" data-et="${i}" title="${ITEMS[st.id].name}"><img src="${icon(st.id)}" alt=""></button>`; }).join("")
+    || `<p class="hint">Du hast nichts dabei, was sich verzaubern lässt: Waffen, Werkzeuge, Rüstung, Bogen oder Zauberstäbe.</p>`;
+  let opts = "";
+  if (enchPick !== null) {
+    const st = targetSlot(enchPick), it = ITEMS[st.id], cat = enchCat(it);
+    opts = `<p class="hint"><b>${it.name}${enchPick === -1 ? " (angezogen)" : ""}</b>${st.ench ? `<br><span class="enchlist">${enchText(st)}</span>` : ""}</p><div class="recs">` +
+      Object.entries(ENCH).filter(([k,en]) => en.for.includes(cat)).map(([k,en]) => {
+        const cur = elv(st,k), next = cur+1;
+        let reason = "", ok = true;
+        if (cur >= en.max) { ok = false; reason = "Schon auf höchster Stufe"; }
+        else if (next > enchSrc.max) { ok = false; reason = enchSrc.fromTable ? "Für diese Stufe brauchst du mehr Bücherregale um den Tisch" : "Diese Stufe geht nur am Zaubertisch"; }
+        else if (!creative && (lv < next || lz < next)) { ok = false; reason = lv < next ? "Dir fehlt Erfahrung" : "Dir fehlt Lazurstein"; }
+        const cost = cur < en.max ? `<span>Kosten: ${next} ${next === 1 ? "Stufe" : "Stufen"} und ${next} Lazurstein</span>` : "";
+        return `<div class="rec ${ok ? "" : "dim"}"><img src="${icon("zauberbuch")}" alt=""><div><div class="rn">${en.name} ${ROMAN[Math.min(next, en.max)]}</div><div class="ing"><span>${en.desc}</span>${cost}</div>${reason ? `<div class="st">${reason}</div>` : ""}</div><div class="acts"><button class="sm" data-ek="${k}" ${ok ? "" : "disabled"}>Verzaubern</button></div></div>`;
+      }).join("") + `</div>`;
+  }
+  $("ench-title").textContent = enchSrc.fromTable ? "Zaubertisch" : "Zauberbuch";
+  $("ench-body").innerHTML = `<div class="stations"><span class="chip ok">Erfahrungsstufe ${lv}</span><span class="chip">Lazurstein: ${lz}</span><span class="chip">Höchste Zauberstufe hier: ${ROMAN[enchSrc.max]}</span>${enchSrc.fromTable ? `<span class="chip">Bücherregale in der Nähe: ${enchSrc.shelves}</span>` : ""}</div>
+    <p class="hint">Wähle einen Gegenstand aus deinem Rucksack und dann einen Zauber. Jeder Zauber lässt sich Stufe für Stufe verstärken. Je 3 Bücherregale um den Zaubertisch erlauben eine Stufe mehr, bis Stufe V.</p>
+    <div class="ench-items">${items}</div>${opts}`;
+}
+$("ench-body").addEventListener("click", e => {
+  const t = e.target.closest("[data-et]"); if (t) { enchPick = +t.dataset.et; renderEnch(); return; }
+  const b = e.target.closest("[data-ek]"); if (!b || enchPick === null) return;
+  const k = b.dataset.ek, st = targetSlot(enchPick); if (!st) return;
+  const next = elv(st,k) + 1;
+  if (next > ENCH[k].max || next > enchSrc.max) return;
+  if (mode !== "creative") { if (xpLevel().l < next || countItem("lazur") < next) return; spendLevels(next); removeItem("lazur", next); }
+  st.ench = Object.assign({}, st.ench, { [k]: next });
+  sfx("magic"); toast(`${ITEMS[st.id].name}: ${ENCH[k].name} ${ROMAN[next]}`);
+  barsKey = ""; renderEnch(); renderHotbar(); scheduleSave();
+});
+$("ench-close").addEventListener("click", closeUI);
+
+// Ackerbau
+const crops = new Set();
+let cropT = 0;
+function growCrops(){
+  for (const k of crops) {
+    const [x,y,z] = k.split(",").map(Number);
+    if (!loadedAt(x,z)) continue;
+    const b = get(x,y,z);
+    if (!BD[b].crop || BD[b].crop >= 4) { crops.delete(k); continue; }
+    if (get(x,y-1,z) !== B.farmland) continue;
+    if (Math.random() < .07) setBlock(x,y,z,b+1);
+  }
+}
 $("respawn").addEventListener("click", respawn);
 
 // =====================================================================
@@ -1794,7 +2203,7 @@ $("newworld").addEventListener("click", () => { $("confirm-new").hidden = false;
 $("confirm-no").addEventListener("click", () => { $("confirm-new").hidden = true; });
 function newWorld(m){
   $("confirm-new").hidden = true;
-  mode = m; seed = (Math.random()*1e9)|0; edits = {}; inv.fill(null); player.armor = null; player.spawn = null; furnaceHeat = 0;
+  mode = m; seed = (Math.random()*1e9)|0; edits = {}; inv.fill(null); player.armor = null; player.spawn = null; furnaceHeat = 0; player.xp = 0; chests = {}; crops.clear();
   Object.assign(player, { hp:20, food:20, mana:20, air:10, dead:false, fly:false, yaw:0, pitch:0 });
   for (const p of projs) p.life = 0;
   clearWorld(); player.spawn = null; player.spawn = findSpawn(); placePlayerAtSpawn(); resetEntities(); streamChunks(0, 60);
@@ -1873,7 +2282,7 @@ function touchEnd(e){
         else {
           const eh = entRay(4.5), h = raycast(5.5);
           if (eh && (!h || eh.t < h.t)) { if (eh.e.T.kind === "npc") openTrade(eh.e); else attack(); }
-          else if (h && (h.b === B.table || h.b === B.furnace)) openInv("craft");
+          else if (h && [B.table, B.furnace, B.chest, B.ench_table, B.bed].includes(h.b)) useAction(false);
         }
       }
     }
@@ -1895,7 +2304,7 @@ const SAVE_KEY = "blockwelt-v3";
 let saveTimer = null;
 function saveNow(){
   if (!ready) return;
-  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ seed, mode, edits, inv, armor:player.armor, hp:player.hp, food:player.food, mana:player.mana, dead:player.dead,
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ seed, mode, edits, inv, armor:player.armor, xp:player.xp || 0, chests, crops:[...crops], hp:player.hp, food:player.food, mana:player.mana, dead:player.dead,
     p:[player.x, player.y, player.z, player.yaw, player.pitch], spawn:player.spawn, time:dayTime, heat:furnaceHeat, sel:sel_ })); } catch (e) {}
 }
 function scheduleSave(){ clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 1500); }
@@ -1950,8 +2359,10 @@ function updatePlayer(dt){
   if (player.food === 0) { starveT += dt; if (starveT > 4) { starveT = 0; hurtPlayer(1, null, "Du bist verhungert."); } } else starveT = 0;
   const headWater = blockAtFeet(player, EYE) === B.water;
   if (headWater) { player.air = Math.max(0, player.air - dt); if (player.air <= 0) { airT += dt; if (airT > 1) { airT = 0; hurtPlayer(2, null, "Du bist ertrunken."); } } }
-  else player.air = Math.min(10, player.air + dt*4);
-  if (inLava) { lavaT += dt; if (lavaT > .5) { lavaT = 0; hurtPlayer(4, null, "Du bist in die Lava gefallen."); } }
+  else player.air = Math.min(maxAir(), player.air + dt*4);
+  if (inLava) { lavaT += dt; if (lavaT > .5) { lavaT = 0; hurtPlayer(4, null, "Du bist in die Lava gefallen.", "fire"); } }
+  for (let x=Math.floor(player.x-.42); x<=Math.floor(player.x+.42); x++) for (let z=Math.floor(player.z-.42); z<=Math.floor(player.z+.42); z++) for (let y=Math.floor(player.y-.05); y<=Math.floor(player.y+1.7); y++)
+    if (get(x,y,z) === B.cactus) { hurtPlayer(1, null, "Du hast einen Kaktus umarmt."); x = 1e9; break; }
   manaT += dt; if (manaT > 1.2) { manaT = 0; player.mana = Math.min(maxMana(), player.mana + 1); }
 }
 
@@ -1976,6 +2387,7 @@ function tick(now){
     updateProjs(dt);
     spawnT -= dt; if (spawnT <= 0) { spawnT = .5; spawnTick(); }
     autosaveT += dt; if (autosaveT > 10) { autosaveT = 0; saveNow(); }
+    cropT -= dt; if (cropT <= 0) { cropT = 2; growCrops(); }
     const touchHold = lookId !== null && !placeMode && lookS && lookS.moved < 12 && performance.now() - lookS.time > 200;
     if (active && !uiOpen && (mouseL || touchHold)) {
       if (touchHold && !touchMine) { touchMine = true; attack(); }
@@ -2026,7 +2438,12 @@ function boot(){
     seed = saved.seed; edits = saved.edits || {}; mode = saved.mode === "creative" ? "creative" : "survival";
     dayTime = typeof saved.time === "number" ? saved.time : .27; furnaceHeat = saved.heat || 0;
     if (Array.isArray(saved.inv)) saved.inv.forEach((s,i) => { if (i < 36) inv[i] = s && ITEMS[s.id] ? s : null; });
-    player.armor = saved.armor && ITEMS[saved.armor] ? saved.armor : null;
+    const ar = saved.armor;
+    player.armor = typeof ar === "string" ? (ITEMS[ar] ? { id:ar, n:1, d:0 } : null) : (ar && ITEMS[ar.id] ? ar : null);
+    player.xp = saved.xp || 0;
+    chests = saved.chests && typeof saved.chests === "object" ? saved.chests : {};
+    for (const k in chests) chests[k] = (chests[k] || []).map(st => st && ITEMS[st.id] ? st : null);
+    if (Array.isArray(saved.crops)) saved.crops.forEach(k => crops.add(k));
     Object.assign(player, { hp: saved.hp ?? 20, food: saved.food ?? 20, mana: saved.mana ?? 20, dead: !!saved.dead });
     player.spawn = saved.spawn || null; sel_ = saved.sel || 0;
   } else seed = (Math.random()*1e9)|0;
