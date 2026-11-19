@@ -400,7 +400,7 @@ const COLORS = [
   ["white","weiß",[236,234,228]], ["red","rot",[184,48,48]], ["orange","orange",[226,128,42]], ["yellow","gelb",[228,196,60]],
   ["green","grün",[70,130,52]], ["blue","blau",[56,86,180]], ["purple","lila",[120,62,176]], ["black","schwarz",[34,34,40]],
 ];
-const adj = (stem, end) => (stem === "orange" || stem === "lila") ? stem[0].toUpperCase() + stem.slice(1) : stem[0].toUpperCase() + stem.slice(1) + end;
+const adj = (stem, end) => ["orange","lila","rosa","magenta"].includes(stem) ? stem[0].toUpperCase() + stem.slice(1) : stem[0].toUpperCase() + stem.slice(1) + end;
 const woolKey = c => c === "white" ? "wool" : "wool_" + c;
 defBlock("terracotta", { name:"Terrakotta", all:"terracotta", hard:1.2, tool:"pick", need:0 });
 for (const [c, stem] of COLORS) {
@@ -460,9 +460,62 @@ defBlock("note_block",   { name:"Notenblock", all:"note_block", hard:.8, tool:"a
 defBlock("jukebox",      { name:"Musikbox", top:"jukebox_top", side:"jukebox_side", bottom:"jukebox_side", hard:2, tool:"axe" });
 defBlock("beacon",       { name:"Leuchtfeuer", all:"beacon", hard:3, light:15, glow:true, see:true, trans:true, atten:0 });
 defBlock("candle",       { name:"Kerze", all:"candle", hard:.1, light:12, glow:true, see:true, shape:[[.4,0,.4,.6,.45,.6]], flatIcon:"candle" });
+// Acht weitere Farben
+const COLORS2 = [["light_blue","hellblau",[110,160,220]],["cyan","türkis",[40,140,150]],["magenta","magenta",[190,70,180]],["pink","rosa",[236,150,180]],
+  ["lime","hellgrün",[130,200,60]],["gray","grau",[80,82,88]],["light_gray","hellgrau",[160,160,164]],["brown","braun",[118,80,50]]];
+for (const [c, stem] of COLORS2) {
+  defBlock("wool_" + c,       { name: adj(stem,"e") + " Wolle", all:"wool_" + c, hard:.8 });
+  defBlock("concrete_" + c,   { name: adj(stem,"er") + " Beton", all:"concrete_" + c, hard:1.8, tool:"pick", need:0 });
+  defBlock("terracotta_" + c, { name: adj(stem,"e") + " Terrakotta", all:"terracotta_" + c, hard:1.2, tool:"pick", need:0 });
+  defBlock("glass_" + c,      { name: adj(stem,"es") + " Buntglas", all:"glass_" + c, hard:.3, see:true, trans:true, drop:null });
+  defBlock("carpet_" + c,     { name: adj(stem,"er") + " Teppich", all:"wool_" + c, hard:.1, shape:[[0,0,0,1,.0625,1]], see:true });
+}
+COLORS.push(...COLORS2);
+// Drei neue Holzarten und Setzlinge für alle
+const WOODS = [["oak","Eichen"],["birch","Birken"],["spruce","Fichten"],["cherry","Kirsch"],["acacia","Akazien"],["dark_oak","Dunkeleichen"],["jungle","Tropenholz"]];
+for (const [w, pre] of WOODS.slice(4)) {
+  defBlock(w + "_log",    { name: pre + "stamm", top: w + "_top", side: w + "_log", bottom: w + "_top", hard:2, tool:"axe" });
+  defBlock(w + "_leaves", { name: pre + "laub", all: w + "_leaves", hard:.2, see:true, atten:1, drop: r => r() < .05 ? [[w + "_sapling",1]] : (w === "jungle" && r() < .06) ? [["cocoa",1]] : r() < .06 ? [["stick",1]] : [] });
+  defBlock(w + "_planks", { name: pre + "bretter", all: w + "_planks", hard:2, tool:"axe" });
+  defBlock("fence_" + w,  { name: pre + "zaun", all: w + "_planks", hard:2, tool:"axe", see:true, fam:"fence", shape: linkShape("fence", [[.375,0,.375,.625,1,.625]], FENCE_ARMS), flatIcon:"fence_icon" });
+}
+for (const [w, pre] of WOODS) defBlock(w + "_sapling", { name: pre + "setzling", all: w + "_sapling", cross:true, solid:false, hard:0, sapling:w });
+for (const w of ["oak","birch","spruce","cherry"]) { const old = BD[B[w + "_leaves"]].drop; BD[B[w + "_leaves"]].drop = r => r() < .05 ? [[w + "_sapling",1]] : old(r); }
+// Gesteine
+const STONES = [["andesite","Andesit",1.5],["diorite","Diorit",1.5],["tuff","Tuff",1.5],["calcite","Kalzit",.75],["polished_andesite","Polierter Andesit",1.5],["polished_diorite","Polierter Diorit",1.5],
+  ["smooth_stone","Glatter Stein",2],["cut_sandstone","Geschnittener Sandstein",.8],["red_sandstone","Roter Sandstein",.8],["mossy_stone_bricks","Bemooste Steinziegel",1.5],["cracked_stone_bricks","Rissige Steinziegel",1.5],
+  ["chiseled_stone_bricks","Gemeißelte Steinziegel",1.5],["slate_bricks","Schieferziegel",2.2],["slate_tiles","Schieferfliesen",2.2],["polished_slate","Polierter Schiefer",2.2],["quartz_bricks","Quarzziegel",1],["packed_ice","Packeis",.5],["mud_bricks","Lehmziegel",1.5]];
+for (const [k, nm, hd] of STONES) defBlock(k, { name:nm, all:k, hard:hd, tool:"pick", need:0 });
+defBlock("basalt",    { name:"Basalt", top:"basalt_top", side:"basalt", bottom:"basalt_top", hard:1.25, tool:"pick", need:0 });
+defBlock("red_sand",  { name:"Roter Sand", all:"red_sand", hard:.5, tool:"shovel" });
+defBlock("moss_block",{ name:"Moosblock", all:"moss_block", hard:.1, tool:"hoe" });
+defBlock("mud",       { name:"Schlamm", all:"mud", hard:.5, tool:"shovel" });
+// Blumen und Sträucher
+const FLOWERS2 = [["tulip_red","Rote Tulpe"],["tulip_orange","Orange Tulpe"],["tulip_white","Weiße Tulpe"],["tulip_pink","Rosa Tulpe"],["orchid","Blaue Orchidee"],["allium","Sternlauch"],["daisy","Gänseblümchen"],["lily","Maiglöckchen"],["sunflower","Sonnenblume"]];
+for (const [k, nm] of FLOWERS2) defBlock(k, { name:nm, all:k, cross:true, solid:false, hard:0 });
+defBlock("berry_bush", { name:"Beerenstrauch", all:"berry_bush", cross:true, solid:false, hard:0, drop: r => [["sweet_berries", 2 + (r()*2|0)]] });
+// Feldfrüchte
+for (const [k, nm, seed, fruit] of [["carrot","Karotten","carrot","carrot"],["potato","Kartoffeln","potato","potato"],["beet","Rote Bete","beetroot_seeds","beetroot"]])
+  for (let st=0; st<4; st++) defBlock(k + "_" + st, { name:nm, all:k + "_" + st, cross:true, solid:false, hard:0, crop:st+1, item:false, drop: st < 3 ? seed : (r => [[fruit, 1 + (r()*3|0)]].concat(seed !== fruit ? [[seed, 1 + (r()*2|0)]] : [])) });
+// Mauern
+const WALL_ARMS = [[[.3125,0,0,.6875,.8125,.5]],[[.5,0,.3125,1,.8125,.6875]],[[.3125,0,.5,.6875,.8125,1]],[[0,0,.3125,.5,.8125,.6875]]];
+const WALLS = [["cobble","Bruchstein"],["mossy_cobble","Moosbruchstein"],["stone_bricks","Steinziegel"],["bricks","Ziegel"],["sandstone","Sandstein"],["red_sandstone","Rotsandstein"],
+  ["granite","Granit"],["andesite","Andesit"],["diorite","Diorit"],["slate_bricks","Schieferziegel"],["mud_bricks","Lehmziegel"]];
+for (const [base, pre] of WALLS) { const bd = BD[B[base]]; defBlock("wall_" + base, { name: pre + "mauer", top:bd.top, side:bd.side, bottom:bd.bottom, hard:bd.hard, tool:"pick", need:0, see:true, fam:"wall", shape: linkShape("wall", [[.25,0,.25,.75,1,.75]], WALL_ARMS) }); }
+// Mehr Stufen und Treppen
+const SHAPED2 = [["acacia_planks","Akazien"],["dark_oak_planks","Dunkeleichen"],["jungle_planks","Tropenholz"],["andesite","Andesit"],["diorite","Diorit"],["mossy_cobble","Moosbruchstein"],
+  ["quartz_block","Quarz"],["red_sandstone","Rotsandstein"],["smooth_stone","Glattstein"],["slate_bricks","Schieferziegel"],["mossy_stone_bricks","Moossteinziegel"],["mud_bricks","Lehmziegel"]];
+for (const [base, pre] of SHAPED2) {
+  const bd = BD[B[base]], tiles = { top:bd.top, side:bd.side, bottom:bd.bottom };
+  defBlock("slab_" + base, Object.assign({ name: pre + "stufe", hard:bd.hard, tool:bd.tool, need:bd.need, shape:[[0,0,0,1,.5,1]], see:true }, tiles));
+  for (let f=0; f<4; f++) defBlock("stairs_" + base + "_" + f, Object.assign({ name: pre + "treppe", hard:bd.hard, tool:bd.tool, need:bd.need, shape:[[0,0,0,1,.5,1], STAIR_TOP[f]], see:true, item:false, drop:"stairs_" + base }, tiles));
+}
+SHAPED.push(...SHAPED2);
 const NATURE = new Set(["grass","dirt","stone","cobble","sand","gravel","clay","snowgrass","snow","ice","oak_log","birch_log","oak_leaves","birch_leaves","coal_ore","iron_ore","gold_ore","arkan_ore","rubin_ore","bedrock",
   "flower_red","flower_yellow","flower_blue","tall_grass","mushroom","spruce_log","spruce_leaves","cherry_log","cherry_leaves","granite","marble","slate","obsidian","copper_ore","lazur_ore","mond_ore",
-  "pumpkin","melon","cactus","sugarcane","farmland","amethyst","diamond_ore","emerald_ore","quartz_ore","amethyst_cluster","coral_red","coral_yellow","coral_blue","mossy_cobble","terracotta"]);
+  "pumpkin","melon","cactus","sugarcane","farmland","amethyst","acacia_log","acacia_leaves","dark_oak_log","dark_oak_leaves","jungle_log","jungle_leaves",
+  "oak_sapling","birch_sapling","spruce_sapling","cherry_sapling","acacia_sapling","dark_oak_sapling","jungle_sapling","andesite","diorite","tuff","calcite","basalt","red_sand","red_sandstone","moss_block","mud","packed_ice",
+  "tulip_red","tulip_orange","tulip_white","tulip_pink","orchid","allium","daisy","lily","sunflower","berry_bush","diamond_ore","emerald_ore","quartz_ore","amethyst_cluster","coral_red","coral_yellow","coral_blue","mossy_cobble","terracotta"]);
 
 const NB = BD.length;
 const LT = new Int8Array(NB), EM = new Uint8Array(NB), SOLID = new Uint8Array(NB), SHAPE = new Array(NB).fill(null);
@@ -470,18 +523,19 @@ BD.forEach((d,i) => { if (d.shape) SHAPE[i] = d.shape; });
 const LADDERS = new Set(BD.filter(d => d.ladder).map(d => d.id));
 BD.forEach((d,i) => { LT[i] = d.atten; EM[i] = d.light; SOLID[i] = d.solid ? 1 : 0; });
 const GROUPS = {
-  "#planks": ["oak_planks","birch_planks","spruce_planks","cherry_planks"],
-  "#log": ["oak_log","birch_log","spruce_log","cherry_log"],
-  "#fuel": ["coal","oak_log","birch_log","spruce_log","cherry_log","oak_planks","birch_planks","spruce_planks","cherry_planks","stick"],
+  "#planks": WOODS.map(([w]) => w + "_planks"),
+  "#log": WOODS.map(([w]) => w + "_log"),
+  "#fuel": ["coal", ...WOODS.map(([w]) => w + "_log"), ...WOODS.map(([w]) => w + "_planks"), "stick"],
   "#wool": ["wool"],
 };
 const GROUP_NAMES = { "#planks":"Bretter (beliebig)", "#log":"Baumstamm (beliebig)", "#fuel":"Brennstoff" };
-const HEAT = { coal:8, oak_log:3, birch_log:3, spruce_log:3, cherry_log:3, oak_planks:2, birch_planks:2, spruce_planks:2, cherry_planks:2, stick:1 };
+const HEAT = { coal:8, stick:1 };
+for (const [w] of WOODS) { HEAT[w + "_log"] = 3; HEAT[w + "_planks"] = 2; }
 
 // =====================================================================
 // Texturen (selbst gezeichnet)
 // =====================================================================
-const TS = 16, AC = 16, AR = 16;
+const TS = 16, AC = 16, AR = 32;
 const atlas = document.createElement("canvas");
 atlas.width = TS*AC; atlas.height = TS*AR;
 const TILE = {};
@@ -654,6 +708,47 @@ const shade = (rgb, k) => `rgb(${Math.max(0,Math.min(255,rgb[0]*k))|0},${Math.ma
   tile("jukebox_side", () => { planks([130,88,56]); for (let i=0;i<16;i++){ P(i,0,"#4a2e14"); P(i,15,"#4a2e14"); } });
   tile("jukebox_top", () => { planks([130,88,56]); for (let y=5;y<11;y++) for (let x=3;x<13;x++) P(x,y, y===7||y===8 ? "#1a1a1a" : "#3a2a1a"); });
   tile("beacon", () => { for (let y=0;y<TS;y++) for (let x=0;x<TS;x++){ const e = x===0||y===0||x===15||y===15, core = x>4&&x<11&&y>4&&y<11; P(x,y, e ? "rgba(200,240,250,0.95)" : core ? shade([120,240,240], .9+r()*.2) : "rgba(180,230,240,0.3)"); } });
+  const sap = (stem, leaf) => { for (let y=9;y<16;y++) P(7,y,stem); for (let y=1;y<11;y++) for (let x=2;x<14;x++){ const d=Math.hypot(x-7.5,y-6); if (d<4.6 && r()>.2) P(x,y,shade(leaf,.8+r()*.4)); } };
+  const brickT = (rgb, mortar, rh, bw) => { for (let y=0;y<TS;y++) for (let x=0;x<TS;x++){ const row=Math.floor(y/rh); const m=(y%rh===rh-1)||((x+(row%2)*(bw/2))%bw===bw-1); P(x,y, m ? mortar : shade(rgb,.9+r()*.14)); } };
+  const tulip = (rgb) => { for (let y=8;y<16;y++) P(7,y,"#3f7a2c"); P(6,12,"#4f9a3a"); P(8,11,"#4f9a3a"); for (let y=3;y<8;y++) for (let x=5;x<10;x++) if (!(y===3 && (x===6||x===8))) P(x,y,shade(rgb,.85+r()*.3)); };
+  const cropT = (st, leaf, fruit) => { const h = [3,6,9,12][st]; for (let b=0;b<5;b++){ const x=2+b*3; for (let y=15;y>15-h;y--) P(x,y,shade(leaf,.8+r()*.35)); if (st>=2) P(x+1,16-h,shade(leaf,1.1)); if (st===3 && fruit) { P(x,14,shade(fruit,1)); P(x+1,15,shade(fruit,.9)); } } };
+  for (const [w, bk, pl, lf] of [["acacia",[110,100,92],[196,112,60],[118,150,56]],["dark_oak",[58,42,28],[74,52,32],[46,86,38]],["jungle",[98,76,40],[168,122,82],[56,140,46]]]) {
+    tile(w + "_log", () => bark(bk)); tile(w + "_top", () => rings(pl, bk)); tile(w + "_leaves", () => leaves(lf)); tile(w + "_planks", () => planks(pl));
+  }
+  for (const [w, stem, leaf] of [["oak","#6b4a28",[58,118,48]],["birch","#d8d4c8",[112,152,68]],["spruce","#4a3420",[38,82,58]],["cherry","#58323a",[234,156,188]],["acacia","#6e6458",[118,150,56]],["dark_oak","#3a2a1c",[46,86,38]],["jungle","#62482a",[56,140,46]]])
+    tile(w + "_sapling", () => sap(stem, leaf));
+  for (const [c,,rgb] of COLORS2) tile("wool_" + c, () => woolT(rgb));
+  tile("andesite", () => { noise([136,136,138],.2); dots("#a8a8ac",14); dots("#6e6e72",10); });
+  tile("diorite", () => { noise([214,214,210],.12); dots("#8a8a8a",16); });
+  tile("tuff", () => { noise([108,110,100],.22); dots("#8a8c7a",12); });
+  tile("calcite", () => { noise([226,228,224],.06); dots("#c8cac4",6); });
+  tile("polished_andesite", () => polished([140,140,142]));
+  tile("polished_diorite", () => polished([216,216,212]));
+  tile("smooth_stone", () => { polished([162,162,164]); for (let x=0;x<16;x++) P(x,8,"#8a8a8e"); });
+  tile("cut_sandstone", () => { for (let y=0;y<TS;y++) for (let x=0;x<TS;x++) P(x,y,shade([218,198,140], (y===0||y===7||y===8||y===15?.82:1)*(.95+r()*.06))); });
+  tile("red_sandstone", () => { for (let y=0;y<TS;y++) for (let x=0;x<TS;x++) P(x,y,shade([186,100,50], (y===4||y===11?.82:1)*(.94+r()*.08))); });
+  tile("mossy_stone_bricks", () => { brickT([128,130,134],"#5d5f63",8,16); for (let i=0;i<40;i++) P(r()*16|0, r()*16|0, shade([80,130,60],.8+r()*.4)); });
+  tile("cracked_stone_bricks", () => { brickT([128,130,134],"#5d5f63",8,16); let x=3, y=1; for (let i=0;i<14;i++){ P(x,y,"#3a3a3e"); y++; x += r()<.5 ? 1 : 0; } });
+  tile("chiseled_stone_bricks", () => { polished([132,134,138]); for (let i=3;i<13;i++){ P(i,3,"#6a6c70"); P(i,12,"#6a6c70"); P(3,i,"#6a6c70"); P(12,i,"#6a6c70"); } for (let i=6;i<10;i++){ P(i,6,"#6a6c70"); P(i,9,"#6a6c70"); P(6,i,"#6a6c70"); P(9,i,"#6a6c70"); } });
+  tile("slate_bricks", () => brickT([70,72,80],"#34363c",4,8));
+  tile("slate_tiles", () => { for (let y=0;y<TS;y++) for (let x=0;x<TS;x++) P(x,y, (x%4===3||y%4===3) ? "#30323a" : shade([74,76,84],.9+r()*.14)); });
+  tile("polished_slate", () => polished([76,78,86]));
+  tile("quartz_bricks", () => brickT([236,232,224],"#c8c2b8",8,16));
+  tile("packed_ice", () => { noise([160,196,236],.12); for (let i=0;i<8;i++) P(r()*16|0, r()*16|0, "#e8f4ff"); });
+  tile("mud_bricks", () => brickT([150,118,84],"#8a6a4a",4,8));
+  tile("basalt", () => { for (let x=0;x<TS;x++){ const k=(x%3===0)?.75:.95+r()*.1; for (let y=0;y<TS;y++) P(x,y,shade([72,72,78],k*(.9+r()*.16))); } });
+  tile("basalt_top", () => rings([90,90,96],[60,60,66]));
+  tile("red_sand", () => { noise([190,102,52],.14); dots("#a85a2a",12); });
+  tile("moss_block", () => { noise([88,128,48],.25); dots("#a8d070",10); });
+  tile("mud", () => { noise([62,54,50],.15); dots("#4a3e38",10); });
+  tile("tulip_red", () => tulip([214,40,40])); tile("tulip_orange", () => tulip([240,130,40])); tile("tulip_white", () => tulip([240,240,236])); tile("tulip_pink", () => tulip([240,160,190]));
+  tile("orchid", () => flower([60,170,230], "#d8f0ff"));
+  tile("allium", () => { for (let y=7;y<16;y++) P(7,y,"#3f7a2c"); for (let y=1;y<7;y++) for (let x=4;x<11;x++) if (Math.hypot(x-7,y-3.8) < 3.2 && r() > .15) P(x,y, shade([170,90,210],.85+r()*.3)); });
+  tile("daisy", () => flower([244,244,240], "#f0c830"));
+  tile("lily", () => { for (let y=6;y<16;y++) P(7,y,"#3f7a2c"); P(5,10,"#4f9a3a"); P(6,11,"#4f9a3a"); for (const [x,y] of [[8,6],[9,8],[8,10],[9,12]]) { P(x,y,"#ffffff"); P(x+1,y,"#e8e8e0"); P(x,y+1,"#f4f4ec"); } });
+  tile("sunflower", () => { for (let y=8;y<16;y++){ P(7,y,"#3f7a2c"); P(8,y,"#4f9a3a"); } for (let y=0;y<9;y++) for (let x=2;x<14;x++){ const d=Math.hypot(x-7.5,y-4); if (d<4.3) P(x,y, d<2.2 ? shade([110,70,30],.9+r()*.2) : shade([250,206,40],.9+r()*.2)); } });
+  tile("berry_bush", () => { for (let y=4;y<16;y++) for (let x=1;x<15;x++){ const d=Math.hypot(x-7.5,(y-10)*1.2); if (d<7 && r()>.2) P(x,y, r()<.12 ? "#d02a3a" : shade([50,100,50],.8+r()*.35)); } });
+  for (let st=0; st<4; st++) { tile("carrot_" + st, () => cropT(st,[70,160,50],[240,140,40])); tile("potato_" + st, () => cropT(st,[80,150,60],[214,180,110])); tile("beet_" + st, () => cropT(st,[70,140,60],[160,30,60])); }
   tile("candle", () => { for (let y=6;y<16;y++) for (let x=6;x<10;x++) P(x,y, shade([236,226,200], x===6 ? .85 : 1)); P(8,5,"#2a2a2a"); P(8,4,"#ffd36a"); P(8,3,"#ffb33a"); P(7,4,"#ffb33a"); });
   tile("fence_icon", () => { for (let y=2;y<16;y++){ P(3,y,"#8a6336"); P(4,y,"#a87a46"); P(11,y,"#8a6336"); P(12,y,"#a87a46"); } for (const y of [5,6,10,11]) for (let x=5;x<11;x++) P(x,y,"#9a6e3e"); });
 })();
@@ -682,8 +777,23 @@ defItem("bottle",      { name:"Glasflasche", art:"bottle", stack:16 });
 defItem("potion_heal", { name:"Heiltrank", art:"potion_heal", stack:8, potion:"heal", desc:"Heilt 8 Lebenspunkte." });
 defItem("potion_mana", { name:"Manatrank", art:"potion_mana", stack:8, potion:"mana", desc:"Füllt dein Mana auf." });
 defItem("stew",        { name:"Pilzsuppe", art:"stew", stack:1, food:7 });
-defItem("meat_raw",    { name:"Rohes Fleisch", art:"meat_raw", food:2 });
-defItem("meat_cooked", { name:"Gebratenes Fleisch", art:"meat_cooked", food:8 });
+defItem("meat_raw",    { name:"Rohes Rindfleisch", art:"meat_raw", food:2 });
+defItem("meat_cooked", { name:"Steak", art:"meat_cooked", food:8 });
+const FOODS = [["pork_raw","Rohes Schweinefleisch",[228,140,140],3],["pork_cooked","Gebratenes Schweinefleisch",[196,120,70],8],["mutton_raw","Rohes Hammelfleisch",[214,92,92],2],["mutton_cooked","Gebratenes Hammelfleisch",[150,84,52],6],
+  ["chicken_raw","Rohes Hühnchen",[240,190,170],2],["chicken_cooked","Gebratenes Hühnchen",[214,150,80],6],["rabbit_raw","Rohes Kaninchen",[230,160,150],3],["rabbit_cooked","Gebratenes Kaninchen",[180,110,60],5],
+  ["carrot","Karotte",[240,140,40],3],["potato","Kartoffel",[214,180,110],1],["baked_potato","Ofenkartoffel",[200,150,70],5],["beetroot","Rote Bete",[160,30,60],1],["sweet_berries","Süßbeeren",[200,40,60],2],
+  ["cookie","Keks",[170,110,60],2],["cake","Kuchen",[244,236,220],14],["golden_apple","Goldener Apfel",[250,210,70],4],["golden_carrot","Goldene Karotte",[250,200,60],6],["beet_soup","Rote-Bete-Suppe",[180,40,60],6]];
+for (const [k, nm, col, f] of FOODS) defItem(k, { name:nm, art:{ food:col }, food:f, stack: k === "beet_soup" || k === "cake" ? 1 : 64 });
+ITEMS.carrot.plant = "carrot_0"; ITEMS.potato.plant = "potato_0";
+ITEMS.golden_apple.eatEffect = { regen:10 }; ITEMS.golden_carrot.eatEffect = { night:30 }; ITEMS.beet_soup.returns = "bowl";
+defItem("beetroot_seeds", { name:"Rote-Bete-Samen", art:"seeds", plant:"beet_0", desc:"Auf Ackerboden pflanzen." });
+defItem("bowl",        { name:"Schüssel", art:"bowl" });
+defItem("cocoa",       { name:"Kakaobohnen", art:{ food:[110,64,36] } });
+defItem("rabbit_hide", { name:"Kaninchenfell", art:"leather" });
+defItem("clock",       { name:"Uhr", art:"clock", stack:1, desc:"Rechtsklick zeigt die Uhrzeit." });
+const DISCS = [["Morgenlied",[0,2,4,5,7,5,4,2,0,4,7,12,7,4,0,-5],[220,80,60]],["Höhlenecho",[0,-2,-5,-7,-5,-2,0,3,0,-2,-5,-9,-7,-5,-2,0],[60,120,200]],
+  ["Sternenwalzer",[0,4,7,4,0,4,7,12,11,7,4,7,5,2,-1,2],[180,90,200]],["Dorfmarsch",[0,0,7,7,9,9,7,-1,5,5,4,4,2,2,0,-1],[90,170,80]]];
+DISCS.forEach(([nm, tune, col], i) => defItem("disc_" + (i+1), { name:"Schallplatte: " + nm, art:{ disc:col }, stack:1, tune, desc:"In die Musikbox legen: Rechtsklick mit der Platte in der Hand." }));
 defItem("apple",       { name:"Apfel", art:"apple", food:4 });
 defItem("wand_fire",   { name:"Feuerstab", art:"wand_fire", stack:1, dur:250, wand:"fire", desc:"Schießt Feuerbälle. Kostet 4 Mana." });
 defItem("wand_bolt",   { name:"Blitzstab", art:"wand_bolt", stack:1, dur:200, wand:"bolt", desc:"Ein Blitz trifft sofort. Kostet 9 Mana." });
@@ -730,7 +840,7 @@ defItem("totem",       { name:"Totem der Rettung", art:"totem", stack:1, desc:"R
 const EFFECTS = { speed:"Schnelligkeit", jump:"Sprungkraft", night:"Nachtsicht", strength:"Stärke", fireres:"Feuerschutz", regen:"Heilung" };
 for (const [k, col] of [["speed",[120,200,240]],["jump",[120,230,120]],["night",[60,60,200]],["strength",[200,60,40]],["fireres",[240,150,40]]])
   defItem("potion_" + k, { name: "Trank: " + EFFECTS[k], art:{ potion:col }, stack:8, potion:"effect", effect:k, desc: EFFECTS[k] + " für 90 Sekunden." });
-const EGG_COLORS = { schaf:[[233,228,214],[74,64,56]], kuh:[[107,74,51],[239,233,221]], huhn:[[244,242,234],[208,48,48]], schlurfer:[[111,138,90],[91,70,50]], gerippe:[[220,216,200],[60,60,60]], spinne:[[44,38,34],[255,48,48]], glutling:[[255,138,32],[58,22,10]], siedler:[[124,138,58],[216,194,122]] };
+const EGG_COLORS = { schwein:[[240,160,170],[200,110,120]], kaninchen:[[150,110,70],[220,200,170]], fuchs:[[226,120,40],[240,236,226]], schaf:[[233,228,214],[74,64,56]], kuh:[[107,74,51],[239,233,221]], huhn:[[244,242,234],[208,48,48]], schlurfer:[[111,138,90],[91,70,50]], gerippe:[[220,216,200],[60,60,60]], spinne:[[44,38,34],[255,48,48]], glutling:[[255,138,32],[58,22,10]], siedler:[[124,138,58],[216,194,122]] };
 defItem("copper",      { name:"Kupferbarren", art:"copper" });
 defItem("lazur",       { name:"Lazurstein", art:"lazur", desc:"Blauer Stein. Wird zum Verzaubern gebraucht." });
 defItem("mondstein",   { name:"Mondstein", art:"mondstein", desc:"Der härteste Stein der Welt, ganz tief unten." });
@@ -762,7 +872,7 @@ const TOOLTYPES = [
 ];
 const RECIPES = [];
 const R = (out, n, ins, st) => RECIPES.push({ out, n, ins, st: st || null });
-for (const t in EGG_COLORS) defItem("egg_" + t, { name: "Spawn-Ei (" + ({ schaf:"Schaf", kuh:"Kuh", huhn:"Huhn", schlurfer:"Schlurfer", gerippe:"Gerippe", spinne:"Höhlenspinne", glutling:"Glutling", siedler:"Siedler" })[t] + ")", art:{ egg:EGG_COLORS[t] }, spawn:t, desc:"Rechtsklick auf den Boden lässt das Wesen erscheinen." });
+for (const t in EGG_COLORS) defItem("egg_" + t, { name: "Spawn-Ei (" + ({ schaf:"Schaf", kuh:"Kuh", huhn:"Huhn", schlurfer:"Schlurfer", gerippe:"Gerippe", spinne:"Höhlenspinne", glutling:"Glutling", siedler:"Siedler", schwein:"Schwein", kaninchen:"Kaninchen", fuchs:"Fuchs" })[t] + ")", art:{ egg:EGG_COLORS[t] }, spawn:t, desc:"Rechtsklick auf den Boden lässt das Wesen erscheinen." });
 MATS.forEach(([m, mname, mat, tier, speed, dur, col], mi) => {
   TOOLTYPES.forEach(([t, tname, mc, sc, dmgs]) => {
     const key = t + "_" + m;
@@ -797,7 +907,7 @@ R("bread", 1, [["wheat",3]]);
 R("pumpkin_pie", 1, [["pumpkin",1],["wheat",1],["apple",1]]);
 R("jack", 1, [["pumpkin",1],["torch",1]]);
 R("melon", 1, [["melon_slice",9]], "table");
-GROUPS["#wool"] = ["wool","wool_red","wool_yellow","wool_blue","wool_green","wool_black","wool_purple","wool_orange"];
+GROUPS["#wool"] = COLORS.map(([c]) => woolKey(c));
 GROUP_NAMES["#wool"] = "Wolle (beliebig)";
 for (const [blk, it] of [["iron_block","iron"],["gold_block","gold"],["copper_block","copper"],["rubin_block","rubin"],["lazur_block","lazur"],["mond_block","mondstein"]]) { R(blk, 1, [[it,9]], "table"); R(it, 9, [[blk,1]]); }
 R("lamp", 2, [["arkan",1],["glass",4]], "table");
@@ -820,7 +930,50 @@ for (const [c] of COLORS) {
   R("carpet_" + c, 3, [[woolKey(c),2]]);
 }
 for (const [base] of SHAPED) { R("slab_" + base, 6, [[base,3]], "table"); R("stairs_" + base, 4, [[base,6]], "table"); }
-for (const w of ["oak","birch","spruce","cherry"]) R("fence_" + w, 3, [[w + "_planks",4],["stick",2]], "table");
+for (const [w] of WOODS) R("fence_" + w, 3, [[w + "_planks",4],["stick",2]], "table");
+for (const [w] of WOODS.slice(4)) R(w + "_planks", 4, [[w + "_log",1]]);
+for (const [base] of WALLS) R("wall_" + base, 6, [[base,6]], "table");
+R("polished_andesite", 4, [["andesite",4]], "table");
+R("polished_diorite", 4, [["diorite",4]], "table");
+R("smooth_stone", 1, [["stone",1]], "furnace");
+R("cut_sandstone", 4, [["sandstone",4]], "table");
+R("red_sandstone", 1, [["red_sand",4]]);
+R("mossy_stone_bricks", 1, [["stone_bricks",1],["oak_leaves",1]]);
+R("cracked_stone_bricks", 1, [["stone_bricks",1]], "furnace");
+R("chiseled_stone_bricks", 1, [["slab_stone_bricks",2]], "table");
+R("slate_bricks", 4, [["polished_slate",4]], "table");
+R("slate_tiles", 4, [["slate_bricks",4]], "table");
+R("polished_slate", 4, [["slate",4]], "table");
+R("quartz_bricks", 4, [["quartz_block",4]], "table");
+R("packed_ice", 1, [["ice",9]], "table");
+R("mud", 1, [["dirt",1],["bucket_water",1]]);
+R("mud_bricks", 4, [["mud",4]], "table");
+R("moss_block", 1, [["dirt",1],["oak_leaves",3]]);
+R("dye_light_blue", 2, [["dye_blue",1],["dye_white",1]]);
+R("dye_cyan", 2, [["dye_blue",1],["dye_green",1]]);
+R("dye_pink", 2, [["dye_red",1],["dye_white",1]]);
+R("dye_magenta", 2, [["dye_purple",1],["dye_pink",1]]);
+R("dye_lime", 2, [["dye_green",1],["dye_white",1]]);
+R("dye_gray", 2, [["dye_black",1],["dye_white",1]]);
+R("dye_light_gray", 2, [["dye_gray",1],["dye_white",1]]);
+R("dye_brown", 1, [["cocoa",1]]);
+R("dye_red", 2, [["tulip_red",1]]);
+R("dye_orange", 2, [["tulip_orange",1]]);
+R("dye_white", 2, [["tulip_white",1]]);
+R("dye_pink", 2, [["tulip_pink",1]]);
+R("dye_light_blue", 2, [["orchid",1]]);
+R("dye_magenta", 2, [["allium",1]]);
+R("dye_light_gray", 2, [["daisy",1]]);
+R("dye_white", 2, [["lily",1]]);
+R("dye_yellow", 2, [["sunflower",1]]);
+R("bowl", 4, [["#planks",3]]);
+R("beet_soup", 1, [["beetroot",6],["bowl",1]], "table");
+R("cookie", 8, [["wheat",2],["cocoa",1]]);
+R("cake", 1, [["wheat",3],["sugar",2],["chicken_egg",1]], "table");
+R("golden_apple", 1, [["apple",1],["gold",8]], "table");
+R("golden_carrot", 1, [["carrot",1],["gold_nugget",8]], "table");
+R("leather", 1, [["rabbit_hide",4]]);
+R("clock", 1, [["gold",4],["lazur",1]], "table");
 R("pane", 16, [["glass",6]], "table");
 R("ladder", 3, [["stick",7]], "table");
 R("door", 1, [["#planks",6]], "table");
@@ -887,6 +1040,8 @@ R("iron", 1, [["iron_ore",1]], "furnace");
 R("gold", 1, [["gold_ore",1]], "furnace");
 R("copper", 1, [["copper_ore",1]], "furnace");
 R("meat_cooked", 1, [["meat_raw",1]], "furnace");
+for (const k of ["pork","mutton","chicken","rabbit"]) R(k + "_cooked", 1, [[k + "_raw",1]], "furnace");
+R("baked_potato", 1, [["potato",1]], "furnace");
 R("brick", 4, [["clay",1]], "furnace");
 R("terracotta", 1, [["clay",1]], "furnace");
 R("dye_green", 2, [["cactus",1]], "furnace");
@@ -896,7 +1051,7 @@ const OFFERS = {
   bauer:    { title:"Bauer", list:[ [[["meat_raw",5]],["rubin",1]], [[["wool",8]],["rubin",1]], [[["rubin",1]],["apple",6]], [[["rubin",1]],["meat_cooked",5]], [[["rubin",2]],["flower_red",4]] ] },
   schmied:  { title:"Schmied", list:[ [[["coal",12]],["rubin",1]], [[["iron",4]],["rubin",1]], [[["rubin",3]],["sword_iron",1]], [[["rubin",4]],["pick_iron",1]], [[["rubin",9]],["armor_iron",1]] ] },
   magier:   { title:"Magier", list:[ [[["bone",6]],["rubin",1]], [[["rubin",2]],["potion_heal",1]], [[["rubin",3]],["arkan",1]], [[["rubin",7]],["wand_fire",1]], [[["rubin",4],["arkan",2]],["wand_heal",1]] ] },
-  haendler: { title:"Händler", list:[ [[["emerald",1]],["rubin",3]], [[["string",6]],["rubin",1]], [[["rubin",1]],["torch",10]], [[["rubin",2]],["glass",16]], [[["rubin",1]],["arrow",12]], [[["rubin",3]],["bow",1]] ] },
+  haendler: { title:"Händler", list:[ [[["rubin",4]],["disc_1",1]], [[["rubin",4]],["disc_4",1]], [[["emerald",1]],["rubin",3]], [[["string",6]],["rubin",1]], [[["rubin",1]],["torch",10]], [[["rubin",2]],["glass",16]], [[["rubin",1]],["arrow",12]], [[["rubin",3]],["bow",1]] ] },
 };
 
 // Kleine Pixelbilder für Gegenstände
@@ -917,6 +1072,8 @@ function drawItemArt(art, g){
       if (pc === "feet") { for (let y=7;y<14;y++) for (let x=1;x<15;x++){ const gap = x>5 && x<10; const toe = y<10 && (x<3 || x>12); if (!gap && !toe) S2(x,y); } }
       return;
     }
+    if (art.food) { blob(8,9,5,art.food,.3); P(6,6,shade(art.food,1.4)); P(7,6,shade(art.food,1.3)); return; }
+    if (art.disc) { for (let y=1;y<16;y++) for (let x=1;x<16;x++){ const d=Math.hypot(x-8,y-8.5); if (d<7) P(x,y, d<2.2 ? shade(art.disc,1.1) : d<1 ? "#000" : (Math.floor(d)%2 ? "#26262a" : "#1a1a1e")); } P(8,8,"#0a0a0a"); return; }
     if (art.nugget) { blob(8,9,3.2,art.nugget,.3); P(7,8,shade(art.nugget,1.4)); return; }
     if (art.fish) { for (let y=5;y<12;y++) for (let x=2;x<12;x++){ const d=Math.hypot((x-7)/5,(y-8.5)/3.2); if (d<1) P(x,y, shade(art.fish, 1.15 - d*.35)); } for (let y=5;y<12;y++) if (Math.abs(y-8.5) <= (y<8.5?8.5-y:y-8.5)+.5) P(12+Math.floor(Math.abs(y-8.5)/2),y,shade(art.fish,.8)); P(4,7,"#1a1a1a"); return; }
     if (art.potion) { for (let y=2;y<5;y++){ P(7,y,"#cfe6ee"); P(8,y,"#cfe6ee"); } P(7,1,"#8a6a4a"); P(8,1,"#8a6a4a"); for (let y=5;y<15;y++) for (let x=3;x<13;x++){ const d=Math.hypot(x-7.5,y-9.5); if (d<5) P(x,y, d>4.2 ? "#d8eef4" : shade(art.potion, y<8 ? 1.2 : 1)); } P(5,8,"#ffffff"); return; }
@@ -962,6 +1119,8 @@ function drawItemArt(art, g){
     case "fishing_rod": line(2,14,13,3,"#7a5432"); line(13,3,13,12,"#e8e8e8"); P(13,12,"#c03030"); P(12,13,"#9ea0a6"); break;
     case "compass": for (let y=2;y<15;y++) for (let x=2;x<15;x++){ const d=Math.hypot(x-8,y-8.5); if (d<6.3) P(x,y, d>5.2 ? "#8a8a90" : "#e8e4d8"); } line(8,4,8,8,"#d03030"); line(8,9,8,13,"#3a3a40"); break;
     case "spyglass": line(3,13,12,4,"#b87a3a"); line(4,13,13,4,"#d8944a"); line(2,12,4,14,"#5a3a1c"); P(13,3,"#a8e0ff"); P(12,3,"#a8e0ff"); P(13,4,"#a8e0ff"); break;
+    case "bowl": for (let y=7;y<13;y++){ const w = 6 - (y-7)*.8; for (let x=Math.round(8-w);x<=Math.round(7+w);x++) P(x,y, y===7 ? "#5a3a1c" : shade([150,104,58], .9+hash2(x,y,2)*.2)); } break;
+    case "clock": for (let y=2;y<15;y++) for (let x=2;x<15;x++){ const d=Math.hypot(x-8,y-8.5); if (d<6.3) P(x,y, d>5.2 ? "#d8a838" : "#f4ecc8"); } line(8,4,8,9,"#2a2a2a"); line(8,9,11,9,"#2a2a2a"); break;
     case "totem": for (let y=2;y<15;y++) for (let x=4;x<12;x++){ const head = y<7; const body = y>=7 && (x>5 && x<10 || (y<10)); if (head || body) P(x,y, shade([230,190,60], .85 + hash2(x,y,3)*.3)); } P(6,4,"#2a8a4a"); P(9,4,"#2a8a4a"); P(2,8,"#e6be3c"); P(3,8,"#e6be3c"); P(12,8,"#e6be3c"); P(13,8,"#e6be3c"); break;
     case "shield": for (let y=1;y<15;y++) for (let x=2;x<14;x++){ const w = y < 10 ? 6 : 6 - (y-9); if (Math.abs(x-7.5) < w) P(x,y, (Math.abs(x-7.5) > w-1.5 || y < 2) ? "#8a8a90" : shade([150,104,58], .9 + hash2(x,y,5)*.2)); } line(7,3,7,12,"#6a4a2a"); break;
     case "bucket": case "bucket_water": case "bucket_lava": { for (let y=4;y<14;y++){ const w = 5 - (y-4)*.2; for (let x=Math.round(8-w);x<=Math.round(7+w);x++) P(x,y, (x===Math.round(8-w)||x===Math.round(7+w)||y===13) ? "#7a7a80" : "#b8b8c0"); }
@@ -1050,14 +1209,17 @@ function hAt(x,z){
 function treeAt(x,z){
   const roll = hash2(x,z,seed+7);
   if (roll > .056) return null;
+  const forest0 = noise2(x/30, z/30, seed+3);
   const biome = biomeAt(x,z); if (biome === 1) return null;
   const forest = noise2(x/30, z/30, seed+3);
   const chance = biome === 2 ? .006 : .004 + forest*forest*.05;
   if (roll > chance) return null;
   const h = hAt(x,z); if (h <= WATER_LEVEL+1 || h + 10 >= SY) return null;
   if (nearVillage(x,z,21)) return null;
-  const kind = biome === 2 ? "spruce" : noise2(x/45+300, z/45+300, seed+17) > .72 ? "cherry" : hash2(x,z,seed+8) < .3 ? "birch" : "oak";
-  return [h, (kind === "spruce" ? 6 : 4) + Math.floor(hash2(x,z,seed+9)*3), kind];
+  const temp = fbm(x/110+50, z/110+50, seed+11, 2);
+  const kind = biome === 2 ? "spruce" : temp > .55 ? "acacia" : noise2(x/45+300, z/45+300, seed+17) > .72 ? "cherry" : noise2(x/60+700, z/60+700, seed+18) > .7 ? "jungle"
+    : noise2(x/50+900, z/50+900, seed+19) > .68 ? "dark_oak" : hash2(x,z,seed+8) < .3 ? "birch" : "oak";
+  return [h, ({ spruce:6, jungle:8, dark_oak:5 })[kind] || 4 + Math.floor(hash2(x,z,seed+9)*3), kind];
 }
 
 // Dörfer: in jedem Gebiet höchstens eines, als Bauplan vorab berechnet
@@ -1160,7 +1322,7 @@ function planVillage(vx,vz){
 
 // Ein Stück erzeugen
 function genChunk(cx,cz){
-  const c = { cx, cz, b:new Uint8Array(CV), s:new Uint8Array(CV), l:new Uint8Array(CV), a:null, t:null, dirty:true, top:0 };
+  const c = { cx, cz, b:new Uint16Array(CV), s:new Uint8Array(CV), l:new Uint8Array(CV), a:null, t:null, dirty:true, top:0 };
   const x0 = cx*CH, z0 = cz*CH;
   const rnd = mulberry((hash2(cx,cz,seed)*4294967296)>>>0);
   const S = (lx,y,lz,b) => { c.b[li(lx,y,lz)] = b; };
@@ -1169,12 +1331,13 @@ function genChunk(cx,cz){
     const x = x0+lx, z = z0+lz, h = hAt(x,z), biome = biomeAt(x,z);
     hts[lz*16+lx] = h;
     const beach = h <= WATER_LEVEL+1;
+    const redS = biome === 1 && !beach && noise2(x/24, z/24, seed+50) > .62;
     for (let y=0; y<=h; y++) {
       let b;
       if (y === 0 || (y === 1 && rnd() < .5)) b = B.bedrock;
-      else if (y === h) b = (beach || biome === 1) ? B.sand : (biome === 2 || h > 52) ? B.snowgrass : B.grass;
-      else if (y > h-4) b = (beach || biome === 1) ? B.sand : B.dirt;
-      else if (y > h-8 && biome === 1) b = B.sandstone;
+      else if (y === h) b = (beach || biome === 1) ? (redS ? B.red_sand : B.sand) : (biome === 2 || h > 52) ? B.snowgrass : B.grass;
+      else if (y > h-4) b = (beach || biome === 1) ? (redS ? B.red_sand : B.sand) : B.dirt;
+      else if (y > h-8 && biome === 1) b = redS ? B.red_sandstone : B.sandstone;
       else b = y < 10 + ((hash3(x,y,z,seed+3) * 3) | 0) ? B.slate : B.stone;
       S(lx,y,lz,b);
     }
@@ -1212,6 +1375,11 @@ function genChunk(cx,cz){
   vein(B.lazur_ore, .55, 4, 32, 6);
   vein(B.mond_ore, .14, 2, 11, 3);
   vein(B.amethyst, .22, 5, 30, 9);
+  vein(B.andesite, .5, 6, 64, 26);
+  vein(B.diorite, .45, 6, 64, 26);
+  vein(B.tuff, .35, 2, 20, 22);
+  vein(B.calcite, .2, 20, 60, 14);
+  vein(B.basalt, .25, 2, 12, 18);
   vein(B.diamond_ore, .24, 2, 16, 4);
   vein(B.emerald_ore, .22, 28, 70, 2);
   vein(B.quartz_ore, .45, 5, 40, 6);
@@ -1223,38 +1391,19 @@ function genChunk(cx,cz){
   for (let z=z0-2; z<z0+18; z++) for (let x=x0-2; x<x0+18; x++) {
     const tr = treeAt(x,z); if (!tr) continue;
     const [h, th, kind] = tr;
-    const log = B[kind + "_log"], lv = B[kind + "_leaves"];
-    if (inC(x,z)) for (let y=1; y<=th; y++) S(x-x0,h+y,z-z0,log);
-    const tp = h+th;
-    if (kind === "spruce") {
-      for (let dy=-4; dy<=1; dy++) { const rad = dy >= 0 ? (dy === 1 ? 0 : 1) : (dy % 2 === 0 ? 2 : 1);
-        for (let dx=-rad; dx<=rad; dx++) for (let dz=-rad; dz<=rad; dz++) {
-          if (Math.abs(dx)+Math.abs(dz) > rad+1) continue;
-          const X=x+dx, Y=tp+dy, Z=z+dz; if (!inC(X,Z) || Y >= SY || Y <= h) continue;
-          if (c.b[li(X-x0,Y,Z-z0)] === 0) S(X-x0,Y,Z-z0,lv);
-        } }
-    } else {
-      const R = kind === "cherry" ? 3 : 2, lim = kind === "cherry" ? 9.5 : 5.5;
-      for (let dy=-2; dy<=2; dy++) for (let dx=-R; dx<=R; dx++) for (let dz=-R; dz<=R; dz++) {
-        const X=x+dx, Y=tp+dy+1, Z=z+dz;
-        if (!inC(X,Z) || Y >= SY) continue;
-        const rr = dx*dx + dz*dz + dy*dy*(kind === "cherry" ? 2.5 : 1.4);
-        if (rr > lim || (rr > lim-1.5 && hash3(X,Y,Z,seed+10) < .5)) continue;
-        if (c.b[li(X-x0,Y,Z-z0)] === 0) S(X-x0,Y,Z-z0,lv);
-      }
-    }
-    if (inC(x,z) && tp+1 < SY && c.b[li(x-x0,tp+1,z-z0)] === 0) S(x-x0,tp+1,z-z0,lv);
+    placeTree(x, h, z, th, kind, (X,Y,Z,b,leaf) => { if (!inC(X,Z) || Y >= SY || Y < 1) return; const i = li(X-x0,Y,Z-z0); if (!leaf || c.b[i] === 0) c.b[i] = b; });
   }
   // Pflanzen
   for (let lz=0; lz<16; lz++) for (let lx=0; lx<16; lx++) {
     const h = hts[lz*16+lx], x = x0+lx, z = z0+lz;
-    if (h+1 >= SY || c.b[li(lx,h,lz)] !== B.grass || c.b[li(lx,h+1,lz)] !== 0) continue;
+    if (h+1 >= SY || c.b[li(lx,h+1,lz)] !== 0) continue;
+    const topB = c.b[li(lx,h,lz)];
     const r0 = hash2(x,z,seed+13);
-    if (r0 > .12 || nearVillage(x,z,15)) continue;
+    if (topB === B.snowgrass) { if (r0 < .012 && !nearVillage(x,z,15)) S(lx,h+1,lz,B.berry_bush); continue; }
+    if (topB !== B.grass || r0 > .12 || nearVillage(x,z,15)) continue;
     if (r0 < .09) S(lx,h+1,lz,B.tall_grass);
-    else if (r0 < .1) S(lx,h+1,lz,B.flower_red);
-    else if (r0 < .11) S(lx,h+1,lz,B.flower_yellow);
-    else if (r0 < .116) S(lx,h+1,lz,B.flower_blue);
+    else if (r0 < .116) { const FL = ["flower_red","flower_yellow","flower_blue","tulip_red","tulip_orange","tulip_white","tulip_pink","orchid","allium","daisy","lily","sunflower"];
+      const patch = Math.floor(noise2(x/12, z/12, seed+20) * FL.length * 1.999) % FL.length; S(lx,h+1,lz,B[FL[patch]]); }
     else if (r0 < .119 && noise2(x/30,z/30,seed+3) > .55) S(lx,h+1,lz,B.mushroom);
   }
   // Kürbisse, Melonen, Kakteen, Zuckerrohr
@@ -1281,6 +1430,35 @@ function genChunk(cx,cz){
   for (let dz=-1; dz<=1; dz++) for (let dx=-1; dx<=1; dx++) { const n = chunkAt(cx+dx, cz+dz); if (n) n.dirty = true; }
   return c;
 }
+function placeTree(x, h, z, th, kind, put){
+  const log = B[kind + "_log"], lv = B[kind + "_leaves"];
+  for (let y=1; y<=th; y++) put(x, h+y, z, log, false);
+  const tp = h+th;
+  if (kind === "spruce") {
+    for (let dy=-4; dy<=1; dy++) { const rad = dy >= 0 ? (dy === 1 ? 0 : 1) : (dy % 2 === 0 ? 2 : 1);
+      for (let dx=-rad; dx<=rad; dx++) for (let dz=-rad; dz<=rad; dz++) { if (Math.abs(dx)+Math.abs(dz) > rad+1 || tp+dy <= h) continue; put(x+dx, tp+dy, z+dz, lv, true); } }
+  } else if (kind === "acacia") {
+    for (let dy=0; dy<=1; dy++) for (let dx=-3; dx<=3; dx++) for (let dz=-3; dz<=3; dz++) {
+      const rr = dx*dx + dz*dz; if (rr > (dy ? 3 : 9.5) || (rr > (dy ? 2 : 7.5) && hash3(x+dx, tp+dy, z+dz, seed+10) < .5)) continue;
+      put(x+dx, tp+dy, z+dz, lv, true);
+    }
+  } else {
+    const big = kind === "cherry" || kind === "jungle" || kind === "dark_oak";
+    const R = big ? 3 : 2, lim = kind === "dark_oak" ? 8 : big ? 9.5 : 5.5, f = kind === "cherry" || kind === "jungle" ? 2.5 : 1.4;
+    for (let dy=-2; dy<=2; dy++) for (let dx=-R; dx<=R; dx++) for (let dz=-R; dz<=R; dz++) {
+      const X=x+dx, Y=tp+dy+1, Z=z+dz, rr = dx*dx + dz*dz + dy*dy*f;
+      if (rr > lim || (rr > lim-1.5 && hash3(X,Y,Z,seed+10) < .5)) continue;
+      put(X, Y, Z, lv, true);
+    }
+  }
+  put(x, tp+1, z, lv, true);
+}
+function growTree(x, y, z, kind){
+  const th = ({ spruce:6, jungle:8, dark_oak:5 })[kind] || 5, list = [];
+  for (let k=1; k<=th+2; k++) { const b = get(x,y+k,z); if (b && !BD[b].see && !BD[b].cross) return false; }
+  placeTree(x, y-1, z, th, kind, (X,Y,Z,b,leaf) => { if (Y >= SY) return; const cur = get(X,Y,Z); if (!leaf || cur === 0 || BD[cur].cross) list.push([X,Y,Z,b]); });
+  setBlocks(list); return true;
+}
 function ensureArea(x,z,r){
   const pcx = Math.floor(x)>>4, pcz = Math.floor(z)>>4;
   for (let dz=-r; dz<=r; dz++) for (let dx=-r; dx<=r; dx++) if (!chunkAt(pcx+dx,pcz+dz)) genChunk(pcx+dx,pcz+dz);
@@ -1292,7 +1470,7 @@ function ensureArea(x,z,r){
 const LQS = 1<<21, LQM = LQS-1, LQ = new Int32Array(LQS);
 function relightRegion(x0,x1,z0,z1){
   const W = x1-x0+3, D = z1-z0+3, LAY = W*D, N = LAY*SY;
-  const lb = new Uint8Array(N), ls = new Uint8Array(N), ll = new Uint8Array(N);
+  const lb = new Uint16Array(N), ls = new Uint8Array(N), ll = new Uint8Array(N);
   for (let lz=0; lz<D; lz++) for (let lx=0; lx<W; lx++) {
     const x = x0-1+lx, z = z0-1+lz, c = chunkAt(x>>4, z>>4);
     let i = lz*W+lx;
@@ -1543,7 +1721,7 @@ function setBlock(x,y,z,b){
   const bb = relightRegion(x-15, x+15, z-15, z+15);
   if (bb) for (let qz=(bb[2]-1)>>4; qz<=(bb[3]+1)>>4; qz++) for (let qx=(bb[0]-1)>>4; qx<=(bb[1]+1)>>4; qx++) add(qx,qz);
   for (const t of touched) buildChunk(t);
-  const ck = x+","+y+","+z; if (BD[b].crop && BD[b].crop < 4) crops.add(ck); else crops.delete(ck);
+  const ck = x+","+y+","+z; if ((BD[b].crop && BD[b].crop < 4) || BD[b].sapling) crops.add(ck); else crops.delete(ck);
   // Pflanzen und Fackeln fallen ab, wenn ihr Untergrund verschwindet
   if (!SOLID[b] && y+1 < SY) {
     const above = get(x,y+1,z);
@@ -1801,15 +1979,22 @@ function humanoid(k, o){
 }
 const SKINS = [0xe2b896, 0xc68c62, 0x8d5a3b, 0xf0d0b2, 0xa86f48];
 const ETYPES = {
-  schaf:    { name:"Schaf", w:.9, h:1.25, hp:8, speed:1.4, kind:"animal", drops:[["wool",1,2],["meat_raw",1,1]],
+  schaf:    { name:"Schaf", w:.9, h:1.25, hp:8, speed:1.4, kind:"animal", drops:[["wool",1,2],["mutton_raw",1,2]],
     build(k){ k.box(k.root,.8,.62,1.0,0xe9e4d6,0,.8,0); const head=k.pivot(k.root,0,.95,.5); k.box(head,.38,.38,.36,0x4a4038,0,0,.16); k.box(head,.42,.14,.3,0xe9e4d6,0,.2,.1); k.box(head,.06,.06,.02,0x111111,-.1,.05,.345); k.box(head,.06,.06,.02,0x111111,.1,.05,.345); return { legs: quadLegs(k,0x4a4038,.5,.5,.24,.3,.17), head }; } },
   kuh:      { name:"Kuh", w:.9, h:1.4, hp:10, speed:1.3, kind:"animal", drops:[["meat_raw",1,3],["leather",0,2]],
     build(k){ k.box(k.root,.86,.7,1.25,0x6b4a33,0,.95,0); k.box(k.root,.88,.32,.42,0xefe9dd,0,1.0,.12); const head=k.pivot(k.root,0,1.15,.72); k.box(head,.48,.46,.4,0x6b4a33,0,0,0); k.box(head,.36,.2,.1,0xe5b8a8,0,-.1,.24); k.box(head,.08,.16,.08,0xd8d0b8,-.28,.24,0); k.box(head,.08,.16,.08,0xd8d0b8,.28,.24,0); k.box(head,.06,.06,.02,0x111111,-.12,.08,.205); k.box(head,.06,.06,.02,0x111111,.12,.08,.205); return { legs: quadLegs(k,0x4a3220,.6,.6,.26,.4,.2), head }; } },
-  huhn:     { name:"Huhn", w:.5, h:.75, hp:4, speed:1.5, kind:"animal", drops:[["feather",0,2],["meat_raw",1,1],["chicken_egg",0,1]],
+  huhn:     { name:"Huhn", w:.5, h:.75, hp:4, speed:1.5, kind:"animal", drops:[["feather",0,2],["chicken_raw",1,1],["chicken_egg",0,1]],
     build(k){ k.box(k.root,.38,.38,.5,0xf4f2ea,0,.45,0); k.box(k.root,.06,.26,.32,0xe0ddd2,-.22,.48,0); k.box(k.root,.06,.26,.32,0xe0ddd2,.22,.48,0); const head=k.pivot(k.root,0,.72,.24); k.box(head,.24,.3,.22,0xf4f2ea,0,0,0); k.box(head,.1,.06,.12,0xe8b030,0,-.02,.16); k.box(head,.08,.1,.12,0xd03030,0,.18,.02); const legs=[k.pivot(k.root,-.08,.26,0),k.pivot(k.root,.08,.26,0)]; legs.forEach(l=>k.box(l,.05,.26,.05,0xe8b030,0,-.13,0)); return { legs, head }; } },
+  schwein:  { name:"Schwein", w:.85, h:.95, hp:10, speed:1.3, kind:"animal", drops:[["pork_raw",1,3]],
+    build(k){ k.box(k.root,.78,.6,1.0,0xf0a0aa,0,.65,0); const head=k.pivot(k.root,0,.75,.58); k.box(head,.5,.46,.42,0xf0a0aa,0,0,0); k.box(head,.26,.16,.06,0xd87888,0,-.06,.24); k.box(head,.06,.06,.02,0x111111,-.13,.1,.215); k.box(head,.06,.06,.02,0x111111,.13,.1,.215); return { legs: quadLegs(k,0xe08c98,.35,.35,.24,.34,.2), head }; } },
+  kaninchen:{ name:"Kaninchen", w:.4, h:.55, hp:3, speed:2.4, kind:"animal", hop:true, drops:[["rabbit_raw",0,1],["rabbit_hide",0,1]],
+    build(k){ k.box(k.root,.3,.28,.44,0x96704a,0,.24,0); const head=k.pivot(k.root,0,.42,.2); k.box(head,.24,.22,.24,0x96704a,0,0,0); k.box(head,.06,.22,.04,0x96704a,-.06,.2,-.04); k.box(head,.06,.22,.04,0x96704a,.06,.2,-.04); k.box(head,.04,.04,.02,0x111111,-.07,.03,.125); k.box(head,.04,.04,.02,0x111111,.07,.03,.125); k.box(k.root,.12,.12,.08,0xf0ece4,0,.3,-.25); return { legs: quadLegs(k,0x86603e,.12,.12,.1,.14,.08), head }; } },
+  fuchs:    { name:"Fuchs", w:.6, h:.7, hp:8, speed:2.0, kind:"animal", drops:[["sweet_berries",0,1]],
+    build(k){ k.box(k.root,.42,.38,.78,0xe2782a,0,.45,0); const head=k.pivot(k.root,0,.56,.46); k.box(head,.38,.32,.32,0xe2782a,0,0,0); k.box(head,.18,.12,.14,0xf0ece2,0,-.06,.2); k.box(head,.08,.1,.04,0xe2782a,-.12,.2,0); k.box(head,.08,.1,.04,0xe2782a,.12,.2,0); k.box(head,.05,.05,.02,0x111111,-.09,.05,.165); k.box(head,.05,.05,.02,0x111111,.09,.05,.165);
+      k.box(k.root,.18,.18,.48,0xe2782a,0,.48,-.6); k.box(k.root,.19,.19,.12,0xf0ece2,0,.48,-.82); return { legs: quadLegs(k,0x3a2a22,.28,.28,.13,.26,.12), head }; } },
   schlurfer:{ name:"Schlurfer", by:"Ein Schlurfer hat dich erwischt.", w:.6, h:1.9, hp:20, speed:2.2, kind:"monster", dmg:3, burns:true, drops:[["bone",0,2],["rubin",0,1,.1]],
     build(k){ const p = humanoid(k,{ skin:0x6f8a5a, shirt:0x5b4632, pants:0x34384a, eye:0xf2d24a, eyeGlow:true }); k.box(p.head,.5,.1,.5,0x4d6a3a,0,.5,0); p.armsForward = true; return p; } },
-  gerippe:  { name:"Gerippe", w:.6, h:1.9, hp:18, speed:2.0, kind:"monster", ranged:"arrow", burns:true, drops:[["bone",1,2],["arrow",0,3]],
+  gerippe:  { name:"Gerippe", w:.6, h:1.9, hp:18, speed:2.0, kind:"monster", ranged:"arrow", burns:true, drops:[["bone",1,2],["arrow",0,3],["disc_2",0,1,.05],["disc_3",0,1,.05]],
     build(k){ const p = humanoid(k,{ skin:0xdcd8c8, shirt:0xc9c4b2, pants:0xb8b3a0, arm:0xd6d2c0, bodyW:.4, eye:0x1a1a1a }); for (const y of [.95,1.1,1.25]) k.box(k.root,.42,.04,.3,0x5a564c,0,y,0); k.box(p.arms[0],.05,.75,.05,0x6b4a28,0,-.55,.14); return p; } },
   spinne:   { name:"Höhlenspinne", by:"Eine Höhlenspinne hat dich erwischt.", w:1.2, h:.8, hp:14, speed:3.3, kind:"monster", dmg:2, climb:true, drops:[["string",1,2],["slimeball",0,1]],
     build(k){ k.box(k.root,.85,.6,.9,0x2c2622,0,.5,-.35); const head=k.pivot(k.root,0,.45,.35); k.box(head,.55,.45,.5,0x3a322c,0,0,0); for (const [x,y] of [[-.12,.08],[.12,.08],[-.18,-.04],[.18,-.04]]) k.box(head,.07,.07,.02,0xff3030,x,y,.255,true);
@@ -1905,6 +2090,7 @@ function updateEnt(e, dt){
   const hw = T.w/2;
   const okX = moveBody(e, "x", e.vx*dt, hw, T.h), okZ = moveBody(e, "z", e.vz*dt, hw, T.h);
   moveBody(e, "y", e.vy*dt, hw, T.h);
+  if (T.hop && e.onGround && Math.hypot(e.vx, e.vz) > .4) e.vy = 4.2;
   if (!T.fly && (!okX || !okZ)) { if (e.onGround) e.vy = 7.6; else if (T.climb) e.vy = 3.5; }
   // Lava, Sonne
   if (blockAtFeet(e, .2) === B.lava) { e.burnT += dt; if (e.burnT > .5) { e.burnT = 0; hurtEnt(e, 3, e.x, e.z, 0, false); } }
@@ -1952,7 +2138,7 @@ function spawnTick(){
     }
   }
   if (anis < 10 && Math.random() < .35 && top+1 < SY && get(x,top,z) === B.grass && getSky(x,top+1,z) === 15 && canStand(x+.5, top+1, z+.5, .45, 1.4)) {
-    spawnEnt(["schaf","kuh","huhn"][Math.random()*3|0], x+.5, top+1, z+.5);
+    spawnEnt(["schaf","kuh","huhn","schwein","kaninchen","fuchs"][Math.random()*6|0], x+.5, top+1, z+.5);
   }
 }
 function resetEntities(){
@@ -2138,11 +2324,13 @@ function tone(freq, dur, type, vol){
 // Eine eigene kleine Melodie für die Musikbox
 const TUNE = [0,4,7,12,11,7,4,2, 0,4,7,9,7,4,2,-1, 0,2,4,7,9,12,9,7, 5,4,2,4,0,0,-5,0];
 let music = null;
-function toggleMusic(){
-  if (music) { clearInterval(music); music = null; toast("Musik aus"); return; }
-  let i = 0;
-  music = setInterval(() => { const n = TUNE[i++ % TUNE.length]; tone(262*Math.pow(2, n/12), .3, "square", .035); if (i % 4 === 1) tone(131*Math.pow(2, TUNE[(i-1) % TUNE.length]/12 - 1), .5, "triangle", .04); }, 260);
-  toast("Musik an");
+let musicName = null;
+function toggleMusic(disc){
+  const name = disc ? disc.name : "Musikbox";
+  if (music) { clearInterval(music); music = null; if (!disc || musicName === name) { musicName = null; toast("Musik aus"); return; } }
+  const tune = disc ? disc.tune : TUNE; let i = 0; musicName = name;
+  music = setInterval(() => { const n = tune[i++ % tune.length]; tone(262*Math.pow(2, n/12), .3, "square", .035); if (i % 4 === 1) tone(131*Math.pow(2, tune[(i-1) % tune.length]/12 - 1), .5, "triangle", .04); }, 260);
+  toast(`Es spielt: ${name.replace("Schallplatte: ", "")}`);
 }
 const REPAIR = { wood:"#planks", stone:"cobble", copper:"copper", iron:"iron", gold:"gold", diamond:"diamond", arkan:"arkan", mond:"mondstein", leather:"leather" };
 function repairMaterial(id){
@@ -2185,7 +2373,7 @@ function updateFishing(dt){
   fishing.t -= dt;
   if (fishing.t <= 0) {
     const r = Math.random();
-    const catchList = r < .7 ? ["fish_raw",1] : r < .82 ? ["leather",1] : r < .9 ? ["lazur",3] : r < .95 ? ["emerald",1] : r < .98 ? ["book",1] : ["rubin",2];
+    const catchList = r < .7 ? ["fish_raw",1] : r < .8 ? ["leather",1] : r < .87 ? ["lazur",3] : r < .92 ? ["emerald",1] : r < .95 ? ["book",1] : r < .97 ? ["disc_" + (1 + (Math.random()*4|0)),1] : ["rubin",2];
     addItem(catchList[0], catchList[1]); addXp(1); wearHeld(); sfx("pick");
     scene.remove(fishing.mesh); fishing = null;
   }
@@ -2263,10 +2451,11 @@ function useAction(sneak){
     if (h.b === B.tnt && s0 && s0.id === "lighter") { igniteTnt(h.x,h.y,h.z,3); wearHeld(); useCD = .3; return; }
     if (h.b === B.chest || h.b === B.barrel) return openChest(h.x,h.y,h.z);
     if (h.b === B.note_block) { const k = h.x+","+h.y+","+h.z; const n = ((notes.get(k) ?? -1) + 1) % 25; notes.set(k, n); tone(220*Math.pow(2, n/12), .5, "triangle", .08); toast(`Note ${n+1} von 25`); useCD = .15; return; }
-    if (h.b === B.jukebox) { toggleMusic(); useCD = .3; return; }
+    if (h.b === B.jukebox) { toggleMusic(s0 && ITEMS[s0.id].tune ? ITEMS[s0.id] : null); useCD = .3; return; }
     if (h.b === B.anvil) { repairHeld(); useCD = .3; return; }
     if (h.b === B.grindstone) { grindHeld(); useCD = .3; return; }
-    if (h.b === B.campfire && s0 && ["meat_raw","fish_raw"].includes(s0.id)) { const out = s0.id === "meat_raw" ? "meat_cooked" : "fish_cooked"; consumeHeld(); addItem(out, 1); sfx("eat"); useCD = .4; return; }
+    const COOK = { meat_raw:"meat_cooked", fish_raw:"fish_cooked", pork_raw:"pork_cooked", mutton_raw:"mutton_cooked", chicken_raw:"chicken_cooked", rabbit_raw:"rabbit_cooked", potato:"baked_potato" };
+    if (h.b === B.campfire && s0 && COOK[s0.id]) { const out = COOK[s0.id]; consumeHeld(); addItem(out, 1); sfx("eat"); useCD = .4; return; }
     if (h.b === B.ench_table) return openEnch(true);
     if (h.b === B.bed) { useCD = .4; return sleepIn(h); }
   }
@@ -2294,6 +2483,7 @@ function useAction(sneak){
   if (s.id === "fishing_rod") { castRod(); return; }
   if (s.id === "spyglass") { player.zoom = !player.zoom; useCD = .2; return; }
   if (s.id === "compass") { toast(compassText()); useCD = .3; return; }
+  if (s.id === "clock") { const tod = (dayTime + .25) % 1; toast(`Es ist ${String(Math.floor(tod*24)).padStart(2,"0")}:${String(Math.floor((tod*24 % 1)*60)).padStart(2,"0")} Uhr`); useCD = .3; return; }
   if (it.potion === "effect") {
     player.effects[it.effect] = 90; consumeHeld(); if (mode === "survival") addItem("bottle", 1, true);
     sfx("magic"); toast(`${EFFECTS[it.effect]} für 90 Sekunden`); useCD = .3; return;
@@ -2322,6 +2512,8 @@ function useAction(sneak){
   if (it.food) {
     if (player.food >= 20 && mode === "survival") { toast("Du bist satt"); return; }
     player.food = Math.min(20, player.food + it.food); consumeHeld(); sfx("eat"); toast(`${it.name} gegessen`);
+    if (it.eatEffect) for (const k in it.eatEffect) player.effects[k] = Math.max(player.effects[k] || 0, it.eatEffect[k]);
+    if (it.returns && mode === "survival") addItem(it.returns, 1, true);
     if (s.id === "stew" && mode === "survival") addItem("bottle", 1, true);
     useCD = .3; return;
   }
@@ -2351,6 +2543,7 @@ function useAction(sneak){
     if (h.py < 1 || h.py >= SY) return;
     const below = get(h.px,h.py-1,h.pz);
     if (b === B.sugarcane) { if (![B.grass,B.dirt,B.sand,B.sugarcane].includes(below)) { toast("Zuckerrohr wächst nur auf Erde oder Sand"); return; } }
+    else if (d.sapling && ![B.grass,B.dirt,B.snowgrass,B.farmland,B.moss_block].includes(below)) { toast("Setzlinge wachsen nur auf Erde oder Gras"); return; }
     else if (d.cross && !SOLID[below]) { toast("Das braucht festen Boden darunter"); return; }
     if (d.solid) {
       const hit = (ex,ey,ez,hw,hh) => Math.max(h.px, ex-hw) < Math.min(h.px+1, ex+hw) && Math.max(h.py, ey) < Math.min(h.py+1, ey+hh) && Math.max(h.pz, ez-hw) < Math.min(h.pz+1, ez+hw);
@@ -2474,7 +2667,7 @@ function drawFigure(cv){
   if ((c = col("feet"))) { P(5,28,5,4,c); P(10,28,5,4,c); }
   if (player.gear.shield) { P(16,10,4,9,"#8a8a90"); P(17,11,2,7,"#966838"); }
 }
-const catOf = id => { const it = ITEMS[id]; if (it.tool || it.slot || it.ranged || it.wand || it.thrown || ["arrow","fishing_rod","compass","spyglass","totem","lighter"].includes(id) || id.startsWith("potion")) return "gear"; if (it.block !== undefined) return NATURE.has(BD[it.block].key) ? "nature" : "build"; return "items"; };
+const catOf = id => { const it = ITEMS[id]; if (it.tune) return "items"; if (it.tool || it.slot || it.ranged || it.wand || it.thrown || ["arrow","fishing_rod","compass","spyglass","totem","lighter"].includes(id) || id.startsWith("potion")) return "gear"; if (it.block !== undefined) return NATURE.has(BD[it.block].key) ? "nature" : "build"; return "items"; };
 function openUI(which){
   uiOpen = which; for (const k in keys) keys[k] = false; mouseL = false; touchMine = false;
   $("inv").hidden = which !== "inv"; $("trade").hidden = which !== "trade"; $("death").hidden = which !== "death"; $("chest").hidden = which !== "chest"; $("ench").hidden = which !== "ench";
@@ -2746,6 +2939,7 @@ function growCrops(){
     const [x,y,z] = k.split(",").map(Number);
     if (!loadedAt(x,z)) continue;
     const b = get(x,y,z);
+    if (BD[b].sapling) { if ([B.grass,B.dirt,B.snowgrass,B.farmland,B.moss_block].includes(get(x,y-1,z)) && Math.random() < .03) { if (growTree(x,y,z,BD[b].sapling)) crops.delete(k); } continue; }
     if (!BD[b].crop || BD[b].crop >= 4) { crops.delete(k); continue; }
     if (get(x,y-1,z) !== B.farmland) continue;
     if (Math.random() < .07) setBlock(x,y,z,b+1);
