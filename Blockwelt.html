@@ -126,6 +126,21 @@ body:not(.is-touch) .keys-touch { display: none; }
 #t-jump { right: calc(18px + env(safe-area-inset-right, 0px)); bottom: calc(var(--s) + 84px + env(safe-area-inset-bottom, 0px)); }
 #t-mode { right: calc(84px + env(safe-area-inset-right, 0px)); bottom: calc(var(--s) + 84px + env(safe-area-inset-bottom, 0px)); }
 #t-fly { right: calc(18px + env(safe-area-inset-right, 0px)); bottom: calc(var(--s) + 150px + env(safe-area-inset-bottom, 0px)); }
+#t-robi { right: calc(150px + env(safe-area-inset-right, 0px)); bottom: calc(var(--s) + 84px + env(safe-area-inset-bottom, 0px)); background: rgba(47,143,138,.55); }
+.chat { display: grid; gap: 8px; max-height: 42vh; overflow-y: auto; padding-right: 2px; }
+.msg { padding: 8px 11px; border-radius: 10px; font-size: 14px; line-height: 1.45; max-width: 88%; white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg.me { justify-self: end; background: var(--moss-deep); }
+.msg.bot { justify-self: start; background: rgba(47,143,138,.28); }
+.msg.err { justify-self: start; color: #ff9a8f; background: rgba(255,255,255,.05); }
+.chatrow { display: flex; gap: 6px; align-items: center; }
+.chatrow .search { flex: 1; min-width: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips button { font: 600 12px var(--body); padding: 6px 10px; border-radius: 999px; border: 1px solid var(--panel-edge); background: rgba(255,255,255,.05); color: var(--ink); cursor: pointer; }
+.code { width: 100%; box-sizing: border-box; min-height: 200px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #0d1210; color: var(--ink); border: 1px solid var(--panel-edge); border-radius: 6px; padding: 10px; resize: vertical; }
+.ref { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 5px 14px; font-size: 13px; color: var(--ink-dim); margin: 0; }
+.ref dt { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); white-space: nowrap; }
+.ref dd { margin: 0; }
+.robistatus { font-size: 12px; color: var(--ink-dim); }
 #t-inv { right: calc(84px + env(safe-area-inset-right, 0px)); bottom: calc(var(--s) + 150px + env(safe-area-inset-bottom, 0px)); }
 #t-menu { right: calc(14px + env(safe-area-inset-right, 0px)); top: calc(12px + env(safe-area-inset-top, 0px)); width: 44px; height: 44px; border-radius: 8px; }
 #t-mode.place { background: rgba(200,121,74,.6); }
@@ -138,7 +153,7 @@ body:not(.is-touch) .keys-touch { display: none; }
   .baglayout .bagwrap { flex-wrap: nowrap; align-items: flex-start; gap: 14px; }
   .craftcol .hint { max-width: 190px; }
 }
-@media (max-height: 520px) { .bagright > .hint { display: none; } .sheet .body { padding: 8px 12px; gap: 8px; } .sheet header { padding: 6px 12px; } }
+@media (max-height: 520px) { .code { min-height: 130px; } .chat { max-height: 30vh; } .bagright > .hint { display: none; } .sheet .body { padding: 8px 12px; gap: 8px; } .sheet header { padding: 6px 12px; } }
 .bagwrap { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: center; }
 .gearcol { display: flex; gap: 8px; align-items: center; }
 .gearslots { display: grid; gap: 4px; }
@@ -176,6 +191,7 @@ body:not(.is-touch) .keys-touch { display: none; }
 <button class="touch tbtn" id="t-jump" aria-label="Springen">Hoch</button>
 <button class="touch tbtn" id="t-mode" aria-label="Abbauen oder Bauen">Abbau</button>
 <button class="touch tbtn" id="t-inv" aria-label="Rucksack">Sack</button>
+<button class="touch tbtn" id="t-robi" aria-label="Robi, der Bauroboter">Robi</button>
 <button class="touch tbtn" id="t-fly" aria-label="Fliegen">Flug</button>
 <button class="touch tbtn" id="t-menu" aria-label="Menü">II</button>
 
@@ -214,6 +230,20 @@ body:not(.is-touch) .keys-touch { display: none; }
   </div>
 </div>
 
+<div id="robi" class="overlay" hidden>
+  <div class="sheet wide">
+    <header>
+      <div class="tabs" id="robi-tabs">
+        <button class="tab" data-rt="chat">Chat</button>
+        <button class="tab" data-rt="code">Programm</button>
+        <button class="tab" data-rt="help">Befehle</button>
+      </div>
+      <button class="sm ghost" id="robi-close">Schließen</button>
+    </header>
+    <div class="body" id="robi-body"></div>
+  </div>
+</div>
+
 <div id="death" class="overlay" hidden>
   <div class="card">
     <h2>Du bist gestorben</h2>
@@ -249,6 +279,7 @@ body:not(.is-touch) .keys-touch { display: none; }
         <dt>Linke Maustaste</dt><dd>Halten zum Abbauen, Klicken zum Angreifen</dd>
         <dt>Rechte Maustaste</dt><dd>Bauen, essen, trinken, zaubern, schießen, handeln, Werkbank öffnen</dd>
         <dt>E</dt><dd>Rucksack und Herstellen</dd>
+        <dt>R</dt><dd>Robi, dein Bauroboter: programmieren oder per Chat bauen lassen</dd>
         <dt>1–9 / Mausrad</dt><dd>Gegenstand wählen</dd>
         <dt>F</dt><dd>Fliegen (nur im Kreativmodus)</dd>
         <dt>Esc</dt><dd>Pause</dd>
@@ -259,6 +290,7 @@ body:not(.is-touch) .keys-touch { display: none; }
         <dt>Rechts halten</dt><dd>Abbauen (Knopf „Abbau“)</dd>
         <dt>Rechts tippen</dt><dd>Angreifen, mit „Bau“: bauen und benutzen</dd>
         <dt>Sack</dt><dd>Rucksack und Herstellen</dd>
+        <dt>Robi</dt><dd>Dein Bauroboter: programmieren oder per Chat bauen lassen</dd>
       </dl>
     </details>
     <details>
@@ -1843,7 +1875,7 @@ function entRay(maxD){
     if (e.dead) continue;
     const hw = e.T.w/2 + .1;
     const t = rayBox(o, d, [e.x-hw, e.y, e.z-hw], [e.x+hw, e.y+e.T.h, e.z+hw]);
-    if (t >= 0 && t <= maxD && (!best || t < best.t)) best = { e, t };
+    if (t > .05 && t <= maxD && (!best || t < best.t)) best = { e, t };
   }
   return best;
 }
@@ -2670,13 +2702,13 @@ function drawFigure(cv){
 const catOf = id => { const it = ITEMS[id]; if (it.tune) return "items"; if (it.tool || it.slot || it.ranged || it.wand || it.thrown || ["arrow","fishing_rod","compass","spyglass","totem","lighter"].includes(id) || id.startsWith("potion")) return "gear"; if (it.block !== undefined) return NATURE.has(BD[it.block].key) ? "nature" : "build"; return "items"; };
 function openUI(which){
   uiOpen = which; for (const k in keys) keys[k] = false; mouseL = false; touchMine = false;
-  $("inv").hidden = which !== "inv"; $("trade").hidden = which !== "trade"; $("death").hidden = which !== "death"; $("chest").hidden = which !== "chest"; $("ench").hidden = which !== "ench";
+  $("inv").hidden = which !== "inv"; $("trade").hidden = which !== "trade"; $("death").hidden = which !== "death"; $("chest").hidden = which !== "chest"; $("ench").hidden = which !== "ench"; $("robi").hidden = which !== "robi";
   if (document.pointerLockElement) document.exitPointerLock();
 }
 function closeUI(){
   if (uiOpen === "inv") returnGrid(0);
   uiOpen = null; picked = null;
-  $("inv").hidden = $("trade").hidden = $("death").hidden = $("chest").hidden = $("ench").hidden = true;
+  $("inv").hidden = $("trade").hidden = $("death").hidden = $("chest").hidden = $("ench").hidden = $("robi").hidden = true;
   renderHotbar();
   if (playing) requestLock();
 }
@@ -2948,6 +2980,349 @@ function growCrops(){
 $("respawn").addEventListener("click", respawn);
 
 // =====================================================================
+// Robi, der Bauroboter: eigene kleine Programmiersprache und ein KI-Chat
+// =====================================================================
+const robi = { x:0, y:0, z:0, f:0, gen:null, acc:0, stop:false, undo:null, lastUndo:null, mesh:null, mats:[], body:null, ops:0, need:null };
+const RFW = [[0,-1],[1,0],[0,1],[-1,0]];
+function buildRobiMesh(){
+  const k = kit(), body = k.pivot(k.root, 0, .45, 0);
+  k.box(body, .5,.42,.42, 0x2f8f8a, 0,0,0);
+  k.box(body, .52,.08,.44, 0x1f5f5c, 0,-.2,0);
+  k.box(body, .36,.16,.02, 0x0e2a28, 0,.06,.215);
+  k.box(body, .08,.06,.02, 0x8ff7ff, -.08,.07,.226, true); k.box(body, .08,.06,.02, 0x8ff7ff, .08,.07,.226, true);
+  k.box(body, .04,.18,.04, 0x9aa0a8, 0,.3,0); k.box(body, .1,.1,.1, 0xffb33a, 0,.42,0, true);
+  k.box(body, .08,.24,.08, 0x1f5f5c, -.3,-.04,0); k.box(body, .08,.24,.08, 0x1f5f5c, .3,-.04,0);
+  k.box(body, .28,.06,.28, 0x9aa0a8, 0,-.31,0);
+  scene.add(k.root); robi.mesh = k.root; robi.mats = k.mats; robi.body = body;
+}
+function robiToPlayer(){
+  robi.f = facing(); const F = RFW[robi.f];
+  robi.x = Math.floor(player.x) + F[0]*2; robi.z = Math.floor(player.z) + F[1]*2; robi.y = Math.floor(player.y + .01);
+}
+const rWorld = (r,u,v) => { const F = RFW[robi.f], Rr = [-F[1], F[0]]; return [robi.x + r*Rr[0] + v*F[0], robi.y + u, robi.z + r*Rr[1] + v*F[1]]; };
+function updateRobi(dt, now){
+  if (!robi.mesh) return;
+  // Programm Schritt für Schritt ausführen
+  if (robi.gen) {
+    robi.acc += dt;
+    let n = 0;
+    while (robi.gen && robi.acc >= .05 && n++ < 3) {
+      robi.acc -= .05;
+      let r;
+      try { r = robi.gen.next(); } catch (e) { robiDone("Fehler: " + e.message); break; }
+      if (r.done || robi.stop) robiDone(robi.stop ? (robi.need || "Robi hat angehalten.") : null);
+    }
+  }
+  let tx, ty, tz, yaw;
+  if (robi.gen) { tx = robi.x + .5; ty = robi.y + .1; tz = robi.z + .5; yaw = Math.atan2(RFW[robi.f][0], RFW[robi.f][1]); }
+  else { const s = Math.sin(player.yaw), c = Math.cos(player.yaw); tx = player.x + c*.9 + s*.6; tz = player.z - s*.9 + c*.6; ty = player.y + 1.3; yaw = player.yaw + Math.PI; }
+  const m = robi.mesh, k = Math.min(1, dt * (robi.gen ? 14 : 4));
+  m.position.x += (tx - m.position.x)*k; m.position.y += (ty - m.position.y)*k; m.position.z += (tz - m.position.z)*k;
+  let dy = yaw - m.rotation.y; while (dy > Math.PI) dy -= 2*Math.PI; while (dy < -Math.PI) dy += 2*Math.PI; m.rotation.y += dy*Math.min(1, dt*8);
+  robi.body.position.y = .45 + Math.sin(now/300)*.05;
+  const br = Math.max(.25, lightAt(m.position.x, m.position.y+.4, m.position.z));
+  for (const mt of robi.mats) if (!mt.userData.glow) mt.color.copy(mt.userData.base).multiplyScalar(br);
+}
+// Blocknamen: deutsch oder englisch, mit oder ohne Leerzeichen
+let NAME2KEY = null;
+const normName = s => String(s).toLowerCase().replace(/ä/g,"ae").replace(/ö/g,"oe").replace(/ü/g,"ue").replace(/ß/g,"ss").replace(/[\s_\-.:„“"]/g,"");
+function blockKeyByName(name){
+  if (!NAME2KEY) {
+    NAME2KEY = new Map();
+    for (const id in ITEMS) { const it = ITEMS[id]; if (it.block === undefined || it.door) continue; NAME2KEY.set(normName(id), id); NAME2KEY.set(normName(it.name), id); }
+    const AL = { stein:"stone", holz:"oak_planks", bretter:"oak_planks", glas:"glass", erde:"dirt", gras:"grass", ziegel:"bricks", wolle:"wool", luft:"air", air:"air", wasser:"water", water:"water", lava:"lava", fackel:"torch", lampe:"lamp", schnee:"snow", eis:"ice", sand:"sand", kies:"gravel", gold:"gold_block", eisen:"iron_block", diamant:"diamond_block", stamm:"oak_log", laub:"oak_leaves", zaun:"fence_oak", treppe:"stairs_stone", stufe:"slab_stone" };
+    for (const k in AL) NAME2KEY.set(k, AL[k]);
+  }
+  return NAME2KEY.get(normName(name)) || null;
+}
+function blockIdForKey(key){
+  if (key === "air") return 0; if (key === "water") return B.water; if (key === "lava") return B.lava;
+  const it = ITEMS[key]; if (!it || it.block === undefined) return null;
+  let b = it.block; const bk = BD[b].key;
+  if (/^(stairs_.+|ladder)_\d$/.test(bk)) b = B[bk.replace(/_\d$/, "") + "_" + robi.f];
+  return b;
+}
+const ROBI_DIRS = { hier:[0,0,0], vorne:[0,0,1], oben:[0,1,0], unten:[0,-1,0], hinten:[0,0,-1], links:[-1,0,0], rechts:[1,0,0] };
+function robiTokenize(src){
+  const out = []; let line = 1;
+  src = String(src).replace(/#[^\n]*/g, "");
+  const re = /"([^"]*)"|\[|\]|[^\s\[\]"]+|\n/g; let m;
+  while ((m = re.exec(src))) { if (m[0] === "\n") { line++; continue; } out.push({ t: m[1] !== undefined ? m[1] : m[0], q: m[1] !== undefined, line }); }
+  return out;
+}
+function robiParse(src){
+  const tk = robiTokenize(src); let i = 0;
+  const fail = (msg, t) => { throw new Error(`Zeile ${t ? t.line : "?"}: ${msg}`); };
+  const num = def => { const t = tk[i]; if (t && !t.q && /^-?\d+$/.test(t.t)) { i++; return parseInt(t.t, 10); } if (def === undefined) fail("Hier fehlt eine Zahl.", t || tk[i-1]); return def; };
+  const blk = () => { const t = tk[i++]; if (!t) fail("Hier fehlt ein Blockname.", tk[i-2]); const k = blockKeyByName(t.t); if (!k || blockIdForKey(k) === null) fail(`Den Block „${t.t}“ kenne ich nicht.`, t); return k; };
+  const dir = () => { const t = tk[i]; if (t && ROBI_DIRS[t.t.toLowerCase()]) { i++; return t.t.toLowerCase(); } return "hier"; };
+  const SH = { quader:3, "wände":3, waende:3, hohlquader:3, boden:2, kugel:1, hohlkugel:1, zylinder:2, pyramide:1, dach:2, linie:1 };
+  function list(inLoop){
+    const out = [];
+    while (i < tk.length) {
+      const t = tk[i++], w = t.t.toLowerCase();
+      if (t.t === "]") { if (inLoop) return out; fail("Hier ist eine ] zu viel.", t); }
+      if (["vor","zurück","zurueck","hoch","runter","seitlich"].includes(w)) out.push({ c:w, n:num(1), line:t.line });
+      else if (["rechts","links"].includes(w)) out.push({ c:w, n:num(1), line:t.line });
+      else if (w === "drehen") out.push({ c:"drehen", line:t.line });
+      else if (w === "setze") out.push({ c:"setze", b:blk(), d:dir(), line:t.line });
+      else if (w === "abbauen" || w === "grabe") out.push({ c:"abbauen", d:dir(), line:t.line });
+      else if (w === "leeren") out.push({ c:"quader", b:"air", a:[num(), num(), num()], line:t.line });
+      else if (SH[w] !== undefined) { const b = blk(); const a = []; for (let k=0; k<SH[w]; k++) a.push(num()); out.push({ c: w === "waende" ? "wände" : w, b, a, line:t.line }); }
+      else if (w === "wiederhole") { const n = num(); const o = tk[i++]; if (!o || o.t !== "[") fail("Nach „wiederhole " + n + "“ kommt eine [.", o || t); out.push({ c:"wiederhole", n, body:list(true), line:t.line }); }
+      else if (w === "sage") { const q = tk[i++]; out.push({ c:"sage", text: q ? q.t : "", line:t.line }); }
+      else if (w === "komm") out.push({ c:"komm", line:t.line });
+      else fail(`Den Befehl „${t.t}“ kenne ich nicht. Schau unter „Befehle“.`, t);
+    }
+    if (inLoop) fail("Hier fehlt eine ] am Ende der Schleife.", tk[tk.length-1]);
+    return out;
+  }
+  return list(false);
+}
+const clampN = (n, lo, hi) => Math.max(lo, Math.min(hi, n|0));
+function shapeCells(c, a){
+  const cells = [];
+  if (c === "quader" || c === "hohlquader" || c === "wände") {
+    const [Bw, H, T] = [clampN(a[0],1,48), clampN(a[1],1,48), clampN(a[2],1,48)];
+    for (let u=0; u<H; u++) for (let v=0; v<T; v++) for (let r=0; r<Bw; r++) {
+      const edge = r === 0 || r === Bw-1 || v === 0 || v === T-1;
+      if (c === "wände" && !edge) continue;
+      if (c === "hohlquader" && !edge && u !== 0 && u !== H-1) continue;
+      cells.push([r,u,v]);
+    }
+  } else if (c === "boden") { const [Bw, T] = [clampN(a[0],1,64), clampN(a[1],1,64)]; for (let v=0; v<T; v++) for (let r=0; r<Bw; r++) cells.push([r,0,v]); }
+  else if (c === "linie") { const N = clampN(a[0],1,64); for (let v=0; v<N; v++) cells.push([0,0,v]); }
+  else if (c === "kugel" || c === "hohlkugel") {
+    const R = clampN(a[0],1,24), o2 = (R+.5)**2, i2 = (R-.5)**2;
+    for (let u=-R; u<=R; u++) for (let v=-R; v<=R; v++) for (let r=-R; r<=R; r++) { const d = r*r+u*u+v*v; if (d <= o2 && (c === "kugel" || d > i2)) cells.push([r,u,v]); }
+  } else if (c === "zylinder") {
+    const R = clampN(a[0],1,24), H = clampN(a[1],1,48);
+    for (let u=0; u<H; u++) for (let v=-R; v<=R; v++) for (let r=-R; r<=R; r++) if (r*r+v*v <= (R+.5)**2) cells.push([r,u,v]);
+  } else if (c === "pyramide") {
+    const N = clampN(a[0],1,48);
+    for (let k=0; N-2*k > 0; k++) for (let v=k; v<N-k; v++) for (let r=k; r<N-k; r++) cells.push([r,k,v]);
+  } else if (c === "dach") {
+    const [Bw, T] = [clampN(a[0],1,48), clampN(a[1],1,48)];
+    for (let k=0; Bw-2*k > 0 && T-2*k > 0; k++) for (let v=k; v<T-k; v++) for (let r=k; r<Bw-k; r++) cells.push([r,k,v]);
+  }
+  return cells;
+}
+// Blöcke setzen (im Überleben aus dem Rucksack), Rückgängig merken
+function robiPlace(cellsWorld, key){
+  const id = blockIdForKey(key); if (id === null) return;
+  let list = cellsWorld.filter(([x,y,z]) => y >= 1 && y < SY && loadedAt(x,z) && get(x,y,z) !== B.bedrock && get(x,y,z) !== id);
+  if (mode === "survival" && id !== 0 && !ITEMS[key]) { list = []; robi.stop = true; robi.need = "Wasser und Lava kann Robi nur im Kreativ-Modus setzen."; }
+  if (mode === "survival" && id !== 0 && ITEMS[key]) {
+    const have = countItem(key);
+    if (have < list.length) { list = list.slice(0, have); robi.stop = true; robi.need = `Robi braucht mehr ${ITEMS[key].name}. Leg welche in deinen Rucksack.`; }
+    if (list.length) removeItem(key, list.length);
+  }
+  for (const [x,y,z] of list) { const k = x+","+y+","+z; if (!robi.undo.has(k)) robi.undo.set(k, get(x,y,z)); }
+  robi.ops += list.length;
+  for (let i=0; i<list.length; i+=400) setBlocks(list.slice(i, i+400).map(([x,y,z]) => [x,y,z,id]));
+  if (mode === "survival") renderHotbar();
+}
+function* robiRun(nodes){
+  for (const n of nodes) {
+    if (robi.stop) return;
+    if (++robi.steps > 20000) throw new Error("Das Programm ist zu lang (mehr als 20.000 Schritte).");
+    switch (n.c) {
+      case "vor": case "zurück": case "zurueck": case "hoch": case "runter": case "seitlich": {
+        const sgn = (n.c === "zurück" || n.c === "zurueck" || n.c === "runter") ? -1 : 1, cnt = Math.abs(n.n), st = Math.sign(n.n) * sgn;
+        for (let k=0; k<cnt && k<200; k++) {
+          const [x,y,z] = n.c === "hoch" || n.c === "runter" ? rWorld(0, st, 0) : n.c === "seitlich" ? rWorld(st, 0, 0) : rWorld(0, 0, st);
+          robi.x = x; robi.y = Math.max(1, Math.min(SY-1, y)); robi.z = z; yield;
+        }
+        break;
+      }
+      case "rechts": robi.f = (robi.f + (n.n % 4) + 4) % 4; yield; break;
+      case "links": robi.f = (robi.f - (n.n % 4) + 4) % 4; yield; break;
+      case "drehen": robi.f = (robi.f + 2) % 4; yield; break;
+      case "setze": case "abbauen": { const d = ROBI_DIRS[n.d]; robiPlace([rWorld(d[0], d[1], d[2])], n.c === "setze" ? n.b : "air"); yield; break; }
+      case "wiederhole": for (let k=0; k<Math.min(n.n, 500); k++) { if (robi.stop) return; yield* robiRun(n.body); } break;
+      case "sage": toast("Robi: " + n.text); yield; break;
+      case "komm": robiToPlayer(); yield; break;
+      default: {
+        const cells = shapeCells(n.c, n.a);
+        if (robi.ops + cells.length > 80000) throw new Error("Das wird zu groß. Robi baut höchstens 80.000 Blöcke auf einmal.");
+        const world = cells.map(([r,u,v]) => rWorld(r,u,v));
+        // nach Höhe sortiert, damit Robi von unten nach oben baut
+        world.sort((A,Bc) => A[1] - Bc[1]);
+        for (let i=0; i<world.length; i+=250) { if (robi.stop) return; robiPlace(world.slice(i, i+250), n.b); yield; }
+      }
+    }
+  }
+}
+function robiStart(src, fromChat){
+  let prog;
+  try { prog = robiParse(src); } catch (e) { toast(e.message); return e.message; }
+  if (robi.gen) robiDone("Robi hat das alte Programm abgebrochen.");
+  robiToPlayer();
+  robi.undo = new Map(); robi.stop = false; robi.need = null; robi.ops = 0; robi.steps = 0; robi.acc = 0;
+  robi.gen = robiRun(prog);
+  if (fromChat !== true) closeUI();
+  return null;
+}
+function robiDone(msg){
+  robi.gen = null;
+  if (robi.undo && robi.undo.size) robi.lastUndo = robi.undo;
+  robi.undo = null;
+  toast(msg || `Robi ist fertig: ${robi.ops} Blöcke`);
+  scheduleSave();
+}
+function robiUndo(){
+  if (robi.gen) { robi.stop = true; robiDone("Robi hat angehalten."); }
+  const u = robi.lastUndo; if (!u || !u.size) { toast("Es gibt nichts zum Rückgängigmachen"); return; }
+  const list = []; for (const [k, b] of u) { const [x,y,z] = k.split(",").map(Number); list.push([x,y,z,b]); }
+  for (let i=0; i<list.length; i+=400) setBlocks(list.slice(i, i+400));
+  robi.lastUndo = null; toast("Robis letzter Bau ist rückgängig gemacht");
+}
+
+const ROBI_EXAMPLES = {
+  "Turm": "# Ein Turm aus Steinziegeln\nzylinder stone_bricks 2 10\nhoch 10\nzylinder wall_stone_bricks 2 1\nsage \"Mein Turm ist fertig!\"",
+  "Haus": "# Ein kleines Haus, 7 mal 7\nboden cobble 7 7\nhoch 1\nwände oak_planks 7 4 7\n# Tür in der Mitte vorne\nseitlich 3\nleeren 1 2 1\n# Fenster links und rechts\nseitlich -2\nhoch 1\nsetze glass\nseitlich 4\nsetze glass\nseitlich -5\nhoch 3\ndach birch_planks 7 7",
+  "Treppe": "# Eine Treppe nach oben\nwiederhole 8 [\n  setze stone\n  vor 1\n  hoch 1\n]",
+  "Brücke": "# Eine Holzbrücke\nquader oak_planks 3 1 16\nhoch 1\nlinie fence_oak 16\nseitlich 2\nlinie fence_oak 16",
+  "Pyramide": "# Eine Pyramide aus Sandstein\npyramide sandstone 15",
+  "Glaskugel": "# Eine schwebende Glaskugel\nvor 7\nhoch 7\nhohlkugel glass 5\nsetze lamp",
+  "Regenbogen": "# Ein bunter Regenbogen-Weg\nwiederhole 2 [\n  linie wool_red 6 vor 6\n  linie wool_orange 6 vor 6\n  linie wool_yellow 6 vor 6\n  linie wool_lime 6 vor 6\n  linie wool_light_blue 6 vor 6\n  linie wool_purple 6 vor 6\n]",
+};
+let robiListening = false, robiTab = "chat", robiCode = null, robiChat = [], robiTurns = [], robiBusy = null, robiSample = undefined, robiDict = undefined, robiStatus = "";
+try { robiCode = localStorage.getItem("blockwelt-robi-code"); } catch (e) {}
+if (!robiCode) robiCode = ROBI_EXAMPLES["Haus"];
+function saveRobiCode(){ try { localStorage.setItem("blockwelt-robi-code", robiCode); } catch (e) {} }
+async function robiCaps(){
+  if (robiSample === undefined) { robiSample = null; try { robiSample = window.claude ? await window.claude.use("sample") : null; } catch (e) { robiSample = null; } }
+  if (robiDict === undefined) {
+    robiDict = null; try { robiDict = window.claude ? await window.claude.use("dictation") : null; } catch (e) { robiDict = null; }
+    if (robiDict) {
+      robiDict.onFinal(({ text }) => { const inp = $("robi-in"); if (inp) inp.value = (inp.value + " " + text).trim(); });
+      robiDict.onState(({ state }) => { robiListening = state === "listening"; const b = $("robi-mic"); if (b) b.textContent = robiListening ? "Fertig" : "Sprechen"; });
+    }
+  }
+}
+function openRobi(tab){ if (tab) robiTab = tab; openUI("robi"); renderRobi(); robiCaps().then(() => { if (uiOpen === "robi") renderRobi(); }); }
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" })[c]);
+function renderRobi(){
+  document.querySelectorAll("#robi-tabs .tab").forEach(t => t.classList.toggle("on", t.dataset.rt === robiTab));
+  const body = $("robi-body");
+  if (robiTab === "chat") {
+    const noAI = robiSample === null;
+    body.innerHTML = `<p class="hint">Schreib Robi, was er bauen soll, zum Beispiel „Bau mir ein Schloss mit vier Türmen“. Robi schreibt dafür ein Programm und baut es direkt vor dir. Im Tab „Programm“ kannst du es dir ansehen und verändern.</p>
+      <div class="chat" id="robi-chat">${robiChat.map(m => `<div class="msg ${m.who}">${esc(m.text)}</div>`).join("") || `<div class="msg bot">Hallo, ich bin Robi! Was soll ich für dich bauen?</div>`}</div>
+      ${noAI ? `<p class="hint">Der Chat funktioniert nur, wenn das Spiel in Claude geöffnet ist und du Robi die Erlaubnis gibst. Programmieren kannst du Robi trotzdem im Tab „Programm“.</p>` : `
+      <div class="chips">${["Bau mir ein Haus","Ein hoher Turm","Eine Brücke","Ein Schloss mit Türmen","Eine Pyramide","Ein Baumhaus","Ein Iglu","Ein Riesenrad"].map(t => `<button data-sugg="${esc(t)}">${esc(t)}</button>`).join("")}</div>
+      <div class="chatrow"><input class="search" id="robi-in" type="text" placeholder="Was soll Robi bauen?" autocomplete="off">${robiDict ? `<button class="sm ghost" id="robi-mic" title="Sprechen">Sprechen</button>` : ""}<button class="sm" id="robi-send" ${robiBusy ? "disabled" : ""}>Senden</button></div>`}
+      <div class="chatrow"><span class="robistatus" id="robi-status">${esc(robiStatus)}</span>${robiBusy ? `<button class="sm ghost" id="robi-cancel">Stopp</button>` : ""}${robi.lastUndo ? `<button class="sm ghost" id="robi-undo">Rückgängig</button>` : ""}</div>`;
+    const ch = $("robi-chat"); ch.scrollTop = ch.scrollHeight;
+  } else if (robiTab === "code") {
+    body.innerHTML = `<p class="hint">Das ist Robis Programm. Robi startet zwei Blöcke vor dir und schaut in deine Richtung. Ändere es und drück „Ausführen“.</p>
+      <div class="chips">${Object.keys(ROBI_EXAMPLES).map(k => `<button data-ex="${esc(k)}">${esc(k)}</button>`).join("")}</div>
+      <div class="acts"><button class="sm" id="robi-run">Ausführen</button>${robi.gen ? `<button class="sm ghost" id="robi-stop">Stopp</button>` : ""}<button class="sm ghost" id="robi-undo">Rückgängig</button></div>
+      <textarea class="code" id="robi-code" spellcheck="false" autocomplete="off"></textarea>`;
+    const ta = $("robi-code"); ta.value = robiCode; ta.addEventListener("input", () => { robiCode = ta.value; saveRobiCode(); });
+  } else {
+    body.innerHTML = `<p class="hint">Robis Sprache. Zahlen sind Blöcke. Mit # beginnt eine Notiz, die Robi überliest. Blocknamen gehen auf Deutsch („eichenbretter“, „rote_wolle“) oder mit ihrem Code („oak_planks“).</p>
+      <dl class="ref">
+        <dt>vor 3 · zurück 2</dt><dd>vorwärts oder rückwärts gehen</dd>
+        <dt>hoch 2 · runter 1</dt><dd>nach oben oder unten fliegen</dd>
+        <dt>seitlich 3</dt><dd>nach rechts gehen, mit Minus nach links</dd>
+        <dt>rechts · links · drehen</dt><dd>sich drehen</dd>
+        <dt>setze stein</dt><dd>einen Block setzen, wo Robi ist. Auch: setze glas vorne / oben / unten</dd>
+        <dt>abbauen vorne</dt><dd>einen Block entfernen (hier, vorne, oben, unten)</dd>
+        <dt>wiederhole 4 [ … ]</dt><dd>alles in den Klammern mehrmals tun</dd>
+        <dt>linie holz 10</dt><dd>eine Reihe nach vorne</dd>
+        <dt>boden stein 5 5</dt><dd>eine Fläche: Breite, Tiefe</dd>
+        <dt>quader stein 3 4 5</dt><dd>ein voller Block: Breite, Höhe, Tiefe</dd>
+        <dt>wände holz 7 4 7</dt><dd>nur die Wände eines Raums</dd>
+        <dt>hohlquader glas 5 5 5</dt><dd>eine hohle Kiste</dd>
+        <dt>leeren 3 2 1</dt><dd>einen Bereich frei machen</dd>
+        <dt>dach ziegel 7 7</dt><dd>ein Stufendach</dd>
+        <dt>pyramide sand 9</dt><dd>eine Pyramide</dd>
+        <dt>kugel glas 4 · hohlkugel glas 4</dt><dd>Kugel um Robi herum (Radius)</dd>
+        <dt>zylinder stein 3 8</dt><dd>runder Turm: Radius, Höhe</dd>
+        <dt>sage "Hallo!"</dt><dd>Robi sagt etwas</dd>
+        <dt>komm</dt><dd>Robi kommt zurück vor dich</dd>
+      </dl>
+      <p class="hint">Im Überleben-Modus nimmt Robi die Blöcke aus deinem Rucksack. Im Kreativ-Modus baut er umsonst. „Rückgängig“ macht seinen letzten Bau weg.</p>`;
+  }
+}
+function robiSay(who, text){ robiChat.push({ who, text }); if (robiChat.length > 40) robiChat.shift(); if (uiOpen === "robi" && robiTab === "chat") renderRobi(); }
+function robiPrompt(){
+  const blocks = Object.keys(ITEMS).filter(k => ITEMS[k].block !== undefined && !ITEMS[k].door).map(k => `${k} (${ITEMS[k].name})`).join(", ");
+  return `Du bist Robi, ein freundlicher Bauroboter in einem Würfel-Bauspiel. Ein Kind schreibt dir auf Deutsch, was du bauen sollst.
+
+Antworte NUR mit einem JSON-Objekt: {"antwort": "...", "programm": "..."}
+- "antwort": 1 bis 2 kurze, fröhliche Sätze auf Deutsch, einfach für ein Kind. Keine Emojis.
+- "programm": ein Programm in Robis Sprache, das das Gewünschte schön und vollständig baut. Wenn der Wunsch nichts mit Bauen zu tun hat, antworte freundlich und lass "programm" leer.
+
+Robis Sprache (ein Befehl nach dem anderen, getrennt durch Leerzeichen oder Zeilen; # beginnt einen Kommentar):
+Robi startet 2 Blöcke vor dem Kind auf Bodenhöhe (die Zelle direkt über dem Boden) und schaut in dieselbe Richtung wie das Kind. Richtungen sind immer aus Robis Sicht: "vor" = weg vom Kind, "seitlich" positiv = nach rechts, "hoch" = nach oben.
+vor N | zurück N | hoch N | runter N | seitlich N (negativ = links) | rechts | links | drehen (90°/180° drehen; danach zeigt "vor" in die neue Richtung)
+setze BLOCK [hier|vorne|oben|unten] – setzt einen Block an Robis Platz bzw. daneben
+abbauen [hier|vorne|oben|unten]
+wiederhole N [ befehle ]
+Formen (Robi bewegt sich dabei nicht; die Ecke ist Robis Platz, Breite geht nach rechts, Höhe nach oben, Tiefe nach vorne):
+linie BLOCK N | boden BLOCK BREITE TIEFE | quader BLOCK BREITE HÖHE TIEFE | wände BLOCK BREITE HÖHE TIEFE (nur Außenwände) | hohlquader BLOCK BREITE HÖHE TIEFE | leeren BREITE HÖHE TIEFE (macht Luft) | dach BLOCK BREITE TIEFE (Stufendach, wird nach oben schmaler) | pyramide BLOCK N
+Formen um Robi als Mittelpunkt: kugel BLOCK R | hohlkugel BLOCK R | zylinder BLOCK R HÖHE (Mitte bei Robi, wächst nach oben)
+sage "Text"
+
+Regeln: Nutze die großen Formen statt vieler Einzelschritte. Höchstens 40 Blöcke in jede Richtung. Bewege Robi mit vor/seitlich/hoch an die richtige Stelle, bevor du eine Form baust. Denke an Türen (leeren 1 2 1 in einer Wand), Fenster (setze glass) und Dächer. Baue schön und abwechslungsreich, mit passenden Materialien und Farben.
+Erlaubte Blocknamen (nur diese, genau so geschrieben): air, water, lava, ${blocks}
+
+Beispiel für "Bau mir ein kleines Haus":
+{"antwort": "Klar! Ich baue dir ein gemütliches Holzhaus mit Tür und Fenstern.", "programm": "boden cobble 7 7\\nhoch 1\\nwände oak_planks 7 4 7\\nseitlich 3\\nleeren 1 2 1\\nseitlich -2\\nhoch 1\\nsetze glass\\nseitlich 4\\nsetze glass\\nseitlich -5\\nhoch 3\\ndach bricks 7 7"}
+
+Das Spiel ist gerade im Modus ${mode === "creative" ? "Kreativ (Blöcke sind umsonst)" : "Überleben (Robi nimmt Blöcke aus dem Rucksack, also lieber klein und aus einfachen Materialien bauen)"}.`;
+}
+async function robiAsk(text){
+  text = String(text || "").trim(); if (!text || robiBusy) return;
+  await robiCaps();
+  if (!robiSample) { robiSay("err", "Der Chat geht gerade nicht. Programmieren kannst du Robi im Tab „Programm“."); return; }
+  robiSay("me", text);
+  robiTurns.push({ role:"user", content:text });
+  if (robiTurns.length > 8) robiTurns = robiTurns.slice(-8);
+  const ctl = new AbortController(); robiBusy = ctl; robiStatus = "Robi denkt nach …"; if (uiOpen === "robi") renderRobi();
+  try {
+    const data = await robiSample.json([{ role:"user", content: robiPrompt() }, ...robiTurns], { signal: ctl.signal, cache:false });
+    const answer = data && typeof data.antwort === "string" ? data.antwort : "Hier ist dein Bau!";
+    const prog = data && typeof data.programm === "string" ? data.programm : "";
+    robiTurns.push({ role:"assistant", content: JSON.stringify({ antwort: answer, programm: prog }) });
+    robiSay("bot", answer);
+    if (prog.trim()) {
+      robiCode = prog; saveRobiCode();
+      const err = robiStart(prog, true);
+      robiStatus = err ? "Im Programm war ein Fehler: " + err : "Robi baut … Schau dir den Bau an!";
+      if (!err) setTimeout(() => { if (uiOpen === "robi") closeUI(); }, 900);
+    } else robiStatus = "";
+  } catch (e) {
+    robiStatus = "";
+    if (e && e.code === "cancelled") robiSay("err", "Abgebrochen.");
+    else if (e && (e.code === "not_granted" || e.code === "sampling_disabled")) { robiSample = null; robiSay("err", "Robi darf gerade nicht mit der KI sprechen. Programmieren geht trotzdem."); }
+    else if (e && e.code === "rate_limited") robiSay("err", "Robi braucht eine kleine Pause. Versuch es gleich noch einmal.");
+    else robiSay("err", "Das hat nicht geklappt. Versuch es noch einmal, vielleicht etwas einfacher.");
+    robiTurns.pop();
+  } finally { robiBusy = null; if (uiOpen === "robi") renderRobi(); }
+}
+$("robi-tabs").addEventListener("click", e => { const t = e.target.closest("[data-rt]"); if (t) { robiTab = t.dataset.rt; renderRobi(); } });
+$("robi-close").addEventListener("click", closeUI);
+$("robi-body").addEventListener("click", e => {
+  const sg = e.target.closest("[data-sugg]"); if (sg) { robiAsk(sg.dataset.sugg); return; }
+  const ex = e.target.closest("[data-ex]"); if (ex) { robiCode = ROBI_EXAMPLES[ex.dataset.ex]; saveRobiCode(); renderRobi(); return; }
+  const id = e.target.id;
+  if (id === "robi-send") { const inp = $("robi-in"); const v = inp.value; inp.value = ""; robiAsk(v); }
+  else if (id === "robi-cancel" && robiBusy) robiBusy.abort();
+  else if (id === "robi-run") { const err = robiStart(robiCode); if (err) { robiStatus = err; toast(err); } }
+  else if (id === "robi-stop") { robi.stop = true; renderRobi(); }
+  else if (id === "robi-undo") { robiUndo(); renderRobi(); }
+  else if (id === "robi-mic" && robiDict) {
+    try { if (robiListening) robiDict.stop().catch(() => {}); else robiDict.start().catch(() => {}); } catch (err) {}
+  }
+});
+$("robi-body").addEventListener("keydown", e => { if (e.target.id === "robi-in" && e.key === "Enter") { e.preventDefault(); const v = e.target.value; e.target.value = ""; robiAsk(v); } });
+$("t-robi").addEventListener("click", () => { if (playing && !uiOpen) openRobi(); });
+
+// =====================================================================
 // Töne
 // =====================================================================
 let actx = null;
@@ -3005,7 +3380,8 @@ document.addEventListener("pointerlockchange", () => {
 
 addEventListener("keydown", e => {
   if (!playing) return;
-  if (e.target && e.target.tagName === "INPUT") { if (e.code === "Escape") closeUI(); return; }
+  if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) { if (e.code === "Escape") closeUI(); return; }
+  if (e.code === "KeyR" && !uiOpen) { e.preventDefault(); openRobi(); return; }
   if (e.code === "KeyE") { e.preventDefault(); if (uiOpen === "inv") closeUI(); else if (!uiOpen) openInv("bag"); return; }
   if (e.code === "Escape") { if (uiOpen && uiOpen !== "death") closeUI(); else if (!locked && !uiOpen) pause(); return; }
   if (uiOpen) return;
@@ -3015,7 +3391,7 @@ addEventListener("keydown", e => {
   if (e.code === "Space") e.preventDefault();
 });
 addEventListener("keyup", e => { keys[e.code] = false; });
-addEventListener("blur", () => { for (const k in keys) keys[k] = false; mouseL = false; });
+addEventListener("blur", () => { for (const k in keys) keys[k] = false; mouseL = false; lookId = null; stickId = null; touchMine = false; touchMove.x = touchMove.y = 0; });
 addEventListener("wheel", e => { if (playing && !uiOpen) selectSlot(sel_ + (e.deltaY > 0 ? 1 : -1)); }, { passive: true });
 
 const canvas = renderer.domElement;
@@ -3046,9 +3422,17 @@ function stickUpdate(t){
   const m = Math.hypot(dx,dy), max = 44; if (m > max) { dx *= max/m; dy *= max/m; }
   knob.style.transform = `translate(${dx}px, ${dy}px)`; touchMove.x = dx/max; touchMove.y = dy/max;
 }
-stick.addEventListener("touchstart", e => { e.preventDefault(); const t = e.changedTouches[0]; stickId = t.identifier; stickUpdate(t); }, { passive: false });
+// Vergessene Finger aufräumen: das Handy meldet nicht immer, wenn ein Finger losgelassen wurde
+function dropStaleTouches(e){
+  const live = new Set([...e.touches].map(t => t.identifier));
+  if (lookId !== null && !live.has(lookId)) { lookId = null; touchMine = false; }
+  if (stickId !== null && !live.has(stickId)) { stickId = null; touchMove.x = touchMove.y = 0; knob.style.transform = ""; }
+}
+let hintT = 0;
+function hint(msg){ const now = performance.now(); if (now - hintT > 6000) { hintT = now; toast(msg); } }
+stick.addEventListener("touchstart", e => { e.preventDefault(); dropStaleTouches(e); const t = e.changedTouches[0]; stickId = t.identifier; stickUpdate(t); }, { passive: false });
 canvas.addEventListener("touchstart", e => {
-  if (!playing || uiOpen) return; e.preventDefault();
+  if (!playing || uiOpen) return; e.preventDefault(); dropStaleTouches(e);
   for (const t of e.changedTouches) if (lookId === null) { lookId = t.identifier; lookS = { lx:t.clientX, ly:t.clientY, time:performance.now(), moved:0 }; }
 }, { passive: false });
 addEventListener("touchmove", e => {
@@ -3069,8 +3453,10 @@ function touchEnd(e){
           const eh = entRay(4.5), h = raycast(5.5);
           if (eh && (!h || eh.t < h.t)) { if (eh.e.T.kind === "npc") openTrade(eh.e); else attack(); }
           else if (h && ([B.table, B.furnace, B.chest, B.ench_table, B.bed].includes(h.b) || BD[h.b].door)) useAction(false);
+          else if (h && held() && ITEMS[held().id].block !== undefined) hint("Zum Bauen tippe unten rechts auf „Abbau“, dann steht dort „Bau“.");
+          else if (h) hint("Zum Abbauen halte den Finger auf dem Block, bis der Kreis voll ist.");
         }
-      }
+      } else if (!tap && placeMode && lookS.moved < 12 && playing && !uiOpen) hint("Zum Abbauen tippe unten rechts auf „Bau“, dann steht dort wieder „Abbau“.");
     }
   }
 }
@@ -3106,6 +3492,10 @@ let villageT = 0, last = performance.now(), fpsAcc = 0, fpsN = 0, fps = 0, foodT
 
 function updatePlayer(dt){
   if (!loadedAt(player.x, player.z)) return;
+  // Steckt die Spielfigur in einem Block (z. B. ein Baum ist um sie herum gewachsen), schiebt sie sich nach oben frei
+  if (!player.fly && boxHits(player.x, player.y, player.z, PW, PH)) {
+    for (let k=1; k<=6; k++) if (!boxHits(player.x, Math.floor(player.y)+k, player.z, PW, PH)) { player.y = Math.floor(player.y)+k; player.vy = 0; break; }
+  }
   let fx = 0, fz = 0;
   if (keys.KeyW || keys.ArrowUp) fz -= 1;
   if (keys.KeyS || keys.ArrowDown) fz += 1;
@@ -3180,6 +3570,7 @@ function tick(now){
       if ((e.T.kind === "monster" && (d > 60 || (dayF > .7 && d > 30 && e.T.burns))) || (e.T.kind === "animal" && d > 70) || e.y < -5) { removeEnt(e); ents.splice(i,1); }
     }
     updateProjs(dt);
+    updateRobi(dt, now);
     spawnT -= dt; if (spawnT <= 0) { spawnT = .5; spawnTick(); }
     autosaveT += dt; if (autosaveT > 10) { autosaveT = 0; saveNow(); }
     cropT -= dt; if (cropT <= 0) { cropT = 2; growCrops(); }
@@ -3255,6 +3646,7 @@ function boot(){
   $("play").disabled = false; $("play").textContent = saved ? "Weiterspielen" : "Spielen";
   renderHotbar(); updateMenu(); selectSlot(sel_);
   if (!saved) saveNow();
+  buildRobiMesh(); robi.mesh.position.set(player.x, player.y + 1.3, player.z);
 }
 requestAnimationFrame(tick);
 setTimeout(boot, 30);
