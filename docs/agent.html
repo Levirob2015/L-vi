@@ -105,6 +105,12 @@ canvas{width:100%;height:120px;display:block}
 .mem:last-child{border-bottom:0}
 .mem div{flex:1;min-width:0;overflow-wrap:anywhere}
 .mem time{display:block;font-size:12px;color:var(--muted);font-family:var(--f-mono)}
+.steps{margin:10px 0;padding-left:20px;display:grid;gap:8px}
+details summary{cursor:pointer;padding:4px 0}
+.src{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.src div{flex:1;min-width:0;overflow-wrap:anywhere}
+.src small{display:block;color:var(--muted);font-size:12px}
+.msg a{color:inherit}
 code{font-family:var(--f-mono);font-size:12.5px;background:var(--bubble);padding:1px 5px;border-radius:5px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));
   background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:10px;font-size:14px;z-index:20}
@@ -183,8 +189,34 @@ code{font-family:var(--f-mono);font-size:12.5px;background:var(--bubble);padding
     <!-- GEDÄCHTNIS -->
     <section class="view" id="v-gedaechtnis" hidden>
       <div class="stack">
+        <div class="card stack" id="webCard">
+          <div><h2>Von Webseiten lernen</h2>
+          <p class="hint" style="margin:0">Mit dem Knopf <b>Lernen</b> in deiner Favoritenleiste liest dein Agent die Seite, die du gerade offen hast, und kann danach Fragen dazu beantworten. Er nennt dabei immer die Quelle.</p></div>
+          <details id="installBox">
+            <summary><b>Lernen-Knopf in Safari einrichten</b> <span class="hint">(einmalig, ca. 1 Minute)</span></summary>
+            <ol class="steps">
+              <li>Tippe auf <b>Code kopieren</b>.
+                <div class="row" style="margin-top:6px"><button type="button" class="btn sec" id="copyBm">Code kopieren</button>
+                <a id="bmLink" class="ghost" href="#" title="Am Computer: in die Lesezeichenleiste ziehen">Lernen</a></div>
+                <textarea class="f" id="bmCode" readonly rows="3" style="font-family:var(--f-mono);font-size:11px;min-height:0;margin-top:6px"></textarea></li>
+              <li>Öffne in Safari irgendeine Webseite, tippe auf <b>Teilen</b> → <b>Lesezeichen hinzufügen</b>. Name: <b>Lernen</b>, Ort: <b>Favoriten</b>. Sichern.</li>
+              <li>Tippe auf das Buch-Symbol (Lesezeichen) → <b>Favoriten</b> → <b>Bearbeiten</b> → tippe auf <b>Lernen</b>.</li>
+              <li>Lösche die Adresse, füge den kopierten Code ein und tippe auf <b>Fertig</b>.</li>
+              <li>Blende die Favoritenleiste ein: <b>Aa</b> bzw. Einstellungen → Safari → <b>Favoritenleiste anzeigen</b>. Jetzt steht <b>Lernen</b> über jeder Webseite.</li>
+            </ol>
+            <p class="hint" style="margin:0">Der Knopf öffnet den Agenten unter <code id="bmTarget"></code> und kopiert die Seite zusätzlich in die Zwischenablage. Nutzt du den Agenten als Home-Bildschirm-App, hat diese ein eigenes Gedächtnis: dort nach dem Tippen auf <b>Lernen</b> einfach unten den Text einfügen.</p>
+          </details>
+          <div><label for="pasteBox">Text einfügen</label>
+            <textarea class="f" id="pasteBox" rows="4" placeholder="Hier einfügen, was der Lernen-Knopf kopiert hat. Oder auf einer Webseite Text markieren, kopieren und hier einfügen."></textarea></div>
+          <div class="row">
+            <input type="text" id="pasteTitle" placeholder="Titel (optional)" style="flex:1;min-width:160px">
+            <button type="button" class="btn" id="pasteLearn">Lernen</button>
+            <button type="button" class="btn sec" id="clipLearn">Aus Zwischenablage lernen</button>
+          </div>
+          <div id="srcList"></div>
+        </div>
         <div class="card stack">
-          <div><h2>Gedächtnis</h2>
+          <div><h2>Eigene Notizen</h2>
           <p class="hint" style="margin:0">Fakten, die dein Agent kennt. Er durchsucht sie, wenn keine Fähigkeit passt. Im Chat geht's auch: „Merke dir, dass …“.</p></div>
           <form class="row" id="memForm">
             <input type="text" id="memInput" placeholder="z. B. Der Ersatzschlüssel liegt bei Oma." style="flex:1;min-width:200px">
@@ -272,15 +304,18 @@ const fresh = () => ({
   name: "Lvi", threshold: 0.5, voice: false, auto: true,
   skills: DEFAULT_SKILLS(),
   memory: [{ id: uid(), text: "Beispiel: Der Ersatzschlüssel liegt bei der Nachbarin.", t: Date.now() }],
+  sources: [],
   chat: []
 });
 let S = load(KEY) || fresh();
+S.sources = S.sources || [];
 let M = load(MKEY);
-const persist = () => save(KEY, S);
+const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); return true; }
+  catch (e) { if (typeof toast === "function") toast("Der Speicher ist voll. Lösche unter Gedächtnis ein paar gelernte Seiten."); return false; } };
 
 /* ---------- Text zu Merkmalen ---------- */
 const D = 2048;
-const STOP = new Set("der die das den dem des ein eine einen einem einer und oder ist sind war bin bist hat habe hast was wie wo wer wann mir mich dir dich du ich er sie es wir ihr mein meine meinen dein deine zu im in am an auf von vom mit fuer ueber bitte mal noch schon auch".split(" "));
+const STOP = new Set("der die das den dem des ein eine einen einem einer und oder ist sind war bin bist hat habe hast was wie wo wer wann mir mich dir dich du ich er sie es wir ihr mein meine meinen dein deine zu im in am an auf von vom mit fuer ueber bitte mal noch schon auch zum zur beim vom".split(" "));
 function norm(t) {
   return t.toLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss");
 }
@@ -455,12 +490,59 @@ function extractMemo(input) {
   if (/^(bitte|etwas|was)?$/i.test(t)) return "";
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
-function searchMemory(q) {
-  const qf = featurize(q, true); if (qf.empty) return null;
-  let best = null, bs = 0;
-  S.memory.forEach(m => { const c = cos(qf, featurize(m.text, true)); if (c > bs) { bs = c; best = m; } });
-  return bs > 0.24 ? best : null;
+// Suche im Gelernten: Stichwörter der Frage, seltene Wörter zählen mehr,
+// verwandte Formen (leben/lebt) und zusammengesetzte Wörter (Honigbiene) passen auch.
+const QSTOP = new Set("viel viele vielen lange welche welcher welches warum wieso weshalb gibt haben kann koennen kannst sagen sag erklaer weisst wurde wird werden denn eigentlich man einem einen sich nicht kein keine".split(" "));
+const WC = new Map();
+const words = t => { let w = WC.get(t); if (!w) { w = [...new Set(norm(t).replace(/[^a-z0-9]+/g, " ").split(" ").filter(x => x.length > 1 && !STOP.has(x)))]; WC.set(t, w); } return w; };
+function wmatch(a, b) {
+  if (a === b) return true;
+  let cp = 0; while (cp < a.length && cp < b.length && a[cp] === b[cp]) cp++;
+  if (cp >= 5 || (cp >= 3 && cp >= Math.min(a.length, b.length) - 1)) return true;
+  return a.length >= 4 && b.length > a.length && b.endsWith(a.length > 5 ? a.replace(/(en|e|n)$/, "") : a);
 }
+function searchMemory(q) {
+  const qw = words(q).filter(w => !QSTOP.has(w)); if (!qw.length) return null;
+  const cands = [];
+  S.memory.forEach(m => cands.push({ text: m.text }));
+  // einzelne Sätze und je zwei Sätze zusammen, damit eine Antwort über einen Satz hinaus reichen darf
+  S.sources.forEach(src => src.sents.forEach((t, i) => { cands.push({ text: t, src, i });
+    if (src.sents[i + 1]) cands.push({ text: t + " " + src.sents[i + 1], src, i, pair: true }); }));
+  if (!cands.length) return null;
+  const df = qw.map(() => 0);
+  cands.forEach(c => { const ws = words(c.text); c.hit = qw.map((w, k) => { const h = ws.some(x => wmatch(w, x)); if (h) df[k]++; return h; }); });
+  const idf = df.map(d => Math.log(1 + cands.length / (1 + d)) + 0.2), tot = idf.reduce((x, y) => x + y, 0);
+  let best = null;
+  cands.forEach(c => { let sc = 0; c.hit.forEach((h, k) => { if (h) sc += idf[k]; }); sc /= tot;
+    sc -= words(c.text).length * 0.002;  // bei Gleichstand den kürzeren Satz nehmen
+    if (!best || sc > best.score) best = { ...c, score: sc }; });
+  return best && best.score >= 0.5 ? best : null;
+}
+function splitSentences(text) {
+  const out = [], seen = new Set();
+  text.split(/\n+/).forEach(line => {
+    line = line.replace(/\s+/g, " ").trim();
+    line.replace(/([.!?])\s+(?=[A-ZÄÖÜ0-9„"(])/g, "$1\u0001").split("\u0001").forEach(x => {
+      x = x.trim(); if (x.length < 25) { if (out.length && x) out[out.length - 1] += " " + x; return; }
+      if (x.length > 400) x = x.slice(0, 400) + " …";
+      if (!seen.has(x)) { seen.add(x); out.push(x); }
+    });
+  });
+  return out.slice(0, 600);
+}
+function learnPage(d) {
+  const text = String(d.text || "").slice(0, 20000);
+  const sents = splitSentences(text);
+  if (sents.length < 1) { toast("Auf dieser Seite habe ich keinen Text gefunden."); return null; }
+  const url = d.url ? String(d.url) : "";
+  if (url) S.sources = S.sources.filter(x => x.url !== url);
+  const src = { id: uid(), title: String(d.title || sents[0].slice(0, 60)).trim().slice(0, 120), url, t: Date.now(), sents };
+  S.sources.unshift(src);
+  if (!persist()) { S.sources.shift(); return null; }
+  renderMemory();
+  return src;
+}
+const host = u => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return ""; } };
 let audioCtx;
 function beep() {
   try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
@@ -514,9 +596,17 @@ function fits(sk, input) {
 }
 function respond(input) {
   const r = predict(input);
-  if (!r.unsure && fits(skill(r.top.id), input)) { const sk = skill(r.top.id); return bot(runSkill(sk, input), { kind: "ok", skill: sk.id, conf: r.top.p, input }); }
   const mem = searchMemory(input);
-  if (mem) return bot(`Dazu habe ich mir gemerkt: „${mem.text}“`, { kind: "memory", input, conf: r.top ? r.top.p : 0 });
+  // Gelerntes Wissen gewinnt, wenn es deutlich besser passt als die Beispielsätze der Fähigkeit
+  const memFirst = mem && (r.unsure || mem.score >= 0.75 && (r.top.p < 0.9 || r.sim < 0.5));
+  if (!r.unsure && !memFirst && fits(skill(r.top.id), input)) { const sk = skill(r.top.id); return bot(runSkill(sk, input), { kind: "ok", skill: sk.id, conf: r.top.p, input }); }
+  if (mem && mem.src) {
+    const prev = mem.src.sents[mem.i - 1];
+    let txt = mem.text;
+    if (prev && /^(sie|er|es|damit|dabei|dadurch|dort|diese[rsnm]?|dies|deshalb|daher|deswegen)\b/i.test(txt)) txt = prev + " " + txt;
+    return bot(txt, { kind: "memory", input, srcTitle: mem.src.title, srcUrl: mem.src.url });
+  }
+  if (mem) return bot(`Dazu habe ich mir gemerkt: „${mem.text}“`, { kind: "memory", input });
   bot("Das verstehe ich noch nicht. Zeig mir, was ich hätte tun sollen, dann lerne ich es.", {
     kind: "unknown", input, open: true, guesses: r.ranked.filter(g => g.p > 0.12 && fits(skill(g.id), input)).slice(0, 3).map(g => g.id) });
 }
@@ -535,6 +625,8 @@ function renderMsg(m) {
       meta.append(ok, no);
     } else if (m.done === "ok") meta.insertAdjacentHTML("beforeend", `<span class="ghost on">gelernt</span>`);
   } else if (m.kind === "memory" && !m.done) {
+    if (m.srcTitle) { const q = document.createElement(m.srcUrl ? "a" : "span"); q.className = "chip";
+      q.textContent = "Quelle: " + m.srcTitle.slice(0, 50); if (m.srcUrl) { q.href = m.srcUrl; q.target = "_blank"; q.rel = "noopener"; } meta.append(q); }
     meta.append(btn("Das war nicht gemeint", "ghost", () => { m.open = true; persist(); el.replaceWith(renderMsg(m)); }));
   }
   if (meta.childNodes.length) el.appendChild(meta);
@@ -582,7 +674,7 @@ function learn(input, id, noTrain) {
 }
 function renderChat() {
   log.innerHTML = "";
-  if (!S.chat.length) S.chat.push({ who: "bot", text: `Hallo, ich bin ${S.name}. Ich laufe nur auf diesem Gerät und lerne von dir. Probier „Wie viel ist 12 mal 7?“, „Merke dir, dass …“ oder „Timer auf 1 Minute“. Wenn ich etwas nicht verstehe, zeigst du es mir einfach.` });
+  if (!S.chat.length) S.chat.push({ who: "bot", text: `Hallo, ich bin ${S.name}. Ich laufe nur auf diesem Gerät und lerne von dir. Probier „Wie viel ist 12 mal 7?“, „Merke dir, dass …“ oder „Timer auf 1 Minute“. Wenn ich etwas nicht verstehe, zeigst du es mir einfach. Ganze Webseiten bringst du mir unter Gedächtnis mit dem Lernen-Knopf bei.` });
   S.chat.forEach(m => log.appendChild(renderMsg(m)));
   log.scrollTop = log.scrollHeight;
 }
@@ -683,6 +775,14 @@ function drawCurve(h) {
 
 /* ---------- Gedächtnis ---------- */
 function renderMemory() {
+  const sl = $("#srcList"); sl.innerHTML = "";
+  if (S.sources.length) sl.insertAdjacentHTML("beforeend", `<h3 style="margin-top:4px">Gelernte Seiten (${S.sources.length})</h3>`);
+  S.sources.forEach(src => {
+    const r = document.createElement("div"); r.className = "src";
+    r.innerHTML = `<div>${esc(src.title)}<small>${esc(host(src.url) || "eingefügter Text")} · ${src.sents.length} Sätze · ${new Date(src.t).toLocaleDateString("de-DE")}</small></div>`;
+    r.append(btn("Vergessen", "ghost", () => { S.sources = S.sources.filter(x => x.id !== src.id); persist(); renderMemory(); }));
+    sl.appendChild(r);
+  });
   const l = $("#memList");
   if (!S.memory.length) { l.innerHTML = `<p class="hint" style="margin:0">Noch nichts gemerkt. Schreib oben einen Fakt hinein oder sag im Chat „Merke dir, dass …“.</p>`; return; }
   l.innerHTML = "";
@@ -698,11 +798,44 @@ $("#memForm").addEventListener("submit", e => {
   S.memory.unshift({ id: uid(), text: v, t: Date.now() }); $("#memInput").value = ""; persist(); renderMemory(); toast("Gemerkt");
 });
 
+/* ---------- Lernen-Knopf ---------- */
+const AGENT_URL = /github\.io|^file:|localhost|127\.0\.0\.1/.test(location.href) ? location.href.split("#")[0] : "https://levirob2015.github.io/L-vi/agent.html";
+const BOOKMARKLET = "javascript:(function(){var r=document.querySelector('article')||document.querySelector('main')||document.body,a=[],s=r.querySelectorAll('h1,h2,h3,h4,p,li,td,dd,blockquote');for(var i=0;i<s.length;i++){var t=(s[i].innerText||'').replace(/\\s+/g,' ').trim();if(t.length>40)a.push(t)}var x=a.join('\\n');if(x.length<300)x=r.innerText||'';x=x.slice(0,15000);var p=JSON.stringify({agentLernen:1,title:document.title,url:location.href,text:x});try{navigator.clipboard.writeText(p)}catch(e){}window.open('" + AGENT_URL + "#lernen='+encodeURIComponent(p),'_blank')})();";
+$("#bmCode").value = BOOKMARKLET; $("#bmTarget").textContent = AGENT_URL;
+$("#bmLink").href = BOOKMARKLET; $("#bmLink").onclick = e => { e.preventDefault(); toast("Am Computer in die Lesezeichenleiste ziehen, auf dem iPad den Code kopieren."); };
+$("#copyBm").onclick = () => {
+  const box = $("#bmCode"), fall = () => { box.focus(); box.select(); toast("Markiert. Jetzt kopieren."); };
+  try { navigator.clipboard.writeText(BOOKMARKLET).then(() => toast("Code kopiert"), fall); } catch (e) { fall(); }
+};
+function learnFromText(raw, title) {
+  raw = String(raw || "").trim(); if (!raw) { toast("Füge zuerst Text ein."); return; }
+  let d = { text: raw, title };
+  if (raw.startsWith("{")) { try { const j = JSON.parse(raw); if (j.agentLernen) d = j; } catch (e) {} }
+  const src = learnPage(d);
+  if (!src) return;
+  $("#pasteBox").value = ""; $("#pasteTitle").value = "";
+  toast(`Gelernt: ${src.sents.length} Sätze`);
+  bot(`Ich habe „${src.title}“ gelesen und ${src.sents.length} Sätze gelernt. Frag mich etwas dazu.`, { kind: "info" });
+}
+$("#pasteLearn").onclick = () => learnFromText($("#pasteBox").value, $("#pasteTitle").value.trim());
+$("#clipLearn").onclick = () => {
+  try { navigator.clipboard.readText().then(t => learnFromText(t, $("#pasteTitle").value.trim()),
+    () => { $("#pasteBox").focus(); toast("Kein Zugriff auf die Zwischenablage. Füge den Text oben ein."); }); }
+  catch (e) { $("#pasteBox").focus(); toast("Füge den Text oben ein."); }
+};
+function takeLearnHash() {
+  if (!location.hash.startsWith("#lernen=")) return false;
+  let d = null; try { d = JSON.parse(decodeURIComponent(location.hash.slice(8))); } catch (e) {}
+  try { history.replaceState(null, "", "#chat"); } catch (e) { location.hash = "chat"; }
+  if (d) learnFromText(JSON.stringify(d)); else toast("Die Seite war zu lang für den Knopf. Füge sie unter Gedächtnis ein.");
+  return true;
+}
+
 /* ---------- Einstellungen ---------- */
 function renderSettings() {
   $("#setName").value = S.name; $("#setThr").value = Math.round(S.threshold * 100); $("#thrVal").textContent = Math.round(S.threshold * 100) + " %";
   $("#setVoice").checked = S.voice; $("#setAuto").checked = S.auto;
-  $("#exportBox").value = JSON.stringify({ format: "agentenwerkstatt", version: 1, name: S.name, threshold: S.threshold, skills: S.skills, memory: S.memory }, null, 1);
+  $("#exportBox").value = JSON.stringify({ format: "agentenwerkstatt", version: 1, name: S.name, threshold: S.threshold, skills: S.skills, memory: S.memory, sources: S.sources });
 }
 function renderName() { $("#agentName").textContent = S.name || "Agent"; $("#mark").textContent = (S.name || "A").charAt(0).toUpperCase(); }
 $("#setName").addEventListener("input", e => { S.name = e.target.value.trim() || "Agent"; persist(); renderName(); });
@@ -721,6 +854,7 @@ function importText(txt) {
     S.skills = d.skills.map(s => ({ id: s.id || uid(), name: String(s.name || ""), action: ACTIONS[s.action] ? s.action : "none",
       examples: (s.examples || []).map(String), answers: (s.answers || []).map(String) }));
     S.memory = (d.memory || []).map(m => ({ id: m.id || uid(), text: String(m.text), t: m.t || Date.now() }));
+    S.sources = (d.sources || []).filter(x => x && Array.isArray(x.sents)).map(x => ({ id: x.id || uid(), title: String(x.title || ""), url: String(x.url || ""), t: x.t || Date.now(), sents: x.sents.map(String) }));
     if (d.name) S.name = String(d.name); if (d.threshold) S.threshold = +d.threshold;
     persist(); sel = S.skills[0] && S.skills[0].id; editing = null;
     renderAll(); toast("Sicherung geladen. Ich trainiere neu."); train(null, true);
@@ -739,6 +873,7 @@ function toast(t) {
 }
 const VIEWS = ["chat", "trainieren", "gedaechtnis", "einstellungen"];
 function route() {
+  takeLearnHash();
   const v = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "chat";
   VIEWS.forEach(n => { $("#v-" + n).hidden = n !== v; });
   document.querySelectorAll("#tabs a").forEach(a => a.dataset.v === v ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current"));

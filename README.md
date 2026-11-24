@@ -36,7 +36,9 @@ Kommandozeile.
 > Fähigkeiten mit Beispielsätzen und Antworten an, ein kleines neuronales
 > Netz lernt daraus direkt im Browser. Versteht er etwas nicht, zeigst du
 > es ihm im Chat, und er trainiert sofort nach. Dazu: rechnen, Dinge merken
-> (Gedächtnis), Timer, Uhrzeit, Würfeln, Antworten vorlesen. Kein Server,
+> (Gedächtnis), Timer, Uhrzeit, Würfeln, Antworten vorlesen. Mit dem
+> **Lernen-Knopf** in der Safari-Favoritenleiste liest er jede Webseite
+> und beantwortet danach Fragen dazu, mit Quellenangabe. Kein Server,
 > kein Konto, keine Daten verlassen das Gerät; Sicherung als Text zum Kopieren.
 > Online: `https://levirob2015.github.io/L-vi/agent.html` – in Safari über
 > *Teilen → Zum Home-Bildschirm* als App ablegen.
