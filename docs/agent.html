@@ -1,0 +1,759 @@
+<title>Agentenwerkstatt</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Agent">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;700&display=swap">
+<style>
+/* Layout: eine Bildschirm-App. Kopfzeile mit Reitern, darunter eine Arbeitsfläche je Reiter;
+   im Chat füllt der Verlauf die Höhe, die Eingabe steht unten. */
+:root{
+  --bg:#F1F3F6; --panel:#FFFFFF; --ink:#151922; --muted:#5A6371; --line:#DCE0E7;
+  --accent:#BF4E1A; --accent-ink:#FFFFFF; --accent-soft:#FAE8DD; --bubble:#E9ECF1;
+  --ok:#2C7A4B; --warn:#A86A12;
+  --f-display:"Space Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11141A; --panel:#191E26; --ink:#E7EAEF; --muted:#97A0AD; --line:#2A303A;
+  --accent:#EF7A42; --accent-ink:#1B0C04; --accent-soft:#3A2317; --bubble:#232934;
+  --ok:#5CBF89; --warn:#E2A94B; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11141A; --panel:#191E26; --ink:#E7EAEF; --muted:#97A0AD; --line:#2A303A;
+  --accent:#EF7A42; --accent-ink:#1B0C04; --accent-soft:#3A2317; --bubble:#232934;
+  --ok:#5CBF89; --warn:#E2A94B; color-scheme:dark}
+
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5;
+  -webkit-text-size-adjust:100%}
+*{box-sizing:border-box}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{height:100%;display:flex;flex-direction:column;max-width:1100px;margin:0 auto;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-block:14px 10px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.mark{width:34px;height:34px;border-radius:9px;background:var(--accent);color:var(--accent-ink);
+  display:grid;place-items:center;font-family:var(--f-display);font-weight:700;font-size:17px;flex:none}
+.brand h1{font-family:var(--f-display);font-size:20px;margin:0;line-height:1.1}
+.brand small{display:block;color:var(--muted);font-size:12px}
+nav{display:flex;gap:4px;margin-left:auto;overflow-x:auto;max-width:100%}
+nav a{padding:8px 12px;border-radius:8px;color:var(--muted);text-decoration:none;font-weight:500;white-space:nowrap}
+nav a[aria-current="page"]{background:var(--panel);color:var(--ink);box-shadow:0 0 0 1px var(--line)}
+
+main{flex:1;min-height:0;display:flex;flex-direction:column}
+section.view{flex:1;min-height:0;overflow-y:auto;padding-block:16px}
+section.view.chat{display:flex;flex-direction:column;padding-block:0;overflow:hidden}
+
+/* Chat */
+.log{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-block:16px}
+.msg{max-width:min(620px,88%);display:flex;flex-direction:column;gap:6px}
+.msg .b{padding:10px 14px;border-radius:16px;white-space:pre-wrap;overflow-wrap:anywhere}
+.msg.me{align-self:flex-end}
+.msg.me .b{background:var(--accent);color:var(--accent-ink);border-bottom-right-radius:5px}
+.msg.bot .b{background:var(--bubble);border-bottom-left-radius:5px}
+.meta{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:12px;color:var(--muted)}
+.chip{font-family:var(--f-mono);font-size:11.5px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);background:var(--panel)}
+.chip.low{border-color:var(--warn);color:var(--warn)}
+.ghost{border:1px solid var(--line);background:var(--panel);border-radius:99px;padding:3px 10px;font-size:12px;cursor:pointer}
+.ghost:hover{border-color:var(--muted)}
+.ghost.on{border-color:var(--ok);color:var(--ok)}
+.teach{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;display:grid;gap:8px}
+.teach p{margin:0;font-size:13px;color:var(--muted)}
+.guesses{display:flex;flex-wrap:wrap;gap:6px}
+.composer{display:flex;gap:8px;align-items:flex-end;padding-block:10px 14px;border-top:1px solid var(--line)}
+.composer textarea{flex:1;min-width:0;resize:none;border:1px solid var(--line);background:var(--panel);
+  border-radius:14px;padding:11px 14px;max-height:140px;font-size:16px}
+.btn{border:0;border-radius:10px;padding:10px 16px;font-weight:600;cursor:pointer;background:var(--accent);color:var(--accent-ink)}
+.btn.sec{background:var(--panel);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
+.btn:disabled{opacity:.5;cursor:default}
+.icon-btn{width:44px;height:44px;border-radius:12px;padding:0;display:grid;place-items:center;flex:none}
+.icon-btn svg{width:20px;height:20px}
+.hint{font-size:12.5px;color:var(--muted)}
+
+/* Formulare */
+label{font-size:13px;font-weight:600;display:block;margin-bottom:4px}
+input[type=text],select,textarea.f{width:100%;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:9px 12px;font-size:15px}
+textarea.f{resize:vertical;min-height:90px;line-height:1.45}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+h2{font-family:var(--f-display);font-size:18px;margin:0 0 4px;text-wrap:balance}
+h3{font-family:var(--f-display);font-size:15px;margin:0}
+.stack{display:grid;gap:14px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+
+/* Trainieren */
+.trainbar{display:grid;grid-template-columns:1fr minmax(0,320px);gap:16px;align-items:stretch}
+.stats{display:flex;gap:18px;flex-wrap:wrap;margin:6px 0 12px}
+.stat b{display:block;font-family:var(--f-mono);font-size:20px;font-variant-numeric:tabular-nums}
+.stat span{font-size:12px;color:var(--muted)}
+.pill{display:inline-block;font-size:12px;font-weight:600;padding:3px 10px;border-radius:99px}
+.pill.ok{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+.pill.warn{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+canvas{width:100%;height:120px;display:block}
+.workshop{display:grid;grid-template-columns:240px minmax(0,1fr);gap:16px;margin-top:16px}
+.skills{display:flex;flex-direction:column;gap:4px}
+.skills button{text-align:left;border:0;background:transparent;border-radius:9px;padding:8px 10px;cursor:pointer;display:flex;justify-content:space-between;gap:8px}
+.skills button[aria-selected="true"]{background:var(--panel);box-shadow:0 0 0 1px var(--line)}
+.skills button small{font-family:var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.mem{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}
+.mem:last-child{border-bottom:0}
+.mem div{flex:1;min-width:0;overflow-wrap:anywhere}
+.mem time{display:block;font-size:12px;color:var(--muted);font-family:var(--f-mono)}
+code{font-family:var(--f-mono);font-size:12.5px;background:var(--bubble);padding:1px 5px;border-radius:5px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));
+  background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:10px;font-size:14px;z-index:20}
+@media (max-width:760px){
+  .trainbar,.workshop,.two{grid-template-columns:1fr}
+  .skills{flex-direction:row;overflow-x:auto}
+  .skills button{flex:none}
+  nav{margin-left:0;width:100%}
+}
+@media (prefers-reduced-motion:no-preference){.msg{animation:in .18s ease-out}@keyframes in{from{transform:translateY(4px);opacity:.4}}}
+</style>
+
+<div class="app">
+  <header>
+    <div class="brand">
+      <div class="mark" id="mark">L</div>
+      <div><h1 id="agentName">Lvi</h1><small>läuft komplett auf diesem Gerät</small></div>
+    </div>
+    <nav id="tabs">
+      <a href="#chat" data-v="chat">Chat</a>
+      <a href="#trainieren" data-v="trainieren">Trainieren</a>
+      <a href="#gedaechtnis" data-v="gedaechtnis">Gedächtnis</a>
+      <a href="#einstellungen" data-v="einstellungen">Einstellungen</a>
+    </nav>
+  </header>
+
+  <main>
+    <!-- CHAT -->
+    <section class="view chat" id="v-chat">
+      <div class="log" id="log" aria-live="polite"></div>
+      <form class="composer" id="composer">
+        <button type="button" class="btn sec icon-btn" id="mic" hidden aria-label="Spracheingabe">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        </button>
+        <textarea id="input" rows="1" placeholder="Schreib etwas, z. B. „Wie viel ist 12 mal 7?“" autocomplete="off"></textarea>
+        <button class="btn icon-btn" aria-label="Senden">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
+      </form>
+    </section>
+
+    <!-- TRAINIEREN -->
+    <section class="view" id="v-trainieren" hidden>
+      <div class="trainbar">
+        <div class="card">
+          <div class="row" style="justify-content:space-between">
+            <h2>Dein Modell</h2><span id="trainState" class="pill ok">trainiert</span>
+          </div>
+          <div class="stats">
+            <div class="stat"><b id="sSkills">0</b><span>Fähigkeiten</span></div>
+            <div class="stat"><b id="sEx">0</b><span>Beispielsätze</span></div>
+            <div class="stat"><b id="sAcc">–</b><span>Trefferquote</span></div>
+            <div class="stat"><b id="sTime">–</b><span>trainiert</span></div>
+          </div>
+          <div class="row">
+            <button class="btn" id="trainBtn">Jetzt trainieren</button>
+            <span class="hint" id="trainMsg">Ein kleines neuronales Netz lernt aus deinen Beispielsätzen, welche Fähigkeit gemeint ist.</span>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Lernkurve</h3>
+          <canvas id="curve" width="600" height="240" aria-label="Fehler und Trefferquote während des Trainings"></canvas>
+          <div class="hint"><span style="color:var(--accent)">●</span> Fehler &nbsp; <span style="color:var(--ok)">●</span> Trefferquote</div>
+        </div>
+      </div>
+
+      <div class="workshop">
+        <div>
+          <div class="skills" id="skillList" role="tablist"></div>
+          <button class="btn sec" id="addSkill" style="margin-top:10px;width:100%">+ Neue Fähigkeit</button>
+        </div>
+        <div class="card stack" id="editor"></div>
+      </div>
+    </section>
+
+    <!-- GEDÄCHTNIS -->
+    <section class="view" id="v-gedaechtnis" hidden>
+      <div class="stack">
+        <div class="card stack">
+          <div><h2>Gedächtnis</h2>
+          <p class="hint" style="margin:0">Fakten, die dein Agent kennt. Er durchsucht sie, wenn keine Fähigkeit passt. Im Chat geht's auch: „Merke dir, dass …“.</p></div>
+          <form class="row" id="memForm">
+            <input type="text" id="memInput" placeholder="z. B. Der Ersatzschlüssel liegt bei Oma." style="flex:1;min-width:200px">
+            <button class="btn">Merken</button>
+          </form>
+        </div>
+        <div class="card" id="memList"></div>
+      </div>
+    </section>
+
+    <!-- EINSTELLUNGEN -->
+    <section class="view" id="v-einstellungen" hidden>
+      <div class="stack">
+        <div class="card stack">
+          <h2>Agent</h2>
+          <div class="two">
+            <div><label for="setName">Name</label><input type="text" id="setName"></div>
+            <div><label for="setThr">Mindest-Sicherheit: <span id="thrVal"></span></label>
+              <input type="range" id="setThr" min="30" max="90" step="5" style="width:100%">
+              <div class="hint">Darunter fragt der Agent nach, statt zu raten.</div></div>
+          </div>
+          <div class="row"><input type="checkbox" id="setVoice"><label for="setVoice" style="margin:0;font-weight:500">Antworten vorlesen</label></div>
+          <div class="row"><input type="checkbox" id="setAuto"><label for="setAuto" style="margin:0;font-weight:500">Nach jeder Korrektur im Chat automatisch nachtrainieren</label></div>
+        </div>
+
+        <div class="card stack">
+          <h2>Sichern und übertragen</h2>
+          <p class="hint" style="margin:0">Alles liegt nur in diesem Browser. Kopiere die Sicherung in eine Notiz oder Datei, um sie aufzuheben oder auf ein anderes Gerät zu bringen.</p>
+          <div class="row"><button class="btn sec" id="copyExport">Sicherung kopieren</button></div>
+          <textarea class="f" id="exportBox" readonly style="font-family:var(--f-mono);font-size:12px"></textarea>
+          <label for="importBox">Sicherung einfügen</label>
+          <textarea class="f" id="importBox" placeholder="Sicherung hier einfügen …" style="font-family:var(--f-mono);font-size:12px"></textarea>
+          <div class="row">
+            <button class="btn sec" id="doImport">Sicherung laden</button>
+            <label class="btn sec" style="margin:0;font-weight:600">Datei wählen<input type="file" id="importFile" accept=".json,.txt,application/json" hidden></label>
+          </div>
+        </div>
+
+        <div class="card stack">
+          <h2>Auf dem iPad als App</h2>
+          <p style="margin:0">In Safari öffnen, auf <b>Teilen</b> tippen, dann <b>Zum Home-Bildschirm</b>. Der Agent bekommt ein eigenes Symbol und startet ohne Browserleiste. Er braucht kein Internet und schickt nichts weg: Training und Antworten laufen auf dem iPad. Statt der Mikrofon-Taste geht immer auch das Diktier-Mikrofon der iPad-Tastatur.</p>
+        </div>
+
+        <div class="card stack">
+          <h2>Neu anfangen</h2>
+          <p class="hint" style="margin:0">Setzt Fähigkeiten, Gedächtnis und Chat auf die Beispiele zurück.</p>
+          <div class="row"><button class="btn sec" id="reset">Zurücksetzen</button><button class="btn" id="resetYes" hidden>Ja, alles löschen</button></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+(() => {
+"use strict";
+const $ = s => document.querySelector(s);
+const KEY = "agentenwerkstatt.v1", MKEY = "agentenwerkstatt.model.v1";
+const load = k => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } };
+const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+const uid = () => Math.random().toString(36).slice(2, 9);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+/* ---------- Beispiel-Fähigkeiten ---------- */
+const ACTIONS = {
+  none: "Nur antworten", zeit: "Uhrzeit sagen", datum: "Datum sagen", rechnen: "Rechnen",
+  merken: "Etwas merken", erinnern: "Gemerktes aufzählen", timer: "Timer stellen", wuerfeln: "Würfeln"
+};
+const DEFAULT_SKILLS = () => [
+  { name: "Begrüßung", action: "none", examples: ["hallo", "hi", "hey", "guten morgen", "guten abend", "servus", "moin", "hallo wie geht es dir", "na du"], answers: ["Hallo! Schön, dass du da bist.", "Hi! Was kann ich für dich tun?", "Hey, ich bin bereit."] },
+  { name: "Verabschiedung", action: "none", examples: ["tschüss", "bis später", "ciao", "gute nacht", "bis morgen", "ich muss los"], answers: ["Bis bald!", "Mach's gut, ich bin hier, wenn du mich brauchst."] },
+  { name: "Wer bist du", action: "none", examples: ["wer bist du", "wie heißt du", "was kannst du", "was bist du", "stell dich vor", "was kann ich dich fragen"], answers: ["Ich bin {name}, dein eigener Agent. Ich laufe nur auf diesem Gerät und lerne, was du mir beibringst. Ich kann rechnen, mir Dinge merken, Timer stellen und die Uhrzeit sagen. Alles andere bringst du mir unter Trainieren bei."] },
+  { name: "Danke", action: "none", examples: ["danke", "vielen dank", "dankeschön", "super danke", "toll gemacht"], answers: ["Gern geschehen!", "Immer wieder gern."] },
+  { name: "Uhrzeit", action: "zeit", examples: ["wie spät ist es", "uhrzeit", "wie viel uhr ist es", "sag mir die uhrzeit", "wie spät haben wir"], answers: ["Es ist {ergebnis} Uhr."] },
+  { name: "Datum", action: "datum", examples: ["welcher tag ist heute", "datum", "der wievielte ist heute", "welches datum haben wir", "was ist heute für ein tag"], answers: ["Heute ist {ergebnis}."] },
+  { name: "Rechnen", action: "rechnen", examples: ["was ist 3 plus 4", "rechne 12 mal 7", "wie viel ist 100 geteilt durch 4", "15 minus 8", "was ergibt 2 hoch 10", "20 prozent von 80", "wurzel aus 144", "3 + 5 * 2"], answers: ["Das ergibt {ergebnis}.", "{ergebnis}"] },
+  { name: "Merken", action: "merken", examples: ["merke dir dass mein fahrrad blau ist", "merk dir den code 4711", "notiere milch kaufen", "schreib auf zahnarzt am dienstag", "speichere dass oma am 3 mai geburtstag hat", "merke dir bitte etwas"], answers: ["Gemerkt: „{ergebnis}“"] },
+  { name: "Erinnern", action: "erinnern", examples: ["was hast du dir gemerkt", "zeig meine notizen", "woran soll ich denken", "was weißt du über mich", "lies meine notizen vor"], answers: ["Das habe ich mir gemerkt:\n{ergebnis}"] },
+  { name: "Timer", action: "timer", examples: ["stell einen timer auf 5 minuten", "timer 30 sekunden", "erinnere mich in 10 minuten", "wecker in einer stunde", "sag mir in 2 minuten bescheid"], answers: ["Timer läuft: {ergebnis}. Ich melde mich."] },
+  { name: "Würfeln", action: "wuerfeln", examples: ["würfle", "wirf einen würfel", "würfeln bitte", "gib mir eine zufallszahl"], answers: ["Gewürfelt: {ergebnis}"] },
+  { name: "Witz", action: "none", examples: ["erzähl einen witz", "mach einen witz", "bring mich zum lachen", "kennst du einen witz"], answers: ["Warum können Geister so schlecht lügen? Weil man durch sie hindurchsieht.", "Treffen sich zwei Magneten. Sagt der eine: Was soll ich heute bloß anziehen?", "Was macht ein Pirat am Computer? Er drückt die Enter-Taste."] }
+].map(s => ({ id: uid(), ...s }));
+
+const fresh = () => ({
+  name: "Lvi", threshold: 0.5, voice: false, auto: true,
+  skills: DEFAULT_SKILLS(),
+  memory: [{ id: uid(), text: "Beispiel: Der Ersatzschlüssel liegt bei der Nachbarin.", t: Date.now() }],
+  chat: []
+});
+let S = load(KEY) || fresh();
+let M = load(MKEY);
+const persist = () => save(KEY, S);
+
+/* ---------- Text zu Merkmalen ---------- */
+const D = 2048;
+const STOP = new Set("der die das den dem des ein eine einen einem einer und oder ist sind war bin bist hat habe hast was wie wo wer wann mir mich dir dich du ich er sie es wir ihr mein meine meinen dein deine zu im in am an auf von vom mit fuer ueber bitte mal noch schon auch".split(" "));
+function norm(t) {
+  return t.toLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss");
+}
+function stem(w) { return w.length > 5 ? w.replace(/(ern|em|en|er|es|e|n|s|st|t)$/, "") : w; }
+function tokens(t, dropStop) {
+  return norm(t).replace(/[^a-z0-9]+/g, " ").split(" ").filter(Boolean)
+    .filter(w => !dropStop || !STOP.has(w))
+    .map(w => /^\d+$/.test(w) ? "#zahl" : stem(w));
+}
+function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) % D; }
+function featurize(text, dropStop) {
+  const m = new Map(), add = (k, w) => { const h = hash(k); m.set(h, (m.get(h) || 0) + w); };
+  const tk = tokens(text, dropStop);
+  tk.forEach((w, i) => {
+    add("w:" + w, 1);
+    if (i > 0) add("b:" + tk[i - 1] + "_" + w, 0.6);
+    if (w[0] !== "#") { const p = " " + w + " "; for (let j = 0; j < p.length - 2; j++) add("c:" + p.substr(j, 3), 0.3); }
+  });
+  let n = 0; m.forEach(x => n += x * x); n = Math.sqrt(n) || 1;
+  const idx = [], val = []; m.forEach((x, k) => { idx.push(k); val.push(x / n); });
+  return { idx, val, map: m, n, empty: tk.length === 0 };
+}
+function cos(a, b) {
+  const [s, l] = a.idx.length < b.idx.length ? [a, b] : [b, a]; let r = 0;
+  for (let i = 0; i < s.idx.length; i++) { const x = l.map.get(s.idx[i]); if (x) r += s.val[i] * x / l.n; }
+  return r;
+}
+
+/* ---------- Kleines neuronales Netz (läuft im Browser) ---------- */
+function rng(seed) { return () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }; }
+function makeNet(H, K, r) {
+  const a1 = Math.sqrt(6 / (24 + H)), a2 = Math.sqrt(6 / (H + K));
+  const W1 = new Float32Array(D * H).map(() => (r() * 2 - 1) * a1);
+  const W2 = new Float32Array(H * K).map(() => (r() * 2 - 1) * a2);
+  return { H, K, W1, b1: new Float32Array(H), W2, b2: new Float32Array(K) };
+}
+function forward(net, f) {
+  const { H, K, W1, b1, W2, b2 } = net, h = new Float32Array(H), z = new Float32Array(K);
+  for (let j = 0; j < H; j++) h[j] = b1[j];
+  for (let i = 0; i < f.idx.length; i++) { const o = f.idx[i] * H, v = f.val[i]; for (let j = 0; j < H; j++) h[j] += W1[o + j] * v; }
+  for (let j = 0; j < H; j++) if (h[j] < 0) h[j] = 0;
+  let mx = -1e9;
+  for (let k = 0; k < K; k++) { let s = b2[k]; for (let j = 0; j < H; j++) s += h[j] * W2[j * K + k]; z[k] = s; if (s > mx) mx = s; }
+  let sum = 0; for (let k = 0; k < K; k++) { z[k] = Math.exp(z[k] - mx); sum += z[k]; }
+  for (let k = 0; k < K; k++) z[k] /= sum;
+  return { h, p: z };
+}
+function buildSamples() {
+  const r = rng(7), samples = [], labels = [];
+  S.skills.forEach(sk => {
+    const ex = sk.examples.filter(e => e.trim());
+    if (!ex.length) return;
+    const y = labels.length; labels.push(sk.id);
+    [...ex, sk.name].forEach(e => {
+      samples.push({ f: featurize(e), y, text: e });
+      const w = e.trim().split(/\s+/);           // Variante mit einem fehlenden Wort: macht das Modell robuster
+      if (w.length >= 3) { w.splice(Math.floor(r() * w.length), 1); samples.push({ f: featurize(w.join(" ")), y, aug: true }); }
+    });
+  });
+  return { samples, labels };
+}
+let training = false;
+function train(onDone, quiet) {
+  if (training) return; training = true;
+  const { samples, labels } = buildSamples(), K = labels.length;
+  if (K < 2) { training = false; toast("Lege mindestens zwei Fähigkeiten mit Beispielsätzen an."); return; }
+  const net = makeNet(32, K, rng(42)), P = [net.W1, net.b1, net.W2, net.b2];
+  const G = P.map(p => new Float32Array(p.length)), Mo = P.map(p => new Float32Array(p.length)), Ve = P.map(p => new Float32Array(p.length));
+  const lr = 0.02, b1 = 0.9, b2 = 0.999, wd = 1e-4, EPOCHS = 300, N = samples.length;
+  const hist = []; let t = 0, ep = 0;
+  if (!quiet) { $("#trainBtn").disabled = true; }
+  const dh = new Float32Array(net.H), dz = new Float32Array(K);
+  function epoch() {
+    G.forEach(g => g.fill(0)); let loss = 0, correct = 0;
+    const [gW1, gb1, gW2, gb2] = G, { H, W2 } = net;
+    for (const s of samples) {
+      const { h, p } = forward(net, s.f);
+      loss -= Math.log(p[s.y] + 1e-9);
+      let am = 0; for (let k = 1; k < K; k++) if (p[k] > p[am]) am = k; if (am === s.y) correct++;
+      for (let k = 0; k < K; k++) dz[k] = p[k] - (k === s.y ? 1 : 0);
+      for (let j = 0; j < H; j++) {
+        let d = 0; for (let k = 0; k < K; k++) { gW2[j * K + k] += h[j] * dz[k]; d += W2[j * K + k] * dz[k]; }
+        dh[j] = h[j] > 0 ? d : 0; gb1[j] += dh[j];
+      }
+      for (let k = 0; k < K; k++) gb2[k] += dz[k];
+      for (let i = 0; i < s.f.idx.length; i++) { const o = s.f.idx[i] * H, v = s.f.val[i]; for (let j = 0; j < H; j++) gW1[o + j] += v * dh[j]; }
+    }
+    t++;
+    const c1 = 1 - Math.pow(b1, t), c2 = 1 - Math.pow(b2, t);
+    P.forEach((p, a) => { const g = G[a], m = Mo[a], v = Ve[a];
+      for (let i = 0; i < p.length; i++) { const gi = g[i] / N + wd * p[i]; if (gi === 0 && m[i] === 0) continue;
+        m[i] = b1 * m[i] + (1 - b1) * gi; v[i] = b2 * v[i] + (1 - b2) * gi * gi;
+        p[i] -= lr * (m[i] / c1) / (Math.sqrt(v[i] / c2) + 1e-8); } });
+    return { loss: loss / N, acc: correct / N };
+  }
+  function step() {
+    let last;
+    for (let i = 0; i < 15 && ep < EPOCHS; i++, ep++) { last = epoch(); hist.push(last); }
+    if (!quiet) { $("#trainMsg").textContent = `Trainiere … Durchgang ${ep} von ${EPOCHS}, Fehler ${last.loss.toFixed(3)}`; drawCurve(hist); }
+    if (ep < EPOCHS && last.loss > 0.015) return requestAnimationFrame(step);
+    // Trefferquote auf den echten Sätzen (ohne Varianten)
+    const real = samples.filter(s => !s.aug); let ok = 0;
+    real.forEach(s => { const p = forward(net, s.f).p; let am = 0; for (let k = 1; k < K; k++) if (p[k] > p[am]) am = k; if (am === s.y) ok++; });
+    const r4 = a => Array.from(a, x => Math.round(x * 1e4) / 1e4);
+    M = { H: net.H, K, labels, W1: r4(net.W1), b1: r4(net.b1), W2: r4(net.W2), b2: r4(net.b2),
+      acc: ok / real.length, epochs: ep, at: Date.now(), fp: fingerprint(), hist: hist.filter((_, i) => i % 3 === 0) };
+    save(MKEY, M); loadNet(); training = false;
+    if (!quiet) { $("#trainBtn").disabled = false; $("#trainMsg").textContent = `Fertig nach ${ep} Durchgängen.`; }
+    renderTrain(); onDone && onDone();
+  }
+  requestAnimationFrame(step);
+}
+let NET = null, EXF = [];
+function loadNet() {
+  NET = null; EXF = [];
+  if (!M || !M.W1) return;
+  NET = { H: M.H, K: M.K, W1: Float32Array.from(M.W1), b1: Float32Array.from(M.b1), W2: Float32Array.from(M.W2), b2: Float32Array.from(M.b2) };
+  S.skills.forEach(sk => { const k = M.labels.indexOf(sk.id); if (k >= 0) sk.examples.forEach(e => e.trim() && EXF.push({ f: featurize(e), id: sk.id })); });
+}
+function fingerprint() { return String(hash(JSON.stringify(S.skills.map(s => [s.id, s.name, s.examples])))) + ":" + S.skills.length; }
+function predict(text) {
+  const f = featurize(text);
+  if (!NET || f.empty) return { unsure: true, ranked: [] };
+  const p = forward(NET, f).p;
+  const ranked = M.labels.map((id, k) => ({ id, p: p[k] })).filter(r => skill(r.id)).sort((a, b) => b.p - a.p);
+  let sim = 0; EXF.forEach(e => { const c = cos(f, e.f); if (c > sim) sim = c; });
+  const top = ranked[0];
+  return { top, ranked, sim, unsure: !top || top.p < S.threshold || sim < 0.18 };
+}
+const skill = id => S.skills.find(s => s.id === id);
+
+/* ---------- Werkzeuge ---------- */
+function calc(input) {
+  let s = norm(input)
+    .replace(/(\d)\s*,\s*(\d)/g, "$1.$2")
+    .replace(/(\d+(?:\.\d+)?)\s*(prozent|%)\s*(von|aus)/g, "($1/100)*")
+    .replace(/\b(geteilt|dividiert)\s+durch\b|\bdurch\b/g, "/")
+    .replace(/(\d)\s*x\s*(\d)/g, "$1*$2").replace(/\bmal\b|\bmultipliziert mit\b/g, "*")
+    .replace(/\bplus\b|\bund\b/g, "+").replace(/\bminus\b|\bweniger\b/g, "-")
+    .replace(/\bhoch\b/g, "^").replace(/\b(quadrat)?wurzel( aus| von)?\b/g, "r")
+    .replace(/[^0-9+\-*/^().r]/g, "");
+  let i = 0;
+  const peek = () => s[i], eat = c => s[i] === c ? (i++, true) : false;
+  function expr() { let v = term(); for (;;) { if (eat("+")) v += term(); else if (eat("-")) v -= term(); else return v; } }
+  function term() { let v = power(); for (;;) { if (eat("*")) v *= power(); else if (eat("/")) v /= power(); else return v; } }
+  function power() { const b = unary(); return eat("^") ? Math.pow(b, power()) : b; }
+  function unary() { if (eat("-")) return -unary(); if (eat("r")) return Math.sqrt(unary()); return prim(); }
+  function prim() {
+    if (eat("(")) { const v = expr(); if (!eat(")")) throw 0; return v; }
+    const m = /^\d+(\.\d+)?/.exec(s.slice(i)); if (!m) throw 0; i += m[0].length; return parseFloat(m[0]);
+  }
+  if (!/\d/.test(s)) throw 0;
+  const v = expr(); if (i < s.length || !isFinite(v)) throw 0;
+  return (+v.toPrecision(12)).toLocaleString("de-DE", { maximumFractionDigits: 8 });
+}
+const NUMW = { ein: 1, eine: 1, einen: 1, einer: 1, zwei: 2, drei: 3, vier: 4, fuenf: 5, sechs: 6, sieben: 7, acht: 8, neun: 9, zehn: 10, zwoelf: 12, fuenfzehn: 15, zwanzig: 20, dreissig: 30, vierzig: 40, fuenfzig: 50, sechzig: 60 };
+function parseDuration(input) {
+  let s = norm(input).replace(/\b[a-z]+\b/g, w => NUMW[w] != null ? NUMW[w] : w);
+  if (/halbe?n? stunde/.test(s)) return { ms: 1800000, label: "30 Minuten" };
+  const m = /(\d+(?:[.,]\d+)?)\s*(sekunden?|sek|s|minuten?|min|stunden?|std|h)\b/.exec(s);
+  if (!m) return null;
+  const n = parseFloat(m[1].replace(",", ".")), u = m[2][0];
+  const f = u === "s" ? 1000 : u === "m" ? 60000 : 3600000;
+  const name = u === "s" ? (n === 1 ? "Sekunde" : "Sekunden") : u === "m" ? (n === 1 ? "Minute" : "Minuten") : (n === 1 ? "Stunde" : "Stunden");
+  return { ms: n * f, label: `${String(n).replace(".", ",")} ${name}` };
+}
+function extractMemo(input) {
+  let t = input.trim()
+    .replace(/^(bitte\s+)?(kannst du( dir)?\s+)?/i, "")
+    .replace(/^(merke?|merk|notiere?|notier|schreib(e)?|speicher(e)?)\b(\s+(dir|mir|auf|bitte|mal|folgendes))*\s*[:,]?\s*/i, "")
+    .replace(/^(dass|das)\s+/i, "").replace(/\s+(auf)?[.!?]*$/i, "").trim();
+  if (/^(bitte|etwas|was)?$/i.test(t)) return "";
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+function searchMemory(q) {
+  const qf = featurize(q, true); if (qf.empty) return null;
+  let best = null, bs = 0;
+  S.memory.forEach(m => { const c = cos(qf, featurize(m.text, true)); if (c > bs) { bs = c; best = m; } });
+  return bs > 0.24 ? best : null;
+}
+let audioCtx;
+function beep() {
+  try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.35, 0.7].forEach(d => { const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.frequency.value = 880; g.gain.setValueAtTime(0.15, audioCtx.currentTime + d); g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + d + 0.25);
+      o.connect(g).connect(audioCtx.destination); o.start(audioCtx.currentTime + d); o.stop(audioCtx.currentTime + d + 0.3); });
+  } catch (e) {}
+}
+function runSkill(sk, input) {
+  let res = "", fb = "";
+  switch (sk.action) {
+    case "zeit": res = new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }); fb = "Es ist {ergebnis} Uhr."; break;
+    case "datum": res = new Date().toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); fb = "Heute ist {ergebnis}."; break;
+    case "rechnen": try { res = calc(input); } catch (e) { return "Ich finde darin keine Rechnung. Schreib zum Beispiel: 12 mal 7, 2 hoch 8 oder 15 Prozent von 80."; } fb = "Das ergibt {ergebnis}."; break;
+    case "merken": res = extractMemo(input);
+      if (!res) return "Was soll ich mir merken? Schreib zum Beispiel: Merke dir, dass der Schlüssel im Flur liegt.";
+      S.memory.unshift({ id: uid(), text: res, t: Date.now() }); persist(); renderMemory(); fb = "Gemerkt: „{ergebnis}“"; break;
+    case "erinnern":
+      if (!S.memory.length) return "Ich habe mir noch nichts gemerkt. Sag zum Beispiel: Merke dir, dass Oma am 3. Mai Geburtstag hat.";
+      res = S.memory.slice(0, 10).map(m => "• " + m.text).join("\n"); fb = "Das habe ich mir gemerkt:\n{ergebnis}"; break;
+    case "timer": { const d = parseDuration(input);
+      if (!d) return "Wie lange? Sag zum Beispiel: Timer auf 5 Minuten.";
+      res = d.label; fb = "Timer läuft: {ergebnis}.";
+      setTimeout(() => { beep(); bot(`Dein Timer über ${d.label} ist abgelaufen.`, { kind: "info" }); }, d.ms); break; }
+    case "wuerfeln": res = String(1 + Math.floor(Math.random() * 6)); fb = "Gewürfelt: {ergebnis}"; break;
+  }
+  const opts = sk.answers.filter(a => a.trim());
+  let tpl = opts.length ? opts[Math.floor(Math.random() * opts.length)] : (fb || "…");
+  if (sk.action !== "none" && !tpl.includes("{ergebnis}")) tpl = tpl + " " + fb;
+  return tpl.replace(/\{ergebnis\}/g, res).replace(/\{name\}/g, S.name);
+}
+
+/* ---------- Chat ---------- */
+const log = $("#log");
+function speak(text) {
+  if (!S.voice || !window.speechSynthesis) return;
+  try { const u = new SpeechSynthesisUtterance(text.replace(/[•„“]/g, "")); u.lang = "de-DE"; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch (e) {}
+}
+function push(m) { S.chat.push(m); if (S.chat.length > 80) S.chat.splice(0, S.chat.length - 80); persist(); log.appendChild(renderMsg(m)); log.scrollTop = log.scrollHeight; }
+function bot(text, meta = {}) { push({ who: "bot", text, ...meta }); speak(text); }
+function handle(input) {
+  push({ who: "me", text: input });
+  if (!NET) { bot("Ich bin noch nicht trainiert. Einen Moment …", { kind: "info" }); return train(() => respond(input), true); }
+  respond(input);
+}
+// Werkzeuge, die ohne passende Angaben nichts tun können, werden nicht geraten
+function fits(sk, input) {
+  if (sk.action === "rechnen") return /\d/.test(input);
+  if (sk.action === "merken") return /\b(merk|notier|schreib|speicher)/i.test(norm(input));
+  return true;
+}
+function respond(input) {
+  const r = predict(input);
+  if (!r.unsure && fits(skill(r.top.id), input)) { const sk = skill(r.top.id); return bot(runSkill(sk, input), { kind: "ok", skill: sk.id, conf: r.top.p, input }); }
+  const mem = searchMemory(input);
+  if (mem) return bot(`Dazu habe ich mir gemerkt: „${mem.text}“`, { kind: "memory", input, conf: r.top ? r.top.p : 0 });
+  bot("Das verstehe ich noch nicht. Zeig mir, was ich hätte tun sollen, dann lerne ich es.", {
+    kind: "unknown", input, open: true, guesses: r.ranked.filter(g => g.p > 0.12 && fits(skill(g.id), input)).slice(0, 3).map(g => g.id) });
+}
+function renderMsg(m) {
+  const el = document.createElement("div");
+  el.className = "msg " + m.who;
+  el.innerHTML = `<div class="b">${esc(m.text)}</div>`;
+  if (m.who !== "bot" || !m.input) return el;
+  const meta = document.createElement("div"); meta.className = "meta";
+  if (m.kind === "ok") {
+    const sk = skill(m.skill), pc = Math.round(m.conf * 100);
+    meta.innerHTML = `<span class="chip ${pc < 70 ? "low" : ""}">${esc(sk ? sk.name : "gelöscht")} · ${pc} %</span>`;
+    if (!m.done) {
+      const ok = btn("Passt", "ghost", () => { learn(m.input, m.skill); m.done = "ok"; persist(); el.replaceWith(renderMsg(m)); });
+      const no = btn("Falsch", "ghost", () => { m.open = true; persist(); el.replaceWith(renderMsg(m)); });
+      meta.append(ok, no);
+    } else if (m.done === "ok") meta.insertAdjacentHTML("beforeend", `<span class="ghost on">gelernt</span>`);
+  } else if (m.kind === "memory" && !m.done) {
+    meta.append(btn("Das war nicht gemeint", "ghost", () => { m.open = true; persist(); el.replaceWith(renderMsg(m)); }));
+  }
+  if (meta.childNodes.length) el.appendChild(meta);
+  if (m.open && !m.done) el.appendChild(teachBox(m, el));
+  return el;
+}
+function btn(label, cls, fn) { const b = document.createElement("button"); b.type = "button"; b.className = cls; b.textContent = label; b.onclick = fn; return b; }
+function teachBox(m, el) {
+  const box = document.createElement("div"); box.className = "teach";
+  const gs = (m.guesses || []).map(skill).filter(Boolean);
+  const k = uid();
+  box.innerHTML = `
+    <p>Du hast geschrieben: <b>${esc(m.input)}</b></p>
+    ${gs.length ? `<p>Meintest du eine dieser Fähigkeiten?</p><div class="guesses"></div>` : ""}
+    <div><label for="ts-${k}">Gehört zu</label>
+      <select id="ts-${k}"><option value="__new">Neue Fähigkeit</option>${S.skills.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select></div>
+    <div><label for="ta-${k}">Antwort <span class="hint">(bei einer neuen Fähigkeit nötig)</span></label>
+      <input type="text" id="ta-${k}" placeholder="Was soll ich darauf sagen?"></div>
+    <div class="row"><button type="button" class="btn">Beibringen</button><button type="button" class="btn sec">Abbrechen</button></div>`;
+  const g = box.querySelector(".guesses");
+  gs.forEach(sk => g && g.append(btn(sk.name, "ghost", () => finish(sk.id, ""))));
+  const [go, cancel] = box.querySelectorAll(".row .btn");
+  go.onclick = () => finish(box.querySelector("select").value, box.querySelector("input").value.trim());
+  cancel.onclick = () => { m.open = false; m.done = m.kind === "unknown" ? "skip" : m.done; persist(); el.replaceWith(renderMsg(m)); };
+  function finish(target, answer) {
+    let sk;
+    if (target === "__new") {
+      if (!answer) { box.querySelector("input").focus(); toast("Schreib eine Antwort für die neue Fähigkeit."); return; }
+      const name = m.input.replace(/[?!.]+$/, "").split(/\s+/).slice(0, 4).join(" ");
+      sk = { id: uid(), name: name.charAt(0).toUpperCase() + name.slice(1), action: "none", examples: [m.input], answers: [answer] };
+      S.skills.push(sk);
+    } else { sk = skill(target); learn(m.input, sk.id, true); if (answer) sk.answers.push(answer); }
+    m.done = "taught"; m.open = false; persist(); el.replaceWith(renderMsg(m)); renderTrain();
+    const reply = () => bot(runSkill(sk, m.input), { kind: "info" });
+    if (S.auto) { bot(`Gelernt: „${m.input}“ gehört zu „${sk.name}“. Ich trainiere kurz nach.`, { kind: "info" }); train(reply, true); }
+    else { reply(); }
+  }
+  return box;
+}
+function learn(input, id, noTrain) {
+  const sk = skill(id); if (!sk) return;
+  if (!sk.examples.some(e => norm(e).trim() === norm(input).trim())) sk.examples.push(input);
+  persist(); renderTrain();
+  if (!noTrain && S.auto) train(null, true);
+}
+function renderChat() {
+  log.innerHTML = "";
+  if (!S.chat.length) S.chat.push({ who: "bot", text: `Hallo, ich bin ${S.name}. Ich laufe nur auf diesem Gerät und lerne von dir. Probier „Wie viel ist 12 mal 7?“, „Merke dir, dass …“ oder „Timer auf 1 Minute“. Wenn ich etwas nicht verstehe, zeigst du es mir einfach.` });
+  S.chat.forEach(m => log.appendChild(renderMsg(m)));
+  log.scrollTop = log.scrollHeight;
+}
+const input = $("#input");
+$("#composer").addEventListener("submit", e => {
+  e.preventDefault(); const v = input.value.trim(); if (!v) return;
+  input.value = ""; grow(); handle(v);
+});
+input.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#composer").requestSubmit(); } });
+const grow = () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 140) + "px"; };
+input.addEventListener("input", grow);
+
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (SR) {
+  const mic = $("#mic"); mic.hidden = false;
+  mic.onclick = () => {
+    try {
+      const r = new SR(); r.lang = "de-DE"; r.interimResults = false;
+      mic.style.color = "var(--accent)";
+      r.onresult = e => { input.value = e.results[0][0].transcript; grow(); $("#composer").requestSubmit(); };
+      r.onerror = () => toast("Das Mikrofon ist hier gesperrt. Nimm das Diktier-Mikrofon der Tastatur.");
+      r.onend = () => { mic.style.color = ""; };
+      r.start();
+    } catch (e) { toast("Spracheingabe geht hier nicht. Nimm das Diktier-Mikrofon der Tastatur."); }
+  };
+}
+
+/* ---------- Trainieren ---------- */
+let sel = S.skills[0] && S.skills[0].id;
+function renderTrain() {
+  const ex = S.skills.reduce((n, s) => n + s.examples.filter(e => e.trim()).length, 0);
+  $("#sSkills").textContent = S.skills.length; $("#sEx").textContent = ex;
+  $("#sAcc").textContent = M ? Math.round(M.acc * 100) + " %" : "–";
+  $("#sTime").textContent = M ? ago(M.at) : "nie";
+  const dirty = !M || M.fp !== fingerprint();
+  const st = $("#trainState");
+  st.className = "pill " + (dirty ? "warn" : "ok");
+  st.textContent = dirty ? (M ? "Änderungen nicht trainiert" : "noch nicht trainiert") : "auf dem neuesten Stand";
+  if (M && M.hist && !training) drawCurve(M.hist);
+  const list = $("#skillList"); list.innerHTML = "";
+  S.skills.forEach(s => {
+    const b = document.createElement("button"); b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", s.id === sel); b.innerHTML = `<span>${esc(s.name || "Ohne Namen")}</span><small>${s.examples.filter(e => e.trim()).length}</small>`;
+    b.onclick = () => { sel = s.id; renderTrain(); }; list.appendChild(b);
+  });
+  renderEditor();
+}
+function ago(t) {
+  const s = (Date.now() - t) / 1000;
+  if (s < 60) return "gerade"; if (s < 3600) return `vor ${Math.round(s / 60)} Min.`;
+  if (s < 86400) return `vor ${Math.round(s / 3600)} Std.`; return new Date(t).toLocaleDateString("de-DE");
+}
+let editing = null;
+function renderEditor() {
+  const ed = $("#editor"), sk = skill(sel);
+  if (!sk) { ed.innerHTML = `<p class="hint" style="margin:0">Wähle links eine Fähigkeit oder lege eine neue an.</p>`; editing = null; return; }
+  if (editing === sk.id && ed.contains(document.activeElement)) return; // Tippen nicht unterbrechen
+  editing = sk.id;
+  ed.innerHTML = `
+    <div class="two">
+      <div><label for="eName">Name</label><input type="text" id="eName" value="${esc(sk.name)}"></div>
+      <div><label for="eAct">Was der Agent dabei tut</label>
+        <select id="eAct">${Object.entries(ACTIONS).map(([k, v]) => `<option value="${k}" ${k === sk.action ? "selected" : ""}>${v}</option>`).join("")}</select></div>
+    </div>
+    <div><label for="eEx">Beispielsätze <span class="hint">· einer pro Zeile · so könnte man es sagen</span></label>
+      <textarea class="f" id="eEx" rows="7">${esc(sk.examples.join("\n"))}</textarea></div>
+    <div><label for="eAns">Antworten <span class="hint">· eine pro Zeile · zufällig gewählt · <code>{ergebnis}</code> setzt das Ergebnis ein, <code>{name}</code> den Namen</span></label>
+      <textarea class="f" id="eAns" rows="4">${esc(sk.answers.join("\n"))}</textarea></div>
+    <div class="row" style="justify-content:space-between">
+      <span class="hint">Tipp: 5 bis 10 unterschiedliche Sätze pro Fähigkeit reichen meist.</span>
+      <button type="button" class="btn sec" id="eDel">Fähigkeit löschen</button>
+    </div>`;
+  const lines = v => v.split("\n").map(x => x.trim()).filter(Boolean);
+  const upd = () => { sk.name = $("#eName").value.trim(); sk.action = $("#eAct").value;
+    sk.examples = lines($("#eEx").value); sk.answers = lines($("#eAns").value); persist(); renderTrain(); };
+  ["#eName", "#eEx", "#eAns"].forEach(s => $(s).addEventListener("input", upd));
+  $("#eAct").addEventListener("change", upd);
+  $("#eDel").onclick = e => {
+    if (e.target.dataset.sure) { S.skills = S.skills.filter(s => s.id !== sk.id); sel = S.skills[0] && S.skills[0].id; editing = null; persist(); renderTrain(); }
+    else { e.target.dataset.sure = 1; e.target.textContent = "Wirklich löschen?"; }
+  };
+}
+$("#addSkill").onclick = () => {
+  const sk = { id: uid(), name: "Neue Fähigkeit", action: "none", examples: [], answers: [] };
+  S.skills.push(sk); sel = sk.id; editing = null; persist(); renderTrain(); $("#eName").select();
+};
+$("#trainBtn").onclick = () => train();
+function drawCurve(h) {
+  const c = $("#curve"), x = c.getContext("2d"), W = c.width, Hh = c.height, cs = getComputedStyle(document.documentElement);
+  x.clearRect(0, 0, W, Hh); if (!h || !h.length) return;
+  const pad = 10, mx = Math.max(...h.map(p => p.loss), 0.01);
+  x.strokeStyle = cs.getPropertyValue("--line"); x.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) { const y = pad + (Hh - 2 * pad) * i / 4; x.beginPath(); x.moveTo(0, y); x.lineTo(W, y); x.stroke(); }
+  const line = (f, col) => { x.strokeStyle = col; x.lineWidth = 4; x.beginPath();
+    h.forEach((p, i) => { const X = h.length < 2 ? 0 : i / (h.length - 1) * W, Y = pad + (Hh - 2 * pad) * (1 - f(p)); i ? x.lineTo(X, Y) : x.moveTo(X, Y); }); x.stroke(); };
+  line(p => p.loss / mx, cs.getPropertyValue("--accent")); line(p => p.acc, cs.getPropertyValue("--ok"));
+}
+
+/* ---------- Gedächtnis ---------- */
+function renderMemory() {
+  const l = $("#memList");
+  if (!S.memory.length) { l.innerHTML = `<p class="hint" style="margin:0">Noch nichts gemerkt. Schreib oben einen Fakt hinein oder sag im Chat „Merke dir, dass …“.</p>`; return; }
+  l.innerHTML = "";
+  S.memory.forEach(m => {
+    const r = document.createElement("div"); r.className = "mem";
+    r.innerHTML = `<div>${esc(m.text)}<time>${new Date(m.t).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })}</time></div>`;
+    r.append(btn("Löschen", "ghost", () => { S.memory = S.memory.filter(x => x.id !== m.id); persist(); renderMemory(); }));
+    l.appendChild(r);
+  });
+}
+$("#memForm").addEventListener("submit", e => {
+  e.preventDefault(); const v = $("#memInput").value.trim(); if (!v) return;
+  S.memory.unshift({ id: uid(), text: v, t: Date.now() }); $("#memInput").value = ""; persist(); renderMemory(); toast("Gemerkt");
+});
+
+/* ---------- Einstellungen ---------- */
+function renderSettings() {
+  $("#setName").value = S.name; $("#setThr").value = Math.round(S.threshold * 100); $("#thrVal").textContent = Math.round(S.threshold * 100) + " %";
+  $("#setVoice").checked = S.voice; $("#setAuto").checked = S.auto;
+  $("#exportBox").value = JSON.stringify({ format: "agentenwerkstatt", version: 1, name: S.name, threshold: S.threshold, skills: S.skills, memory: S.memory }, null, 1);
+}
+function renderName() { $("#agentName").textContent = S.name || "Agent"; $("#mark").textContent = (S.name || "A").charAt(0).toUpperCase(); }
+$("#setName").addEventListener("input", e => { S.name = e.target.value.trim() || "Agent"; persist(); renderName(); });
+$("#setThr").addEventListener("input", e => { S.threshold = e.target.value / 100; $("#thrVal").textContent = e.target.value + " %"; persist(); });
+$("#setVoice").addEventListener("change", e => { S.voice = e.target.checked; persist(); });
+$("#setAuto").addEventListener("change", e => { S.auto = e.target.checked; persist(); });
+$("#copyExport").onclick = () => {
+  const box = $("#exportBox"); renderSettings();
+  const fall = () => { box.focus(); box.select(); toast("Markiert. Jetzt kopieren."); };
+  try { navigator.clipboard.writeText(box.value).then(() => toast("Sicherung kopiert"), fall); } catch (e) { fall(); }
+};
+function importText(txt) {
+  try {
+    const d = JSON.parse(txt);
+    if (!Array.isArray(d.skills)) throw 0;
+    S.skills = d.skills.map(s => ({ id: s.id || uid(), name: String(s.name || ""), action: ACTIONS[s.action] ? s.action : "none",
+      examples: (s.examples || []).map(String), answers: (s.answers || []).map(String) }));
+    S.memory = (d.memory || []).map(m => ({ id: m.id || uid(), text: String(m.text), t: m.t || Date.now() }));
+    if (d.name) S.name = String(d.name); if (d.threshold) S.threshold = +d.threshold;
+    persist(); sel = S.skills[0] && S.skills[0].id; editing = null;
+    renderAll(); toast("Sicherung geladen. Ich trainiere neu."); train(null, true);
+  } catch (e) { toast("Das ist keine gültige Sicherung. Kopiere den ganzen Text aus „Sicherung kopieren“."); }
+}
+$("#doImport").onclick = () => importText($("#importBox").value);
+$("#importFile").addEventListener("change", e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => importText(r.result); r.readAsText(f); });
+$("#reset").onclick = () => { $("#resetYes").hidden = false; };
+$("#resetYes").onclick = () => { S = fresh(); M = null; save(MKEY, null); persist(); $("#resetYes").hidden = true; sel = S.skills[0].id; editing = null; renderAll(); train(null, true); toast("Zurückgesetzt"); };
+
+/* ---------- Ansichten ---------- */
+let tt;
+function toast(t) {
+  let el = $(".toast"); if (!el) { el = document.createElement("div"); el.className = "toast"; el.setAttribute("role", "status"); document.body.appendChild(el); }
+  el.textContent = t; el.hidden = false; clearTimeout(tt); tt = setTimeout(() => el.hidden = true, 2600);
+}
+const VIEWS = ["chat", "trainieren", "gedaechtnis", "einstellungen"];
+function route() {
+  const v = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "chat";
+  VIEWS.forEach(n => { $("#v-" + n).hidden = n !== v; });
+  document.querySelectorAll("#tabs a").forEach(a => a.dataset.v === v ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current"));
+  if (v === "trainieren") renderTrain();
+  if (v === "einstellungen") renderSettings();
+  if (v === "chat") log.scrollTop = log.scrollHeight;
+}
+document.querySelectorAll("#tabs a").forEach(a => a.addEventListener("click", e => {
+  e.preventDefault(); try { history.replaceState(null, "", "#" + a.dataset.v); } catch (er) { location.hash = a.dataset.v; } route();
+}));
+window.addEventListener("hashchange", route);
+function renderAll() { renderName(); renderChat(); renderTrain(); renderMemory(); renderSettings(); }
+
+loadNet();
+renderAll(); route();
+if (!M || M.fp !== fingerprint()) train(null, true);
+})();
+</script>

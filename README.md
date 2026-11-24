@@ -31,6 +31,16 @@ Kommandozeile.
 > Anfrage-Firewall, Flutbremse, Sicherheits-Kopfzeilen (CSP) und das
 > Dashboard auf Port 8787.
 
+> **Neu: [Agentenwerkstatt](docs/agent.html)** – ein eigener KI-Agent, der
+> komplett auf dem iPad läuft und den du selbst trainierst. Du legst
+> Fähigkeiten mit Beispielsätzen und Antworten an, ein kleines neuronales
+> Netz lernt daraus direkt im Browser. Versteht er etwas nicht, zeigst du
+> es ihm im Chat, und er trainiert sofort nach. Dazu: rechnen, Dinge merken
+> (Gedächtnis), Timer, Uhrzeit, Würfeln, Antworten vorlesen. Kein Server,
+> kein Konto, keine Daten verlassen das Gerät; Sicherung als Text zum Kopieren.
+> Online: `https://levirob2015.github.io/L-vi/agent.html` – in Safari über
+> *Teilen → Zum Home-Bildschirm* als App ablegen.
+
 ### Klickbare Vorschau
 
 [`docs/demo.html`](docs/demo.html) ist eine bedienbare Version dieser
