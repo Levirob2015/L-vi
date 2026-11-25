@@ -40,7 +40,11 @@ Kommandozeile.
 > **Lernen-Knopf** in der Safari-Favoritenleiste liest er jede Webseite
 > und beantwortet danach Fragen dazu, mit Quellenangabe. Im **Labor**
 > vermehrt er sich: Kopien mit kleinen Mutationen (im Arbeitsspeicher,
-> sicher), aus denen man eine aussucht und zum neuen Agenten macht. Kein Server,
+> sicher), aus denen man eine aussucht – oder automatisch die beste suchen
+> lässt – und zum neuen Agenten macht. Im **Team** verteilt ein Chef eine
+> Frage an mehrere Arbeiter, die das Gelernte durchsuchen, und rechnet die
+> Funde zusammen; Code-Agenten bauen kleine Werkzeuge und fragen erst um
+> Erlaubnis. Kein Server,
 > kein Konto, keine Daten verlassen das Gerät; Sicherung als Text zum Kopieren.
 > Online: `https://levirob2015.github.io/L-vi/agent.html` – in Safari über
 > *Teilen → Zum Home-Bildschirm* als App ablegen.
