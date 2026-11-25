@@ -105,6 +105,20 @@ canvas{width:100%;height:120px;display:block}
 .mem:last-child{border-bottom:0}
 .mem div{flex:1;min-width:0;overflow-wrap:anywhere}
 .mem time{display:block;font-size:12px;color:var(--muted);font-family:var(--f-mono)}
+.team{display:flex;flex-direction:column;align-items:center;gap:6px}
+.team .lvl{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.team .conn{width:2px;height:12px;background:var(--line)}
+.node{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:6px 10px;font-size:12px;text-align:center;min-width:66px}
+.node b{display:block;font-family:var(--f-display);font-size:13px}
+.node.chief{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.node.coder{background:var(--bubble)}
+.node.busy{outline:2px solid var(--accent);outline-offset:1px}
+.node.done{border-color:var(--ok)}
+.find{border-left:3px solid var(--line);padding:6px 0 6px 10px;margin:8px 0;font-size:14px}
+.find.hit{border-color:var(--ok)} .find.miss{border-color:var(--warn);color:var(--muted)}
+.find small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.coder{border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:10px;display:grid;gap:8px}
+.proposal{background:var(--bubble);border-radius:10px;padding:10px;font-family:var(--f-mono);font-size:12.5px;white-space:pre-wrap;overflow-wrap:anywhere}
 .note{background:var(--accent-soft);color:var(--ink);border-radius:10px;padding:10px 12px;font-size:13px}
 .bar{height:12px;border-radius:99px;background:var(--bubble);overflow:hidden}
 .bar>i{display:block;height:100%;background:var(--accent);transition:width .25s}
@@ -112,6 +126,7 @@ canvas{width:100%;height:120px;display:block}
 .agent{width:26px;height:26px;border-radius:7px;border:0;background:var(--accent-soft);color:var(--accent);
   display:grid;place-items:center;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--f-mono)}
 .agent.orig{background:var(--accent);color:var(--accent-ink)}
+.agent.win{outline:3px solid var(--ok);outline-offset:1px}
 .agent[aria-pressed="true"]{outline:2px solid var(--ink);outline-offset:1px}
 .diff{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:4px}
 .diff li{font-size:13px;padding-left:16px;position:relative}
@@ -145,6 +160,7 @@ code{font-family:var(--f-mono);font-size:12.5px;background:var(--bubble);padding
       <a href="#chat" data-v="chat">Chat</a>
       <a href="#trainieren" data-v="trainieren">Trainieren</a>
       <a href="#labor" data-v="labor">Labor</a>
+      <a href="#team" data-v="team">Team</a>
       <a href="#gedaechtnis" data-v="gedaechtnis">Gedächtnis</a>
       <a href="#einstellungen" data-v="einstellungen">Einstellungen</a>
     </nav>
@@ -216,6 +232,7 @@ code{font-family:var(--f-mono);font-size:12.5px;background:var(--bubble);padding
             <button class="btn sec" id="breedReset" hidden>Labor leeren</button>
             <span class="hint" id="breedMsg"></span>
           </div>
+          <div class="row"><input type="checkbox" id="autoBest"><label for="autoBest" style="margin:0;font-weight:500">Beste Kopie danach automatisch suchen und übernehmen</label></div>
           <div>
             <div class="row" style="justify-content:space-between"><span class="hint">Labor-Speicher (nur diese Seite)</span><span class="hint" id="memNum"></span></div>
             <div class="bar"><i id="memBar" style="width:0"></i></div>
@@ -224,10 +241,40 @@ code{font-family:var(--f-mono);font-size:12.5px;background:var(--bubble);padding
         <div class="card stack" id="popCard" hidden>
           <div class="row" style="justify-content:space-between">
             <h3>Population: <span id="popCount">0</span> Agenten</h3>
-            <span class="hint">Tippe eine Kopie an</span>
+            <button type="button" class="btn sec" id="evalBtn">🏆 Beste suchen</button>
           </div>
+          <div id="winner" hidden></div>
+          <p class="hint" style="margin:0">Grün = versteht gut, Rot = verwechselt Dinge. Tippe eine Kopie an.</p>
           <div class="pop" id="pop"></div>
           <div id="inspect" hidden></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TEAM -->
+    <section class="view" id="v-team" hidden>
+      <div class="stack">
+        <div class="card stack">
+          <div><h2>Team: eine Gruppe Agenten</h2>
+          <p class="hint" style="margin:0">Der Agent kann sich kopieren, um ein Team zu bilden. Ganz oben steht der <b>Chef</b>. Er verteilt die Arbeit an die <b>Arbeiter</b>, und wenn sie fertig sind, rechnet er ihre Funde zusammen. Die <b>Code-Agenten</b> haben ihre eigene Werkstatt und dürfen nur mit deiner Erlaubnis etwas an Lvi ändern.</p></div>
+          <div class="row">
+            <label style="margin:0">Arbeiter: <select id="nWorkers"></select></label>
+            <label style="margin:0">Code-Agenten: <select id="nCoders"></select></label>
+          </div>
+          <div class="team" id="teamDiagram"></div>
+        </div>
+
+        <div class="card stack">
+          <h3>Dem Team eine Frage stellen</h3>
+          <p class="hint" style="margin:0">Der Chef teilt das Gelernte (aus <b>Gedächtnis</b>) unter den Arbeitern auf. Jeder durchsucht seinen Teil, der Chef fasst zusammen und nennt die Quellen.</p>
+          <div class="row"><input type="text" id="teamQ" placeholder="z. B. Wie verständigen sich Bienen?" style="flex:1;min-width:180px"><button class="btn" id="teamGo">Losschicken</button></div>
+          <div id="teamRun"></div>
+        </div>
+
+        <div class="card stack" id="codersCard">
+          <h3>Code-Agenten</h3>
+          <p class="hint" style="margin:0">Jeder Code-Agent kann ein kleines Werkzeug bauen (z. B. Wörter zählen, Text rückwärts, GROSSBUCHSTABEN, Buchstabieren). Er zeigt dir, was er einbauen will – erst wenn du auf <b>Erlauben</b> tippst, kann Lvi es im Chat benutzen.</p>
+          <div id="coders"></div>
         </div>
       </div>
     </section>
@@ -347,7 +394,7 @@ const DEFAULT_SKILLS = () => [
 ].map(s => ({ id: uid(), ...s }));
 
 const fresh = () => ({
-  name: "Lvi", threshold: 0.5, voice: false, auto: true,
+  name: "Lvi", threshold: 0.5, voice: false, auto: true, team: { workers: 3, coders: 1 },
   skills: DEFAULT_SKILLS(),
   memory: [{ id: uid(), text: "Beispiel: Der Ersatzschlüssel liegt bei der Nachbarin.", t: Date.now() }],
   sources: [],
@@ -355,6 +402,7 @@ const fresh = () => ({
 });
 let S = load(KEY) || fresh();
 S.sources = S.sources || [];
+S.team = S.team || { workers: 3, coders: 1 };
 let M = load(MKEY);
 const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); return true; }
   catch (e) { if (typeof toast === "function") toast("Der Speicher ist voll. Lösche unter Gedächtnis ein paar gelernte Seiten."); return false; } };
@@ -547,21 +595,26 @@ function wmatch(a, b) {
   if (cp >= 5 || (cp >= 3 && cp >= Math.min(a.length, b.length) - 1)) return true;
   return a.length >= 4 && b.length > a.length && b.endsWith(a.length > 5 ? a.replace(/(en|e|n)$/, "") : a);
 }
-function searchMemory(q) {
-  const qw = words(q).filter(w => !QSTOP.has(w)); if (!qw.length) return null;
+function buildCands(sources, mem) {
   const cands = [];
-  S.memory.forEach(m => cands.push({ text: m.text }));
-  // einzelne Sätze und je zwei Sätze zusammen, damit eine Antwort über einen Satz hinaus reichen darf
-  S.sources.forEach(src => src.sents.forEach((t, i) => { cands.push({ text: t, src, i });
+  (mem || []).forEach(m => cands.push({ text: m.text }));
+  sources.forEach(src => src.sents.forEach((t, i) => { cands.push({ text: t, src, i });
     if (src.sents[i + 1]) cands.push({ text: t + " " + src.sents[i + 1], src, i, pair: true }); }));
-  if (!cands.length) return null;
+  return cands;
+}
+function rankCands(q, cands) {
+  const qw = words(q).filter(w => !QSTOP.has(w)); if (!qw.length || !cands.length) return null;
   const df = qw.map(() => 0);
   cands.forEach(c => { const ws = words(c.text); c.hit = qw.map((w, k) => { const h = ws.some(x => wmatch(w, x)); if (h) df[k]++; return h; }); });
   const idf = df.map(d => Math.log(1 + cands.length / (1 + d)) + 0.2), tot = idf.reduce((x, y) => x + y, 0);
   let best = null;
   cands.forEach(c => { let sc = 0; c.hit.forEach((h, k) => { if (h) sc += idf[k]; }); sc /= tot;
-    sc -= words(c.text).length * 0.002;  // bei Gleichstand den kürzeren Satz nehmen
+    sc -= words(c.text).length * 0.002;
     if (!best || sc > best.score) best = { ...c, score: sc }; });
+  return best;
+}
+function searchMemory(q) {
+  const best = rankCands(q, buildCands(S.sources, S.memory));
   return best && best.score >= 0.5 ? best : null;
 }
 function splitSentences(text) {
@@ -597,6 +650,26 @@ function beep() {
       o.connect(g).connect(audioCtx.destination); o.start(audioCtx.currentTime + d); o.stop(audioCtx.currentTime + d + 0.3); });
   } catch (e) {}
 }
+// Sichere Mini-Werkzeuge, die Code-Agenten bauen dürfen. Keine freie Code-Ausführung:
+// nur diese festen, geprüften Bausteine.
+const CMD_WORDS = new Set("zaehl zaehle zaehlen woerter wort rueckwaerts umdrehen umdreh dreh spiegeln spiegel spiegle gross grosse grossbuchstaben laut schreien schreib schreibe buchstabieren buchstabier buchstabiere spell mach in die der das den dem von im mir mich bitte mal hat wie viele dieser diesem diesen satz text folgendes".split(" "));
+function codeTarget(input) {
+  const toks = input.trim().split(/\s+/).filter(Boolean);
+  const isCmd = t => CMD_WORDS.has(norm(t).replace(/[^a-z0-9]/g, ""));
+  let a = 0, b = toks.length;
+  while (a < b && isCmd(toks[a])) a++;
+  while (b > a && isCmd(toks[b - 1])) b--;
+  const rest = toks.slice(a, b).join(" ");
+  return rest || input.trim();
+}
+function codeRun(op, input) {
+  const t = codeTarget(input);
+  if (op === "count") { const n = t.split(/\s+/).filter(Boolean).length; return `„${t}“ hat ${n} ${n === 1 ? "Wort" : "Wörter"}.`; }
+  if (op === "reverse") return [...t].reverse().join("");
+  if (op === "upper") return t.toUpperCase();
+  if (op === "spell") return [...t.replace(/\s+/g, " ")].join("·");
+  return null;
+}
 function runSkill(sk, input) {
   let res = "", fb = "";
   switch (sk.action) {
@@ -614,6 +687,7 @@ function runSkill(sk, input) {
       res = d.label; fb = "Timer läuft: {ergebnis}.";
       setTimeout(() => { beep(); bot(`Dein Timer über ${d.label} ist abgelaufen.`, { kind: "info" }); }, d.ms); break; }
     case "wuerfeln": res = String(1 + Math.floor(Math.random() * 6)); fb = "Gewürfelt: {ergebnis}"; break;
+    case "code": res = codeRun(sk.op, input); if (res == null) return "Dafür ist mein Werkzeug nicht gebaut."; fb = "{ergebnis}"; break;
   }
   const opts = sk.answers.filter(a => a.trim());
   let tpl = opts.length ? opts[Math.floor(Math.random() * opts.length)] : (fb || "…");
@@ -783,7 +857,7 @@ function renderEditor() {
     <div class="two">
       <div><label for="eName">Name</label><input type="text" id="eName" value="${esc(sk.name)}"></div>
       <div><label for="eAct">Was der Agent dabei tut</label>
-        <select id="eAct">${Object.entries(ACTIONS).map(([k, v]) => `<option value="${k}" ${k === sk.action ? "selected" : ""}>${v}</option>`).join("")}</select></div>
+        <select id="eAct">${(ACTIONS[sk.action] ? "" : `<option value="${esc(sk.action)}" selected>Code-Werkzeug</option>`)}${Object.entries(ACTIONS).map(([k, v]) => `<option value="${k}" ${k === sk.action ? "selected" : ""}>${v}</option>`).join("")}</select></div>
     </div>
     <div><label for="eEx">Beispielsätze <span class="hint">· einer pro Zeile · so könnte man es sagen</span></label>
       <textarea class="f" id="eEx" rows="7">${esc(sk.examples.join("\n"))}</textarea></div>
@@ -824,23 +898,60 @@ function drawCurve(h) {
 // Wir speichern nur die Mutationen, nicht ganze Gehirne – das bleibt klein und sicher.
 const MUT_ANS = ["Na klar!", "Klar doch.", "Aber gerne.", "Logo!", "Jederzeit.", "Kein Problem.", "Mach ich."];
 const MUT_WORDS = ["eigentlich", "glaube ich", "ganz bestimmt", "sicher", "natürlich", "wohl"];
-function mutate(rnd, chainLen) {
-  // erzeugt eine zufällige Mutation, beschrieben als Veränderung + Klartext-Merkmal
+function mutate(rnd) {
   const nSkills = S.skills.length;
   const si = Math.floor(rnd() * nSkills), sk = S.skills[si];
+  const exs = sk.examples.filter(e => e.trim());
   const kind = rnd();
-  if (kind < 0.45 && sk.answers.filter(a => a.trim()).length) {
+  if (kind < 0.25 && nSkills > 1) {
+    // Fehler-Mutation: ein Beispiel einer ANDEREN Fähigkeit landet hier – die Kopie verwechselt dann Dinge.
+    let oj; do { oj = Math.floor(rnd() * nSkills); } while (oj === si);
+    const other = S.skills[oj], oe = (other.examples.filter(e => e.trim())[0] || other.name);
+    return { t: "confuse", si, text: oe, trait: `verwechselt „${sk.name}“ mit „${other.name}“ (macht die Kopie schlechter)`, bad: true };
+  } else if (kind < 0.7 && exs.length) {
+    const w = MUT_WORDS[Math.floor(rnd() * MUT_WORDS.length)];
+    const ex = (exs[Math.floor(rnd() * exs.length)] + " " + w).trim();
+    return { t: "example", si, text: ex, trait: `versteht „${sk.name}“ auch als „${ex}“` };
+  } else if (kind < 0.85 && sk.answers.filter(a => a.trim()).length) {
     const extra = MUT_ANS[Math.floor(rnd() * MUT_ANS.length)];
     return { t: "answer", si, text: extra, trait: `antwortet bei „${sk.name}“ auch mal „${extra}“` };
-  } else if (kind < 0.8 && sk.examples.filter(e => e.trim()).length) {
-    const base = sk.examples.filter(e => e.trim())[0] || sk.name;
-    const w = MUT_WORDS[Math.floor(rnd() * MUT_WORDS.length)];
-    const ex = (base + " " + w).trim();
-    return { t: "example", si, text: ex, trait: `versteht „${sk.name}“ auch als „${ex}“` };
   } else {
     const suf = ["+", "²", "·", "*", "!"][Math.floor(rnd() * 5)];
-    return { t: "name", si, text: sk.name + suf, trait: `nennt die Fähigkeit „${sk.name}“ jetzt „${sk.name + suf}“` };
+    return { t: "name", si, text: sk.name + suf, trait: `nennt „${sk.name}“ jetzt „${sk.name + suf}“` };
   }
+}
+// Eine Kopie als fertiges Gehirn (Mutationen auf das Original angewendet)
+function applyChain(base, chain) {
+  const clone = JSON.parse(JSON.stringify(base));
+  chain.forEach(m => { const sk = clone[m.si]; if (!sk) return;
+    if (m.t === "answer") sk.answers.push(m.text);
+    else if (m.t === "example" || m.t === "confuse") sk.examples.push(m.text);
+    else if (m.t === "name") sk.name = m.text; });
+  return clone;
+}
+// Note einer Kopie: Wie zuverlässig ordnet sie ihre Beispielsätze der richtigen Fähigkeit zu?
+// Nächster-Nachbar-Test, ohne Training – schnell und ehrlich.
+const _ffc = new Map();
+const ffeat = t => { let v = _ffc.get(t); if (!v) { v = featurize(t); _ffc.set(t, v); } return v; };
+function fitnessOf(skills) {
+  const items = [];
+  skills.forEach((sk, si) => sk.examples.forEach(e => { e = e.trim(); if (e) items.push({ f: ffeat(e), si }); }));
+  if (items.length < 3) return 0;
+  let correct = 0;
+  for (let i = 0; i < items.length; i++) {
+    let best = -1, bsi = -1;
+    for (let j = 0; j < items.length; j++) { if (i === j) continue; const c = cos(items[i].f, items[j].f); if (c > best) { best = c; bsi = items[j].si; } }
+    if (bsi === items[i].si) correct++;
+  }
+  return correct / items.length;
+}
+function adoptCopy(a) {
+  S.skills = applyChain(S.skills, a.chain); persist(); sel = S.skills[0] && S.skills[0].id; editing = null;
+  toast("Übernommen! Ich trainiere kurz neu.");
+  POP = []; selId = null; $("#popCard").hidden = true; $("#breedReset").hidden = true; $("#winner").hidden = true;
+  renderLab(); renderTrain(); train(null, true);
+  try { history.replaceState(null, "", "#chat"); } catch (e) { location.hash = "chat"; } route();
+  bot("Ich bin jetzt eine neue Version von mir – mit den Änderungen, die gewonnen haben.", { kind: "info" });
 }
 let POP = [], selId = null, breeding = false;
 const AGENT_KB = 6; // ungefähre Größe eines Agenten, nur fürs Anzeigen
@@ -856,7 +967,7 @@ function breed() {
   const steps = +$("#genSlider").value, target = sliderCount(steps);
   const rnd = rng(Date.now() % 100000 + 1);
   POP = [{ id: "A0", name: "Lvi", gen: 0, chain: [], trait: "das Original", orig: true }];
-  selId = null;
+  selId = null; winId = null; $("#winner").hidden = true;
   $("#popCard").hidden = false; $("#breedReset").hidden = false;
   let gen = 0;
   breeding = true; $("#breedBtn").disabled = true;
@@ -864,12 +975,15 @@ function breed() {
     if (gen >= steps) {
       breeding = false; $("#breedBtn").disabled = false;
       labMsg(`Fertig: aus 1 Agent sind ${POP.length} geworden – jeder ein bisschen anders.`);
-      renderPop(); return;
+      renderPop();
+      if ($("#autoBest").checked) evaluatePop(() => { let w = null; POP.forEach(a => { if (!a.orig && (!w || a.score > w.score)) w = a; });
+        if (w && w.score > fitnessOf(S.skills)) adoptCopy(w); });
+      return;
     }
     gen++;
     const parents = POP.slice();
     parents.forEach((par, k) => {
-      const m = mutate(rnd, par.chain.length);
+      const m = mutate(rnd);
       POP.push({ id: "A" + POP.length, name: par.name, gen, chain: par.chain.concat(m), trait: m.trait });
     });
     labMsg(`Verdopplung ${gen} von ${steps} … ${POP.length} Agenten`);
@@ -879,19 +993,49 @@ function breed() {
   renderPop();
   setTimeout(stepGen, 300);
 }
+const scoreColor = v => `hsl(${Math.round(120 * v)} 62% 46%)`;
 function renderPop() {
   $("#popCount").textContent = POP.length;
   updMem();
   const pop = $("#pop"); pop.innerHTML = "";
   POP.forEach(a => {
     const b = document.createElement("button");
-    b.className = "agent" + (a.orig ? " orig" : "");
+    b.className = "agent" + (a.orig ? " orig" : "") + (a.id === winId ? " win" : "");
     b.textContent = a.orig ? "★" : String(a.gen);
-    b.title = a.trait; b.setAttribute("aria-pressed", a.id === selId);
-    b.setAttribute("aria-label", a.orig ? "Das Original" : `Kopie, Generation ${a.gen}: ${a.trait}`);
+    if (a.score != null && !a.orig) { b.style.background = scoreColor(a.score); b.style.color = "#fff"; }
+    b.title = a.trait + (a.score != null ? ` · Note ${Math.round(a.score * 100)}%` : "");
+    b.setAttribute("aria-pressed", a.id === selId);
+    b.setAttribute("aria-label", a.orig ? "Das Original" : `Kopie, Generation ${a.gen}: ${a.trait}${a.score != null ? ", Note " + Math.round(a.score * 100) + " Prozent" : ""}`);
     b.onclick = () => { selId = a.id; renderInspect(); renderPop(); };
     pop.appendChild(b);
   });
+}
+let winId = null;
+function evaluatePop(done) {
+  if (!POP.length) return;
+  const base = fitnessOf(S.skills); let i = 0;
+  $("#evalBtn").disabled = true;
+  (function chunk() {
+    const end = Math.min(i + 24, POP.length);
+    for (; i < end; i++) { const a = POP[i]; a.score = a.orig ? base : fitnessOf(applyChain(S.skills, a.chain)); }
+    renderPop();
+    if (i < POP.length) { labMsg(`Prüfe Kopien … ${i}/${POP.length}`); setTimeout(chunk, 0); }
+    else { $("#evalBtn").disabled = false; labMsg(""); showWinner(base); done && done(); }
+  })();
+}
+function showWinner(base) {
+  let win = null; POP.forEach(a => { if (!a.orig && (!win || a.score > win.score)) win = a; });
+  const box = $("#winner"); if (!win) { box.hidden = true; return; }
+  winId = win.score > base ? win.id : null; renderPop();
+  box.hidden = false;
+  const better = win.score > base + 0.001;
+  box.innerHTML = `<div class="note">🏆 <b>Beste Kopie:</b> Generation ${win.gen}, Note ${Math.round(win.score * 100)}% ` +
+    `(Original: ${Math.round(base * 100)}%). ` +
+    (better ? "Sie versteht die Sätze zuverlässiger als das Original." : "Keine Kopie war besser als das Original – du musst nichts übernehmen.") +
+    `<div class="row" style="margin-top:8px">${better ? `<button type="button" class="btn" id="winAdopt">Beste übernehmen</button>` : ""}` +
+    `<button type="button" class="btn sec" id="winShow">Zeigen</button></div></div>`;
+  if (better) $("#winAdopt").onclick = () => adoptCopy(win);
+  $("#winShow").onclick = () => { selId = win.id; renderInspect(); renderPop(); };
 }
 function renderInspect() {
   const box = $("#inspect"), a = POP.find(x => x.id === selId);
@@ -907,19 +1051,7 @@ function renderInspect() {
       ${a.orig ? "" : `<div class="row" style="margin-top:12px"><button type="button" class="btn" id="adoptBtn">Diese Kopie zu meinem Lvi machen</button></div>`}
     </div>`;
   const ad = $("#adoptBtn");
-  if (ad) ad.onclick = () => {
-    const clone = JSON.parse(JSON.stringify(S.skills));
-    a.chain.forEach(m => { const sk = clone[m.si]; if (!sk) return;
-      if (m.t === "answer") sk.answers.push(m.text);
-      else if (m.t === "example") sk.examples.push(m.text);
-      else if (m.t === "name") sk.name = m.text; });
-    S.skills = clone; persist(); sel = S.skills[0] && S.skills[0].id; editing = null;
-    toast("Übernommen! Ich trainiere kurz neu.");
-    POP = []; selId = null; $("#popCard").hidden = true; $("#breedReset").hidden = true; renderLab();
-    renderTrain(); train(null, true);
-    try { history.replaceState(null, "", "#chat"); } catch (e) { location.hash = "chat"; } route();
-    bot("Ich bin jetzt eine neue Version von mir – mit kleinen Änderungen, die du ausgesucht hast.", { kind: "info" });
-  };
+  if (ad) ad.onclick = () => adoptCopy(a);
 }
 function renderLab() {
   const sl = $("#genSlider"); if (!sl) return;
@@ -932,9 +1064,132 @@ function renderLab() {
   const sl = $("#genSlider");
   sl.addEventListener("input", () => { $("#genVal").textContent = sl.value; $("#genCount").textContent = sliderCount(+sl.value); });
   $("#breedBtn").onclick = breed;
-  $("#breedReset").onclick = () => { POP = []; selId = null; breeding = false; $("#breedBtn").disabled = false;
-    $("#popCard").hidden = true; $("#breedReset").hidden = true; labMsg(""); updMem(); };
+  $("#evalBtn").onclick = () => evaluatePop();
+  $("#breedReset").onclick = () => { POP = []; selId = null; winId = null; breeding = false; $("#breedBtn").disabled = false;
+    $("#popCard").hidden = true; $("#breedReset").hidden = true; $("#winner").hidden = true; labMsg(""); updMem(); };
 })();
+
+/* ---------- Team: Chef, Arbeiter, Code-Agenten ---------- */
+const WORKER_NAMES = ["Anna", "Ben", "Carla", "David", "Emma"];
+function teamDiagram(active) {
+  const w = S.team.workers, c = S.team.coders, A = active || {};
+  const node = (cls, title, sub, on) => `<div class="node ${cls} ${on ? on : ""}"><b>${title}</b>${sub ? `<span>${sub}</span>` : ""}</div>`;
+  let h = `<div class="lvl">${node("chief", "Chef", "verteilt &amp; rechnet zusammen", A.chief)}</div><div class="conn"></div>`;
+  h += `<div class="lvl">`;
+  for (let i = 0; i < w; i++) h += node("", WORKER_NAMES[i], "Arbeiter", A["w" + i]);
+  h += `</div>`;
+  if (c > 0) { h += `<div class="conn"></div><div class="lvl">`;
+    for (let i = 0; i < c; i++) h += node("coder", "Code " + (i + 1), "eigene Werkstatt", A["c" + i]);
+    h += `</div>`; }
+  return h;
+}
+function renderTeam() {
+  const nw = $("#nWorkers"); if (!nw) return;
+  if (!nw.options.length) { for (let i = 2; i <= 5; i++) nw.add(new Option(i, i)); }
+  const nc = $("#nCoders"); if (!nc.options.length) { for (let i = 0; i <= 3; i++) nc.add(new Option(i, i)); }
+  nw.value = S.team.workers; nc.value = S.team.coders;
+  $("#teamDiagram").innerHTML = teamDiagram();
+  renderCoders();
+}
+$("#nWorkers") && $("#nWorkers").addEventListener("change", e => { S.team.workers = +e.target.value; persist(); renderTeam(); });
+$("#nCoders") && $("#nCoders").addEventListener("change", e => { S.team.coders = +e.target.value; persist(); renderTeam(); });
+
+function teamResearch(q) {
+  const run = $("#teamRun");
+  if (!S.sources.length) { run.innerHTML = `<p class="note" style="margin-top:10px">Das Team hat noch nichts zum Durchsuchen. Bring Lvi erst unter <b>Gedächtnis</b> ein paar Webseiten bei.</p>`; return; }
+  const w = S.team.workers;
+  // Chef teilt die einzelnen gelernten Sätze reihum unter den Arbeitern auf,
+  // damit jeder ein echtes Stück Arbeit bekommt – auch bei nur einer Seite.
+  const allCands = buildCands(S.sources, S.memory);
+  const packs = Array.from({ length: w }, () => []);
+  allCands.forEach((c, i) => packs[i % w].push(c));
+  const active = { chief: "busy" };
+  $("#teamDiagram").innerHTML = teamDiagram(active);
+  run.innerHTML = `<div class="find">Chef: „${esc(q)}“ – ich schicke ${w} Arbeiter los.</div><div id="findings"></div>`;
+  const F = $("#findings"), findings = [];
+  let i = 0;
+  (function nextWorker() {
+    if (i >= w) { // Chef rechnet zusammen
+      delete active.chief; active.chief = "done";
+      $("#teamDiagram").innerHTML = teamDiagram(active);
+      const hits = findings.filter(f => f.best && f.best.score >= 0.5).sort((a, b) => b.best.score - a.best.score);
+      let out = `<div class="find hit"><b>Chef fasst zusammen:</b> `;
+      if (!hits.length) out += `Keiner meiner Arbeiter hat dazu etwas Passendes gefunden.</div>`;
+      else {
+        const seen = new Set(), lines = [];
+        hits.forEach(f => { const key = f.best.text; if (seen.has(key)) return; seen.add(key);
+          if (lines.length < 3) lines.push(`<div class="find hit">${esc(f.best.text)}<small>gefunden von ${f.name} · Quelle: ${esc(f.best.src ? f.best.src.title : "Notiz")}</small></div>`); });
+        out += esc(hits[0].best.text) + `</div>` + lines.join("");
+      }
+      run.insertAdjacentHTML("beforeend", out);
+      return;
+    }
+    active["w" + i] = "busy"; $("#teamDiagram").innerHTML = teamDiagram(active);
+    const pack = packs[i], name = WORKER_NAMES[i];
+    setTimeout(() => {
+      const best = pack.length ? rankCands(q, pack) : null;
+      const good = best && best.score >= 0.5;
+      findings.push({ name, best: good ? best : null });
+      active["w" + i] = "done"; $("#teamDiagram").innerHTML = teamDiagram(active);
+      const miss = pack.length ? `in seinen ${pack.length} Sätzen nichts Passendes.` : "hatte diesmal nichts zugeteilt.";
+      F.insertAdjacentHTML("beforeend", `<div class="find ${good ? "hit" : "miss"}">${name}: ${good ? esc(best.text) : miss}${good ? `<small>Quelle: ${esc(best.src ? best.src.title : "Notiz")}</small>` : ""}</div>`);
+      i++; nextWorker();
+    }, 360);
+  })();
+}
+$("#teamGo") && $("#teamGo").addEventListener("click", () => { const q = $("#teamQ").value.trim(); if (q) teamResearch(q); });
+$("#teamQ") && $("#teamQ").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("#teamGo").click(); } });
+
+// Werkzeug-Baukasten: feste, sichere Bausteine. Kein freier Code.
+const CODE_TOOLS = [
+  { op: "count", name: "Wörter zählen", match: ["zahl", "zaehl", "woerter", "woerter zaehlen", "anzahl", "wieviele"], ex: ["zähl die wörter in hallo welt", "wie viele wörter hat dieser satz"], desc: "zählt, wie viele Wörter im Text stehen" },
+  { op: "reverse", name: "Text rückwärts", match: ["rueckwaerts", "umdrehen", "spiegeln", "verkehrt"], ex: ["schreib hallo rückwärts", "dreh anna um"], desc: "dreht den Text Buchstabe für Buchstabe um" },
+  { op: "upper", name: "GROSSBUCHSTABEN", match: ["gross", "laut", "schreien", "grossbuchstaben"], ex: ["schreib hallo groß", "mach das laut: hilfe"], desc: "macht alle Buchstaben groß" },
+  { op: "spell", name: "Buchstabieren", match: ["buchstabier", "buchstaben einzeln", "spell"], ex: ["buchstabiere apfel", "buchstabier mir sonne"], desc: "trennt den Text in einzelne Buchstaben" }
+];
+function pickTool(auftrag) {
+  const w = words(auftrag);
+  let best = null, bs = 0;
+  CODE_TOOLS.forEach(tool => { let sc = 0; tool.match.forEach(m => { if (w.some(x => wmatch(x, m) || wmatch(m, x))) sc++; }); if (sc > bs) { bs = sc; best = tool; } });
+  return bs ? best : null;
+}
+const pending = {};
+function renderCoders() {
+  const box = $("#coders"); box.innerHTML = "";
+  if (!S.team.coders) { box.innerHTML = `<p class="hint" style="margin:0">Keine Code-Agenten. Stell oben die Zahl höher, wenn du welche möchtest.</p>`; return; }
+  for (let i = 0; i < S.team.coders; i++) {
+    const d = document.createElement("div"); d.className = "coder";
+    d.innerHTML = `<div class="row" style="justify-content:space-between"><b>Code-Agent ${i + 1}</b><span class="chip">eigene Werkstatt</span></div>
+      <div class="row"><input type="text" class="cAuf" placeholder="Auftrag, z. B. „Wörter zählen“" style="flex:1;min-width:150px"><button type="button" class="btn sec cBuild">Werkzeug bauen</button></div>
+      <div class="cOut"></div>`;
+    const auf = d.querySelector(".cAuf"), out = d.querySelector(".cOut");
+    d.querySelector(".cBuild").onclick = () => {
+      const tool = pickTool(auf.value.trim());
+      if (!tool) { out.innerHTML = `<p class="hint" style="margin:0">Dafür kann ich noch kein Werkzeug bauen. Ich kann: ${CODE_TOOLS.map(t => t.name).join(", ")}.</p>`; return; }
+      pending["c" + i] = tool;
+      out.innerHTML = `<p style="margin:0 0 6px">Ich schlage dieses Werkzeug vor – <b>bevor ich es in Lvi einbaue, musst du erlauben:</b></p>
+        <div class="proposal">Werkzeug: ${esc(tool.name)}
+Aufgabe:  ${esc(tool.desc)}
+Lvi versteht dann z. B.:
+  • ${esc(tool.ex[0])}
+  • ${esc(tool.ex[1])}
+Beispiel:
+  Du:  ${esc(tool.ex[0])}
+  Lvi: ${esc(codeRun(tool.op, tool.ex[0]))}</div>
+        <div class="row" style="margin-top:8px"><button type="button" class="btn cOk">Erlauben</button><button type="button" class="btn sec cNo">Ablehnen</button></div>`;
+      out.querySelector(".cOk").onclick = () => {
+        if (S.skills.some(sk => sk.action === "code" && sk.op === tool.op)) { toast("Dieses Werkzeug hat Lvi schon."); out.innerHTML = ""; return; }
+        S.skills.push({ id: uid(), name: tool.name, action: "code", op: tool.op, examples: tool.ex.slice(), answers: ["{ergebnis}"] });
+        persist(); renderTrain();
+        out.innerHTML = `<p class="note" style="margin:0">✓ Eingebaut. Probier es im Chat: „${esc(tool.ex[0])}“.</p>`;
+        toast("Werkzeug eingebaut. Ich trainiere nach.");
+        train(null, true);
+      };
+      out.querySelector(".cNo").onclick = () => { out.innerHTML = `<p class="hint" style="margin:0">Abgelehnt. Es wurde nichts an Lvi geändert.</p>`; };
+    };
+    box.appendChild(d);
+  }
+}
 
 /* ---------- Gedächtnis ---------- */
 function renderMemory() {
@@ -1034,7 +1289,7 @@ function toast(t) {
   let el = $(".toast"); if (!el) { el = document.createElement("div"); el.className = "toast"; el.setAttribute("role", "status"); document.body.appendChild(el); }
   el.textContent = t; el.hidden = false; clearTimeout(tt); tt = setTimeout(() => el.hidden = true, 2600);
 }
-const VIEWS = ["chat", "trainieren", "labor", "gedaechtnis", "einstellungen"];
+const VIEWS = ["chat", "trainieren", "labor", "team", "gedaechtnis", "einstellungen"];
 function route() {
   takeLearnHash();
   const v = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "chat";
@@ -1042,6 +1297,7 @@ function route() {
   document.querySelectorAll("#tabs a").forEach(a => a.dataset.v === v ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current"));
   if (v === "trainieren") renderTrain();
   if (v === "labor") renderLab();
+  if (v === "team") renderTeam();
   if (v === "einstellungen") renderSettings();
   if (v === "chat") log.scrollTop = log.scrollHeight;
 }
@@ -1049,7 +1305,7 @@ document.querySelectorAll("#tabs a").forEach(a => a.addEventListener("click", e 
   e.preventDefault(); try { history.replaceState(null, "", "#" + a.dataset.v); } catch (er) { location.hash = a.dataset.v; } route();
 }));
 window.addEventListener("hashchange", route);
-function renderAll() { renderName(); renderChat(); renderTrain(); renderLab(); renderMemory(); renderSettings(); }
+function renderAll() { renderName(); renderChat(); renderTrain(); renderLab(); renderTeam(); renderMemory(); renderSettings(); }
 
 loadNet();
 renderAll(); route();
