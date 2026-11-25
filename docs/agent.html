@@ -378,8 +378,15 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;",
 /* ---------- Beispiel-Fähigkeiten ---------- */
 const ACTIONS = {
   none: "Nur antworten", zeit: "Uhrzeit sagen", datum: "Datum sagen", rechnen: "Rechnen",
-  merken: "Etwas merken", erinnern: "Gemerktes aufzählen", timer: "Timer stellen", wuerfeln: "Würfeln"
+  merken: "Etwas merken", erinnern: "Gemerktes aufzählen", timer: "Timer stellen", wuerfeln: "Würfeln",
+  coden: "Programmieren erklären"
 };
+function codingSkill() {
+  return { id: uid(), name: "Programmieren", action: "coden", answers: ["{ergebnis}"],
+    examples: ["code mir bitte etwas", "kannst du programmieren", "wie codet man", "was ist coden",
+      "schreib mir einen taschenrechner", "programmier mir ein spiel", "code mir einen hackschutz",
+      "was ist eine schleife", "wie fange ich mit coden an", "erklär mir html", "mach mir ein programm"] };
+}
 const DEFAULT_SKILLS = () => [
   { name: "Begrüßung", action: "none", examples: ["hallo", "hi", "hey", "guten morgen", "guten abend", "servus", "moin", "hallo wie geht es dir", "na du"], answers: ["Hallo! Schön, dass du da bist.", "Hi! Was kann ich für dich tun?", "Hey, ich bin bereit."] },
   { name: "Verabschiedung", action: "none", examples: ["tschüss", "bis später", "ciao", "gute nacht", "bis morgen", "ich muss los"], answers: ["Bis bald!", "Mach's gut, ich bin hier, wenn du mich brauchst."] },
@@ -392,7 +399,8 @@ const DEFAULT_SKILLS = () => [
   { name: "Erinnern", action: "erinnern", examples: ["was hast du dir gemerkt", "zeig meine notizen", "woran soll ich denken", "was weißt du über mich", "lies meine notizen vor"], answers: ["Das habe ich mir gemerkt:\n{ergebnis}"] },
   { name: "Timer", action: "timer", examples: ["stell einen timer auf 5 minuten", "timer 30 sekunden", "erinnere mich in 10 minuten", "wecker in einer stunde", "sag mir in 2 minuten bescheid"], answers: ["Timer läuft: {ergebnis}. Ich melde mich."] },
   { name: "Würfeln", action: "wuerfeln", examples: ["würfle", "wirf einen würfel", "würfeln bitte", "gib mir eine zufallszahl"], answers: ["Gewürfelt: {ergebnis}"] },
-  { name: "Witz", action: "none", examples: ["erzähl einen witz", "mach einen witz", "bring mich zum lachen", "kennst du einen witz"], answers: ["Warum können Geister so schlecht lügen? Weil man durch sie hindurchsieht.", "Treffen sich zwei Magneten. Sagt der eine: Was soll ich heute bloß anziehen?", "Was macht ein Pirat am Computer? Er drückt die Enter-Taste."] }
+  { name: "Witz", action: "none", examples: ["erzähl einen witz", "mach einen witz", "bring mich zum lachen", "kennst du einen witz"], answers: ["Warum können Geister so schlecht lügen? Weil man durch sie hindurchsieht.", "Treffen sich zwei Magneten. Sagt der eine: Was soll ich heute bloß anziehen?", "Was macht ein Pirat am Computer? Er drückt die Enter-Taste."] },
+  { name: "Programmieren", action: "coden", examples: ["code mir bitte etwas", "kannst du programmieren", "wie codet man", "was ist coden", "schreib mir einen taschenrechner", "programmier mir ein spiel", "code mir einen hackschutz", "was ist eine schleife", "wie fange ich mit coden an", "erklär mir html", "mach mir ein programm"], answers: ["{ergebnis}"] }
 ].map(s => ({ id: uid(), ...s }));
 
 const fresh = () => ({
@@ -406,9 +414,12 @@ let S = load(KEY) || fresh();
 S.sources = S.sources || [];
 S.team = S.team || { workers: 3, coders: 1 };
 if (typeof S.internet !== "boolean") S.internet = false;
+let _migrated = false;
+if (!S.skills.some(s => s.action === "coden")) { S.skills.push(codingSkill()); _migrated = true; }
 let M = load(MKEY);
 const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); return true; }
   catch (e) { if (typeof toast === "function") toast("Der Speicher ist voll. Lösche unter Gedächtnis ein paar gelernte Seiten."); return false; } };
+if (_migrated) persist();
 
 /* ---------- Text zu Merkmalen ---------- */
 const D = 2048;
@@ -715,6 +726,42 @@ function codeRun(op, input) {
   if (op === "spell") return [...t.replace(/\s+/g, " ")].join("·");
   return null;
 }
+// Alles, was Lvi übers Programmieren weiß: Konzepte und fertige, echte Beispiele.
+// Ein kleines Modell kann keine beliebigen Programme erfinden – aber es kann erklären
+// und geprüfte Beispiele zeigen. Genau das steht hier drin.
+const CODE_KB = [
+  { title: "Wie fange ich an?", k: ["anfangen", "fange", "starten", "lernen", "beginnen", "erste"],
+    text: "So fängst du an:\n1. Nimm eine Sprache zum Starten: JavaScript (im Browser) oder Python.\n2. Fang klein an: erst etwas ausgeben, dann rechnen, dann eine Schleife.\n3. Ändere Beispiele und schau, was passiert – Ausprobieren ist das Wichtigste.\n4. Fehler sind normal! Jeder Programmierer macht sie.\n\nDein allererstes Programm:\n\n  console.log(\"Ich lerne programmieren!\");" },
+  { title: "Variable (etwas merken)", k: ["variable", "merken", "speichern", "wert"],
+    text: "Eine Variable ist wie eine beschriftete Kiste, in der du einen Wert aufbewahrst.\n\n  let name = \"Levi\";\n  let alter = 10;\n  console.log(name + \" ist \" + alter + \" Jahre alt.\");\n\n„let\" macht eine neue Kiste. Du kannst den Wert später ändern." },
+  { title: "Schleife (etwas wiederholen)", k: ["schleife", "wiederholen", "loop", "for", "oft"],
+    text: "Eine Schleife wiederholt etwas, ohne dass du es oft hinschreiben musst.\n\n  for (let i = 1; i <= 5; i++) {\n    console.log(\"Zeile \" + i);\n  }\n\nDas schreibt Zeile 1 bis Zeile 5. „i++\" zählt jedes Mal um eins hoch." },
+  { title: "Bedingung (wenn … dann)", k: ["bedingung", "wenn", "dann", "if", "else", "entscheiden"],
+    text: "Mit einer Bedingung trifft das Programm Entscheidungen.\n\n  let alter = 10;\n  if (alter >= 18) {\n    console.log(\"erwachsen\");\n  } else {\n    console.log(\"noch jung\");\n  }\n\n„if\" heißt wenn, „else\" heißt sonst." },
+  { title: "Funktion (eigener Befehl)", k: ["funktion", "function", "befehl", "baustein"],
+    text: "Eine Funktion ist dein eigener Befehl, den du immer wieder benutzen kannst.\n\n  function begruesse(name) {\n    return \"Hallo \" + name + \"!\";\n  }\n  console.log(begruesse(\"Levi\"));\n\nDu gibst etwas hinein (name) und bekommst etwas zurück." },
+  { title: "Liste (viele Dinge)", k: ["liste", "array", "mehrere", "sammlung"],
+    text: "In einer Liste (Array) steckst du viele Dinge auf einmal.\n\n  let tiere = [\"Hund\", \"Katze\", \"Maus\"];\n  console.log(tiere[0]);        // Hund\n  console.log(tiere.length);    // 3\n\nDie Zählung beginnt bei 0!" },
+  { title: "Taschenrechner", k: ["taschenrechner", "rechner", "rechnen", "rechenprogramm", "plus", "mal"],
+    text: "Ein kleiner Taschenrechner als Funktion:\n\n  function rechne(a, b) {\n    return a + b;\n  }\n  console.log(rechne(5, 3));   // 8\n\nMit * mal, / geteilt, - minus rechnest du genauso." },
+  { title: "Würfel / Zufallszahl", k: ["wuerfel", "wuerfeln", "zufall", "zufallszahl", "random"],
+    text: "Ein echter Würfel in Code:\n\n  let augen = 1 + Math.floor(Math.random() * 6);\n  console.log(\"Du hast eine \" + augen + \" gewürfelt!\");\n\n„Math.random()\" gibt eine Zufallszahl. Der Rest macht daraus 1 bis 6." },
+  { title: "Eine Webseite (HTML)", k: ["html", "webseite", "website", "homepage", "seite"],
+    text: "Eine Webseite schreibt man in HTML:\n\n  <!doctype html>\n  <html>\n    <body>\n      <h1>Hallo Welt!</h1>\n      <p>Meine erste Webseite.</p>\n    </body>\n  </html>\n\nSpeichere das als seite.html und öffne es im Browser." },
+  { title: "Hackschutz (Passwort mit Sperre)", k: ["hackschutz", "hack", "passwort", "schutz", "sperre", "sicherheit", "login", "brute"],
+    text: "Ein einfacher Hackschutz: nach 3 falschen Versuchen wird gesperrt. (Genau diese Idee steckt auch in LoginShield in diesem Projekt!)\n\n  let versuche = 0;\n  function pruefe(eingabe) {\n    if (versuche >= 3) return \"Gesperrt! Zu viele Versuche.\";\n    if (eingabe === \"geheim\") { versuche = 0; return \"Willkommen!\"; }\n    versuche++;\n    return \"Falsch. Noch \" + (3 - versuche) + \" Versuche.\";\n  }\n  console.log(pruefe(\"abc\"));   // Falsch. Noch 2 Versuche.\n\nSo kann ein Angreifer nicht endlos Passwörter ausprobieren." },
+  { title: "Fehler / Bug", k: ["fehler", "bug", "kaputt", "funktioniert nicht", "fehlermeldung"],
+    text: "Ein „Bug\" ist ein Fehler im Programm. Das ist ganz normal!\n\nSo findest du ihn:\n1. Lies die Fehlermeldung – sie sagt oft die Zeile.\n2. Lass dir Zwischenwerte ausgeben: console.log(variable);\n3. Prüfe Tippfehler und ob Klammern { } ( ) alle zu sind.\n\nSuchen und Reparieren nennt man „debuggen\"." }
+];
+function codeAnswer(input) {
+  // Befehlswörter (code/programmier …) weglassen – die sagen nur „Coden“, nicht WAS.
+  const w = words(input).filter(x => !/^(code|codes|coden|codet|codest|coding|programmier|proggen|skript|script)/.test(x));
+  let best = null, bs = 0;
+  CODE_KB.forEach(t => { let sc = 0; w.forEach(x => { if (t.k.some(kw => wmatch(x, kw) || wmatch(kw, x))) sc++; }); if (sc > bs) { bs = sc; best = t; } });
+  if (bs > 0) return best.text;
+  const list = CODE_KB.map(t => "• " + t.title).join("\n");
+  return "Klar, ich helfe dir beim Coden! Programmieren heißt, dem Computer genau zu sagen, was er Schritt für Schritt tun soll.\n\nFrag mich zu einem dieser Themen, dann erkläre ich es mit einem echten Beispiel:\n" + list + "\n\nOder sag z. B.: „Schreib mir einen Taschenrechner\" oder „Code mir einen Hackschutz\".";
+}
 function runSkill(sk, input) {
   let res = "", fb = "";
   switch (sk.action) {
@@ -733,6 +780,7 @@ function runSkill(sk, input) {
       setTimeout(() => { beep(); bot(`Dein Timer über ${d.label} ist abgelaufen.`, { kind: "info" }); }, d.ms); break; }
     case "wuerfeln": res = String(1 + Math.floor(Math.random() * 6)); fb = "Gewürfelt: {ergebnis}"; break;
     case "code": res = codeRun(sk.op, input); if (res == null) return "Dafür ist mein Werkzeug nicht gebaut."; fb = "{ergebnis}"; break;
+    case "coden": return codeAnswer(input);
   }
   const opts = sk.answers.filter(a => a.trim());
   let tpl = opts.length ? opts[Math.floor(Math.random() * opts.length)] : (fb || "…");
@@ -759,7 +807,10 @@ function fits(sk, input) {
   if (sk.action === "merken") return /\b(merk|notier|schreib|speicher)/i.test(norm(input));
   return true;
 }
+const CODE_RE = /\b(code|codes|coden|codest|codet|coding|programmier\w*|proggen|skript|script)\b/i;
 function respond(input) {
+  const codeSkill = S.skills.find(s => s.action === "coden");
+  if (codeSkill && CODE_RE.test(input)) return bot(runSkill(codeSkill, input), { kind: "ok", skill: codeSkill.id, conf: 1, input });
   const r = predict(input);
   const mem = searchMemory(input);
   // Gelerntes Wissen gewinnt, wenn es deutlich besser passt als die Beispielsätze der Fähigkeit

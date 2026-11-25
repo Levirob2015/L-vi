@@ -47,7 +47,10 @@ Kommandozeile.
 > Erlaubnis. Mit deiner Erlaubnis darf er auch **ins Internet**: Weiß er
 > etwas nicht, sucht er live bei **Wikipedia** und nennt die Quelle; das
 > Gefundene merkt er sich auf Wunsch dauerhaft (dann weiß er es auch
-> offline). Eine Browser-App darf aus Sicherheitsgründen nicht jede Website
+> offline). Sobald „code“ oder „programmier“ fällt, schaltet er in den
+> Programmier-Modus und erklärt Konzepte (Variable, Schleife, Funktion …)
+> mit echten Beispielprogrammen, inklusive einem kleinen Hackschutz. Eine
+> Browser-App darf aus Sicherheitsgründen nicht jede Website
 > lesen – Wikipedia lässt den Zugriff aber ausdrücklich zu. Kein Server,
 > kein Konto, keine Daten verlassen das Gerät; Sicherung als Text zum Kopieren.
 > Online: `https://levirob2015.github.io/L-vi/agent.html` – in Safari über
