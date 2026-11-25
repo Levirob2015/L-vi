@@ -334,7 +334,7 @@ code{font-family:var(--f-mono);font-size:12.5px;background:var(--bubble);padding
           <div class="row"><input type="checkbox" id="setVoice"><label for="setVoice" style="margin:0;font-weight:500">Antworten vorlesen</label></div>
           <div class="row"><input type="checkbox" id="setAuto"><label for="setAuto" style="margin:0;font-weight:500">Nach jeder Korrektur im Chat automatisch nachtrainieren</label></div>
           <div class="row"><input type="checkbox" id="setNet"><label for="setNet" style="margin:0;font-weight:500">Ins Internet gehen dürfen (Wikipedia durchsuchen)</label></div>
-          <p class="hint" style="margin:0">Weiß der Agent etwas nicht, sucht er dann live bei Wikipedia und nennt die Quelle. Ehrlich gesagt: Eine Browser-App darf <b>nicht</b> jede Website lesen (Sicherheitsregel „CORS“) und hat keine eigene Suchmaschine – aber Wikipedias Tür ist offen. Das Gefundene kannst du mit einem Tipp dauerhaft merken, dann weiß er es auch ohne Internet. Live-Suche funktioniert nur in der Online-App, nicht in der Vorschau.</p>
+          <p class="hint" style="margin:0">Weiß der Agent etwas nicht, sucht er dann live bei Wikipedia und nennt die Quelle. Ehrlich gesagt: Eine Browser-App darf <b>nicht</b> jede Website lesen (Sicherheitsregel „CORS“) und hat keine eigene Suchmaschine – aber Wikipedias Tür ist offen. Das Gefundene kannst du mit einem Tipp dauerhaft merken, dann weiß er es auch ohne Internet. Wichtig: In der <b>Vorschau</b> (claude.ai) ist das Internet gesperrt – das klappt nur, wenn die App unter <b>levirob2015.github.io</b> läuft (oder von dort auf dem Home-Bildschirm).</p>
         </div>
 
         <div class="card stack">
@@ -648,6 +648,13 @@ const host = u => { try { return new URL(u).hostname.replace(/^www\./, ""); } ca
 // Internet: nur mit Erlaubnis, und nur Wikipedia – die lässt Browser-Zugriffe ausdrücklich zu (CORS).
 // Andere Webseiten darf eine Browser-App aus Sicherheitsgründen nicht frei auslesen.
 const canWeb = () => !!S.internet;
+// Läuft die App an ihrer echten Adresse (oder lokal)? Nur dort darf der Browser ins Netz.
+const isLiveSite = () => /(^|\.)github\.io$|^localhost$|^127\.0\.0\.1$/.test(location.hostname) || location.protocol === "file:";
+function webBlockedMsg() {
+  return isLiveSite()
+    ? "Ich komme gerade nicht ins Internet. Prüf, ob dein WLAN an ist – Wikipedia muss erreichbar sein."
+    : "Das liegt nicht an deinem Internet: Diese Vorschau (claude.ai) verbietet mir aus Sicherheit, andere Webseiten aufzurufen. Öffne die App unter ihrer echten Adresse levirob2015.github.io/L-vi/agent.html (oder leg sie von dort auf den Home-Bildschirm) – dann darf ich ins Netz.";
+}
 function fetchJson(url) {
   const ctrl = new AbortController(), to = setTimeout(() => ctrl.abort(), 9000);
   return fetch(url, { signal: ctrl.signal, headers: { "Accept": "application/json" } })
@@ -675,7 +682,7 @@ async function webAnswer(input, fallback) {
     if (res) { found = true; bot(res.extract, { kind: "web", input, srcTitle: "Wikipedia – " + res.title, srcUrl: res.url, learn: { title: res.title, url: res.url, text: res.extract } }); }
     else bot("Dazu habe ich bei Wikipedia nichts Passendes gefunden.", { kind: "info" });
   } catch (e) {
-    bot("Ich komme gerade nicht ins Internet. Die Live-Suche läuft in der Online-App (levirob2015.github.io) oder als Home-Bildschirm-App – in dieser Vorschau ist sie gesperrt.", { kind: "info" });
+    bot(webBlockedMsg(), { kind: "info" });
   }
   webBusy = false;
   if (fallback && !found) askUnknown(input);
@@ -1173,7 +1180,7 @@ function teamResearch(q) {
           wikiSearch(q).then(res => { run.insertAdjacentHTML("beforeend", res
             ? `<div class="find hit">${esc(res.extract)}<small>Rechercheur · Quelle: Wikipedia – ${esc(res.title)}</small></div>`
             : `<div class="find miss">Auch bei Wikipedia nichts Passendes gefunden.</div>`); })
-            .catch(() => run.insertAdjacentHTML("beforeend", `<div class="find miss">Der Rechercheur kam nicht ins Internet (in der Vorschau gesperrt; klappt in der Online-App).</div>`));
+            .catch(() => run.insertAdjacentHTML("beforeend", `<div class="find miss">${esc(webBlockedMsg())}</div>`));
           return;
         }
         
