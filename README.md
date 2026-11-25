@@ -44,7 +44,11 @@ Kommandozeile.
 > lässt – und zum neuen Agenten macht. Im **Team** verteilt ein Chef eine
 > Frage an mehrere Arbeiter, die das Gelernte durchsuchen, und rechnet die
 > Funde zusammen; Code-Agenten bauen kleine Werkzeuge und fragen erst um
-> Erlaubnis. Kein Server,
+> Erlaubnis. Mit deiner Erlaubnis darf er auch **ins Internet**: Weiß er
+> etwas nicht, sucht er live bei **Wikipedia** und nennt die Quelle; das
+> Gefundene merkt er sich auf Wunsch dauerhaft (dann weiß er es auch
+> offline). Eine Browser-App darf aus Sicherheitsgründen nicht jede Website
+> lesen – Wikipedia lässt den Zugriff aber ausdrücklich zu. Kein Server,
 > kein Konto, keine Daten verlassen das Gerät; Sicherung als Text zum Kopieren.
 > Online: `https://levirob2015.github.io/L-vi/agent.html` – in Safari über
 > *Teilen → Zum Home-Bildschirm* als App ablegen.
