@@ -50,7 +50,10 @@ Kommandozeile.
 > offline). Sobald „code“ oder „programmier“ fällt, schaltet er in den
 > Programmier-Modus und erklärt Konzepte (Variable, Schleife, Funktion …)
 > mit echten Beispielprogrammen, inklusive einem kleinen Hackschutz. Eine
-> Browser-App darf aus Sicherheitsgründen nicht jede Website
+> Lvi ist dabei **neugierig** – er stellt im Chat auch mal eigene Fragen –
+> und hat einen **Bildkreierer**, der aus Formen, die er kennt (Sonne, Baum,
+> Haus, Rakete, Katze, Fisch, Herz, Sterne …), offline eigene Bilder malt.
+> Eine Browser-App darf aus Sicherheitsgründen nicht jede Website
 > lesen – Wikipedia lässt den Zugriff aber ausdrücklich zu. Kein Server,
 > kein Konto, keine Daten verlassen das Gerät; Sicherung als Text zum Kopieren.
 > Online: `https://levirob2015.github.io/L-vi/agent.html` – in Safari über

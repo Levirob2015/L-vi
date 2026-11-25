@@ -105,6 +105,11 @@ canvas{width:100%;height:120px;display:block}
 .mem:last-child{border-bottom:0}
 .mem div{flex:1;min-width:0;overflow-wrap:anywhere}
 .mem time{display:block;font-size:12px;color:var(--muted);font-family:var(--f-mono)}
+.canvaswrap{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#000;line-height:0}
+#imgCanvas{width:100%;height:auto;display:block;touch-action:manipulation}
+.gallery{display:flex;gap:8px;flex-wrap:wrap}
+.gallery img{width:84px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer}
+.artimg{width:100%;max-width:340px;border-radius:12px;display:block;margin-top:4px}
 .team{display:flex;flex-direction:column;align-items:center;gap:6px}
 .team .lvl{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
 .team .conn{width:2px;height:12px;background:var(--line)}
@@ -161,6 +166,7 @@ code{font-family:var(--f-mono);font-size:12.5px;background:var(--bubble);padding
       <a href="#trainieren" data-v="trainieren">Trainieren</a>
       <a href="#labor" data-v="labor">Labor</a>
       <a href="#team" data-v="team">Team</a>
+      <a href="#bilder" data-v="bilder">Bilder</a>
       <a href="#gedaechtnis" data-v="gedaechtnis">Gedächtnis</a>
       <a href="#einstellungen" data-v="einstellungen">Einstellungen</a>
     </nav>
@@ -279,6 +285,24 @@ code{font-family:var(--f-mono);font-size:12.5px;background:var(--bubble);padding
       </div>
     </section>
 
+    <!-- BILDER -->
+    <section class="view" id="v-bilder" hidden>
+      <div class="stack">
+        <div class="card stack">
+          <div><h2>Bildkreierer</h2>
+          <p class="hint" style="margin:0">Schreib, was Lvi malen soll. Er baut das Bild aus Formen, die er kennt – jedes Bild ein Unikat. Im Chat geht es auch: „Zeichne eine Rakete im Weltall“.</p></div>
+          <div class="row"><input type="text" id="imgPrompt" placeholder="z. B. Haus mit Baum und Sonne" style="flex:1;min-width:180px" value="Rakete im Weltall mit Sternen"><button class="btn" id="imgGo">Erstellen</button></div>
+          <div class="canvaswrap"><canvas id="imgCanvas" width="480" height="320" aria-label="Erzeugtes Bild"></canvas></div>
+          <div class="row">
+            <button class="btn sec" id="imgAgain">Neu würfeln</button>
+            <span class="hint">Zum Speichern auf dem iPad lange auf das Bild tippen.</span>
+          </div>
+          <p class="hint" style="margin:0">Lvi kennt u. a.: Sonne, Mond, Sterne, Wolke, Regenbogen, Berg, Baum, Blume, Gras, Haus, Rakete, Auto, Katze, Fisch, Herz, Ball, Nacht. Kennt er nichts davon, malt er ein buntes Zufallsbild.</p>
+          <div id="gallery" class="gallery"></div>
+        </div>
+      </div>
+    </section>
+
     <!-- GEDÄCHTNIS -->
     <section class="view" id="v-gedaechtnis" hidden>
       <div class="stack">
@@ -333,6 +357,7 @@ code{font-family:var(--f-mono);font-size:12.5px;background:var(--bubble);padding
           </div>
           <div class="row"><input type="checkbox" id="setVoice"><label for="setVoice" style="margin:0;font-weight:500">Antworten vorlesen</label></div>
           <div class="row"><input type="checkbox" id="setAuto"><label for="setAuto" style="margin:0;font-weight:500">Nach jeder Korrektur im Chat automatisch nachtrainieren</label></div>
+          <div class="row"><input type="checkbox" id="setCurious"><label for="setCurious" style="margin:0;font-weight:500">Neugierig sein (stellt im Chat auch mal eigene Fragen)</label></div>
           <div class="row"><input type="checkbox" id="setNet"><label for="setNet" style="margin:0;font-weight:500">Ins Internet gehen dürfen (Wikipedia durchsuchen)</label></div>
           <p class="hint" style="margin:0">Weiß der Agent etwas nicht, sucht er dann live bei Wikipedia und nennt die Quelle. Ehrlich gesagt: Eine Browser-App darf <b>nicht</b> jede Website lesen (Sicherheitsregel „CORS“) und hat keine eigene Suchmaschine – aber Wikipedias Tür ist offen. Das Gefundene kannst du mit einem Tipp dauerhaft merken, dann weiß er es auch ohne Internet. Wichtig: In der <b>Vorschau</b> (claude.ai) ist das Internet gesperrt – das klappt nur, wenn die App unter <b>levirob2015.github.io</b> läuft (oder von dort auf dem Home-Bildschirm).</p>
         </div>
@@ -404,7 +429,7 @@ const DEFAULT_SKILLS = () => [
 ].map(s => ({ id: uid(), ...s }));
 
 const fresh = () => ({
-  name: "Lvi", threshold: 0.5, voice: false, auto: true, internet: false, team: { workers: 3, coders: 1 },
+  name: "Lvi", threshold: 0.5, voice: false, auto: true, internet: false, curious: true, team: { workers: 3, coders: 1 },
   skills: DEFAULT_SKILLS(),
   memory: [{ id: uid(), text: "Beispiel: Der Ersatzschlüssel liegt bei der Nachbarin.", t: Date.now() }],
   sources: [],
@@ -414,6 +439,7 @@ let S = load(KEY) || fresh();
 S.sources = S.sources || [];
 S.team = S.team || { workers: 3, coders: 1 };
 if (typeof S.internet !== "boolean") S.internet = false;
+if (typeof S.curious !== "boolean") S.curious = true;
 let _migrated = false;
 if (!S.skills.some(s => s.action === "coden")) { S.skills.push(codingSkill()); _migrated = true; }
 let M = load(MKEY);
@@ -690,7 +716,7 @@ async function webAnswer(input, fallback) {
   let found = false;
   try {
     const res = await wikiSearch(input);
-    if (res) { found = true; bot(res.extract, { kind: "web", input, srcTitle: "Wikipedia – " + res.title, srcUrl: res.url, learn: { title: res.title, url: res.url, text: res.extract } }); }
+    if (res) { found = true; bot(withCuriosity(res.extract, "learn"), { kind: "web", input, srcTitle: "Wikipedia – " + res.title, srcUrl: res.url, learn: { title: res.title, url: res.url, text: res.extract } }); }
     else bot("Dazu habe ich bei Wikipedia nichts Passendes gefunden.", { kind: "info" });
   } catch (e) {
     bot(webBlockedMsg(), { kind: "info" });
@@ -796,6 +822,7 @@ function speak(text) {
 }
 function push(m) { S.chat.push(m); if (S.chat.length > 80) S.chat.splice(0, S.chat.length - 80); persist(); log.appendChild(renderMsg(m)); log.scrollTop = log.scrollHeight; }
 function bot(text, meta = {}) { push({ who: "bot", text, ...meta }); speak(text); }
+function botImage(text, url, prompt) { log.appendChild(renderMsg({ who: "bot", kind: "image", text, url, prompt })); log.scrollTop = log.scrollHeight; }
 function handle(input) {
   push({ who: "me", text: input });
   if (!NET) { bot("Ich bin noch nicht trainiert. Einen Moment …", { kind: "info" }); return train(() => respond(input), true); }
@@ -807,20 +834,38 @@ function fits(sk, input) {
   if (sk.action === "merken") return /\b(merk|notier|schreib|speicher)/i.test(norm(input));
   return true;
 }
+const CURIOUS = {
+  general: ["Übrigens: Was machst du gerade so?", "Magst du mir etwas Neues beibringen?", "Was interessiert dich am meisten?", "Erzähl mir mehr – ich lerne gern dazu!", "Hast du heute schon etwas Spannendes erlebt?"],
+  learn: ["Spannend! Willst du mir noch mehr dazu zeigen?", "Davon möchte ich mehr wissen – hast du eine Webseite dazu?", "Interessant! Erzähl mir mehr darüber."]
+};
+const pick = a => a[Math.floor(Math.random() * a.length)];
+function withCuriosity(text, mode) {
+  if (!S.curious || Math.random() > 0.3) return text;
+  return text + "\n\n" + pick(CURIOUS[mode] || CURIOUS.general);
+}
 const CODE_RE = /\b(code|codes|coden|codest|codet|coding|programmier\w*|proggen|skript|script)\b/i;
+const IMG_RE = /\bbild(er|chen)?\b|\bzeichne\w*|\bmalen\b|\bmal mir\b|\bmale\b|\bgem[aä]lde\b|\bzeichnung\b/i;
 function respond(input) {
   const codeSkill = S.skills.find(s => s.action === "coden");
   if (codeSkill && CODE_RE.test(input)) return bot(runSkill(codeSkill, input), { kind: "ok", skill: codeSkill.id, conf: 1, input });
+  if (IMG_RE.test(input) && !/\d\s*mal\s*\d/.test(input)) {
+    const art = createImage(input);
+    botImage("Hier ist dein Bild. ✨ Zum Speichern lange drauftippen.", art.url, input);
+    if (S.curious && Math.random() < 0.5) bot(pick(["Gefällt es dir? Soll ich noch eins malen?", "Magst du ein anderes Bild? Sag mir einfach, was."]), { kind: "info" });
+    return;
+  }
   const r = predict(input);
   const mem = searchMemory(input);
   // Gelerntes Wissen gewinnt, wenn es deutlich besser passt als die Beispielsätze der Fähigkeit
   const memFirst = mem && (r.unsure || mem.score >= 0.75 && (r.top.p < 0.9 || r.sim < 0.5));
-  if (!r.unsure && !memFirst && fits(skill(r.top.id), input)) { const sk = skill(r.top.id); return bot(runSkill(sk, input), { kind: "ok", skill: sk.id, conf: r.top.p, input }); }
+  if (!r.unsure && !memFirst && fits(skill(r.top.id), input)) { const sk = skill(r.top.id);
+    let out = runSkill(sk, input); if (sk.action === "none") out = withCuriosity(out, "general");
+    return bot(out, { kind: "ok", skill: sk.id, conf: r.top.p, input }); }
   if (mem && mem.src) {
     const prev = mem.src.sents[mem.i - 1];
     let txt = mem.text;
     if (prev && /^(sie|er|es|damit|dabei|dadurch|dort|diese[rsnm]?|dies|deshalb|daher|deswegen)\b/i.test(txt)) txt = prev + " " + txt;
-    return bot(txt, { kind: "memory", input, srcTitle: mem.src.title, srcUrl: mem.src.url });
+    return bot(withCuriosity(txt, "learn"), { kind: "memory", input, srcTitle: mem.src.title, srcUrl: mem.src.url });
   }
   if (mem) return bot(`Dazu habe ich mir gemerkt: „${mem.text}“`, { kind: "memory", input });
   if (canWeb()) return webAnswer(input, true);
@@ -835,6 +880,7 @@ function askUnknown(input) {
 function renderMsg(m) {
   const el = document.createElement("div");
   el.className = "msg " + m.who;
+  if (m.kind === "image") { el.innerHTML = `<div class="b">${esc(m.text)}<img class="artimg" src="${m.url}" alt="${esc(m.prompt || "Bild")}"></div>`; return el; }
   el.innerHTML = `<div class="b">${esc(m.text)}</div>`;
   if (m.who !== "bot" || !m.input) return el;
   const meta = document.createElement("div"); meta.className = "meta";
@@ -1312,6 +1358,108 @@ Beispiel:
   }
 }
 
+/* ---------- Bildkreierer (malt offline auf Canvas) ---------- */
+function drawStar(x, y, rad, spikes, col, g) {
+  g.beginPath(); for (let i = 0; i < spikes * 2; i++) { const r = i % 2 ? rad * 0.45 : rad, a = Math.PI * i / spikes - Math.PI / 2;
+    g[i ? "lineTo" : "moveTo"](x + Math.cos(a) * r, y + Math.sin(a) * r); } g.closePath(); g.fillStyle = col; g.fill();
+}
+function drawScene(canvas, prompt, seed) {
+  const g = canvas.getContext("2d"), W = canvas.width, H = canvas.height;
+  const r = rng(seed), rnd = (a, b) => a + r() * (b - a);
+  const p = norm(prompt), has = re => re.test(p);
+  const night = has(/nacht|mond|dunkel|stern/);
+  const water = has(/fisch|meer|wasser|see|unterwasser/);
+  g.clearRect(0, 0, W, H);
+  // Himmel
+  const sky = g.createLinearGradient(0, 0, 0, H);
+  if (water) { sky.addColorStop(0, "#1fa2c8"); sky.addColorStop(1, "#083b63"); }
+  else if (night) { sky.addColorStop(0, "#0b1026"); sky.addColorStop(1, "#243066"); }
+  else { sky.addColorStop(0, "#74c6ff"); sky.addColorStop(1, "#dff1ff"); }
+  g.fillStyle = sky; g.fillRect(0, 0, W, H);
+  let drew = false;
+  if (night && !water) { for (let i = 0; i < 46; i++) { g.fillStyle = "rgba(255,255,255," + rnd(0.4, 1) + ")"; const s = rnd(1, 2.6); g.fillRect(rnd(0, W), rnd(0, H * 0.62), s, s); } drew = true; }
+  if (has(/regenbogen/)) { const cx = W / 2, cy = H * 0.95, cols = ["#e45","#f80","#fd0","#2b6","#28e","#73e"];
+    cols.forEach((c, i) => { g.beginPath(); g.arc(cx, cy, W * 0.42 - i * 9, Math.PI, 2 * Math.PI); g.lineWidth = 9; g.strokeStyle = c; g.stroke(); }); drew = true; }
+  if (has(/mond/)) { g.fillStyle = "#f4f1d0"; g.beginPath(); g.arc(W * 0.78, H * 0.22, 34, 0, 7); g.fill();
+    g.fillStyle = night ? "#1a2350" : "#9fd0ff"; g.beginPath(); g.arc(W * 0.70, H * 0.18, 30, 0, 7); g.fill(); drew = true; }
+  if (has(/sonne/)) { const sx = W * 0.8, sy = H * 0.22; g.strokeStyle = "#ffd24a"; g.lineWidth = 4;
+    for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6; g.beginPath(); g.moveTo(sx + Math.cos(a) * 36, sy + Math.sin(a) * 36); g.lineTo(sx + Math.cos(a) * 52, sy + Math.sin(a) * 52); g.stroke(); }
+    g.fillStyle = "#ffcf33"; g.beginPath(); g.arc(sx, sy, 32, 0, 7); g.fill(); drew = true; }
+  if (has(/stern/) && !night) { for (let i = 0; i < 5; i++) drawStar(rnd(30, W - 30), rnd(20, H * 0.5), rnd(10, 18), 5, "#ffe14d", g); drew = true; }
+  if (has(/wolke/)) { const n = has(/wolken/) ? 3 : 1; for (let i = 0; i < n; i++) { const x = rnd(40, W - 60), y = rnd(30, H * 0.4); g.fillStyle = "rgba(255,255,255,.92)";
+    [[0,0,26],[26,6,22],[-24,6,20],[6,-10,20]].forEach(c => { g.beginPath(); g.arc(x + c[0], y + c[1], c[2], 0, 7); g.fill(); }); } drew = true; }
+  // Boden
+  const groundWords = /baum|baeume|haus|haeuser|blume|blumen|berg|gras|wiese|katze|auto|ball|hund/;
+  if (groundWords.test(p) && !water) { g.fillStyle = "#64b84a"; g.fillRect(0, H * 0.78, W, H * 0.22); drew = true; }
+  if (has(/berg/)) { g.fillStyle = "#7d8aa0"; [[W*0.25,H*0.5],[W*0.6,H*0.42]].forEach(m => { g.beginPath(); g.moveTo(m[0]-110,H*0.8); g.lineTo(m[0],m[1]); g.lineTo(m[0]+110,H*0.8); g.closePath(); g.fill(); });
+    g.fillStyle = "#fff"; [[W*0.25,H*0.5],[W*0.6,H*0.42]].forEach(m => { g.beginPath(); g.moveTo(m[0]-26,m[1]+36); g.lineTo(m[0],m[1]); g.lineTo(m[0]+26,m[1]+36); g.closePath(); g.fill(); }); drew = true; }
+  if (has(/haus/)) { const n = has(/haeuser/) ? 3 : 1; for (let i = 0; i < n; i++) { const x = rnd(50, W - 110), y = H * 0.78, w = 90, h = 70;
+    g.fillStyle = ["#e8b04a","#d98", "#cbd"][i % 3]; g.fillRect(x, y - h, w, h);
+    g.fillStyle = "#b5443a"; g.beginPath(); g.moveTo(x - 8, y - h); g.lineTo(x + w / 2, y - h - 40); g.lineTo(x + w + 8, y - h); g.closePath(); g.fill();
+    g.fillStyle = "#6b3b1f"; g.fillRect(x + w / 2 - 12, y - 34, 24, 34);
+    g.fillStyle = "#bfe4ff"; g.fillRect(x + 12, y - h + 14, 20, 20); } drew = true; }
+  if (has(/baum/)) { const n = has(/baeume/) ? 3 : 1; for (let i = 0; i < n; i++) { const x = rnd(40, W - 40), y = H * 0.78;
+    g.fillStyle = "#7a4a22"; g.fillRect(x - 7, y - 46, 14, 46); g.fillStyle = "#3e9e3e";
+    [[0,-66,30],[-20,-50,24],[20,-50,24]].forEach(c => { g.beginPath(); g.arc(x + c[0], y + c[1], c[2], 0, 7); g.fill(); }); } drew = true; }
+  if (has(/rakete/)) { const x = water ? W*0.5 : rnd(W*0.3,W*0.7), y = H * (water?0.5:0.52);
+    g.save(); g.translate(x, y);
+    g.fillStyle = "#e8eef7"; g.beginPath(); g.moveTo(0, -60); g.quadraticCurveTo(26, -20, 22, 40); g.lineTo(-22, 40); g.quadraticCurveTo(-26, -20, 0, -60); g.fill();
+    g.fillStyle = "#e0564a"; g.beginPath(); g.moveTo(-22, 40); g.lineTo(-44, 66); g.lineTo(-22, 20); g.fill(); g.beginPath(); g.moveTo(22, 40); g.lineTo(44, 66); g.lineTo(22, 20); g.fill();
+    g.fillStyle = "#7fd0ff"; g.beginPath(); g.arc(0, -8, 12, 0, 7); g.fill();
+    g.fillStyle = "#ffb13b"; g.beginPath(); g.moveTo(-14, 40); g.quadraticCurveTo(0, 86, 14, 40); g.fill(); g.restore(); drew = true; }
+  if (has(/auto/)) { const x = rnd(40, W - 140), y = H * 0.82; g.fillStyle = "#2b7fe0"; g.fillRect(x, y - 26, 120, 26);
+    g.fillRect(x + 22, y - 48, 70, 26); g.fillStyle = "#222"; [x + 26, x + 94].forEach(wx => { g.beginPath(); g.arc(wx, y, 15, 0, 7); g.fill(); }); drew = true; }
+  if (water) { const fn = has(/fische/) ? 6 : (has(/fisch/) ? 3 : 3); for (let i = 0; i < fn; i++) { const x = rnd(40, W - 40), y = rnd(H * 0.3, H * 0.85), c = ["#ff9f1c","#ffd84a","#ff6b6b","#4fd1c5"][i % 4];
+    g.fillStyle = c; g.beginPath(); g.ellipse(x, y, 20, 12, 0, 0, 7); g.fill(); g.beginPath(); g.moveTo(x + 18, y); g.lineTo(x + 34, y - 10); g.lineTo(x + 34, y + 10); g.closePath(); g.fill();
+    g.fillStyle = "#fff"; g.beginPath(); g.arc(x - 8, y - 3, 3, 0, 7); g.fill(); } drew = true; }
+  if (has(/blume/)) { const n = has(/blumen/) ? 5 : 3; for (let i = 0; i < n; i++) { const x = rnd(24, W - 24), y = rnd(H * 0.8, H * 0.95), c = ["#ff5d8f","#ffd23f","#b06bff","#ff7b3f"][i % 4];
+    for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3; g.fillStyle = c; g.beginPath(); g.ellipse(x + Math.cos(a) * 9, y + Math.sin(a) * 9, 6, 6, 0, 0, 7); g.fill(); }
+    g.fillStyle = "#ffdf4a"; g.beginPath(); g.arc(x, y, 5, 0, 7); g.fill(); } drew = true; }
+  if (has(/katze/)) { const x = rnd(W*0.3,W*0.7), y = H * 0.76; g.fillStyle = "#f4a63a";
+    g.beginPath(); g.arc(x, y, 30, 0, 7); g.fill();
+    [[-1,-1],[1,-1]].forEach(o => { g.beginPath(); g.moveTo(x + o[0]*24, y - 20); g.lineTo(x + o[0]*30, y - 48); g.lineTo(x + o[0]*8, y - 30); g.closePath(); g.fill(); });
+    g.fillStyle = "#fff"; [[-11,0],[11,0]].forEach(o => { g.beginPath(); g.arc(x+o[0], y-4, 7, 0, 7); g.fill(); });
+    g.fillStyle = "#222"; [[-11,0],[11,0]].forEach(o => { g.beginPath(); g.arc(x+o[0], y-3, 3, 0, 7); g.fill(); });
+    g.fillStyle = "#e67"; g.beginPath(); g.moveTo(x-5,y+8); g.lineTo(x+5,y+8); g.lineTo(x,y+13); g.closePath(); g.fill(); drew = true; }
+  if (has(/herz/)) { const n = has(/herzen/) ? 4 : 1; for (let i = 0; i < n; i++) { const x = rnd(40, W-40), y = rnd(40, H-60), s = rnd(0.7, 1.4);
+    g.fillStyle = ["#ff3b6b","#ff7aa2","#e0245e"][i % 3]; g.save(); g.translate(x, y); g.scale(s, s);
+    g.beginPath(); g.moveTo(0, 8); g.bezierCurveTo(-18, -12, -26, 8, 0, 26); g.bezierCurveTo(26, 8, 18, -12, 0, 8); g.fill(); g.restore(); } drew = true; }
+  if (has(/ball/)) { const x = rnd(40, W-40), y = H*0.82; g.fillStyle = "#ff5252"; g.beginPath(); g.arc(x, y, 22, 0, 7); g.fill();
+    g.strokeStyle = "#fff"; g.lineWidth = 3; g.beginPath(); g.arc(x, y, 22, 0.3, 2.9); g.stroke(); drew = true; }
+  if (!drew) { // Zufallsbild
+    for (let i = 0; i < 16; i++) { g.fillStyle = `hsla(${Math.floor(rnd(0,360))},80%,60%,.75)`; const x = rnd(0, W), y = rnd(0, H), s = rnd(14, 60);
+      if (r() < 0.5) { g.beginPath(); g.arc(x, y, s / 2, 0, 7); g.fill(); }
+      else { g.beginPath(); g.moveTo(x, y - s/2); g.lineTo(x + s/2, y + s/2); g.lineTo(x - s/2, y + s/2); g.closePath(); g.fill(); } }
+  }
+}
+let offCanvas;
+function createImage(prompt, seed) {
+  if (!offCanvas) { offCanvas = document.createElement("canvas"); offCanvas.width = 480; offCanvas.height = 320; }
+  seed = seed || (Math.floor(Math.random() * 1e6) + 1);
+  drawScene(offCanvas, prompt, seed);
+  let url = ""; try { url = offCanvas.toDataURL("image/png"); } catch (e) {}
+  return { url, prompt, seed };
+}
+let GAL = [], lastImg = null;
+function renderImgTab() {
+  const cv = $("#imgCanvas"); if (!cv) return;
+  if (!lastImg) lastImg = { prompt: $("#imgPrompt").value || "Zufallsbild", seed: 123 };
+  drawScene(cv, lastImg.prompt, lastImg.seed);
+  const gal = $("#gallery"); gal.innerHTML = "";
+  GAL.forEach(it => { const im = new Image(); im.src = it.url; im.title = it.prompt; im.alt = it.prompt;
+    im.onclick = () => { lastImg = it; $("#imgPrompt").value = it.prompt; drawScene(cv, it.prompt, it.seed); }; gal.appendChild(im); });
+}
+function makeImg(newSeed) {
+  const prompt = $("#imgPrompt").value.trim() || "Zufallsbild";
+  const seed = newSeed || (Math.floor(Math.random() * 1e6) + 1);
+  const cv = $("#imgCanvas"); drawScene(cv, prompt, seed); lastImg = { prompt, seed };
+  let url = ""; try { url = cv.toDataURL("image/png"); } catch (e) {}
+  GAL.unshift({ prompt, seed, url }); if (GAL.length > 10) GAL.pop(); renderImgTab();
+}
+$("#imgGo") && $("#imgGo").addEventListener("click", () => makeImg());
+$("#imgAgain") && $("#imgAgain").addEventListener("click", () => makeImg());
+$("#imgPrompt") && $("#imgPrompt").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); makeImg(); } });
+
 /* ---------- Gedächtnis ---------- */
 function renderMemory() {
   const sl = $("#srcList"); sl.innerHTML = "";
@@ -1373,7 +1521,7 @@ function takeLearnHash() {
 /* ---------- Einstellungen ---------- */
 function renderSettings() {
   $("#setName").value = S.name; $("#setThr").value = Math.round(S.threshold * 100); $("#thrVal").textContent = Math.round(S.threshold * 100) + " %";
-  $("#setVoice").checked = S.voice; $("#setAuto").checked = S.auto; $("#setNet").checked = S.internet;
+  $("#setVoice").checked = S.voice; $("#setAuto").checked = S.auto; $("#setNet").checked = S.internet; $("#setCurious").checked = S.curious;
   $("#exportBox").value = JSON.stringify({ format: "agentenwerkstatt", version: 1, name: S.name, threshold: S.threshold, skills: S.skills, memory: S.memory, sources: S.sources });
 }
 function renderName() { $("#agentName").textContent = S.name || "Agent"; $("#mark").textContent = (S.name || "A").charAt(0).toUpperCase(); }
@@ -1381,6 +1529,7 @@ $("#setName").addEventListener("input", e => { S.name = e.target.value.trim() ||
 $("#setThr").addEventListener("input", e => { S.threshold = e.target.value / 100; $("#thrVal").textContent = e.target.value + " %"; persist(); });
 $("#setVoice").addEventListener("change", e => { S.voice = e.target.checked; persist(); });
 $("#setAuto").addEventListener("change", e => { S.auto = e.target.checked; persist(); });
+$("#setCurious").addEventListener("change", e => { S.curious = e.target.checked; persist(); });
 $("#setNet").addEventListener("change", e => { S.internet = e.target.checked; persist(); if (e.target.checked) toast("Internet erlaubt – ich darf jetzt bei Wikipedia nachsehen."); });
 $("#copyExport").onclick = () => {
   const box = $("#exportBox"); renderSettings();
@@ -1411,7 +1560,7 @@ function toast(t) {
   let el = $(".toast"); if (!el) { el = document.createElement("div"); el.className = "toast"; el.setAttribute("role", "status"); document.body.appendChild(el); }
   el.textContent = t; el.hidden = false; clearTimeout(tt); tt = setTimeout(() => el.hidden = true, 2600);
 }
-const VIEWS = ["chat", "trainieren", "labor", "team", "gedaechtnis", "einstellungen"];
+const VIEWS = ["chat", "trainieren", "labor", "team", "bilder", "gedaechtnis", "einstellungen"];
 function route() {
   takeLearnHash();
   const v = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "chat";
@@ -1420,6 +1569,7 @@ function route() {
   if (v === "trainieren") renderTrain();
   if (v === "labor") renderLab();
   if (v === "team") renderTeam();
+  if (v === "bilder") renderImgTab();
   if (v === "einstellungen") renderSettings();
   if (v === "chat") log.scrollTop = log.scrollHeight;
 }
