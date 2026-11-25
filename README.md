@@ -38,7 +38,9 @@ Kommandozeile.
 > es ihm im Chat, und er trainiert sofort nach. Dazu: rechnen, Dinge merken
 > (Gedächtnis), Timer, Uhrzeit, Würfeln, Antworten vorlesen. Mit dem
 > **Lernen-Knopf** in der Safari-Favoritenleiste liest er jede Webseite
-> und beantwortet danach Fragen dazu, mit Quellenangabe. Kein Server,
+> und beantwortet danach Fragen dazu, mit Quellenangabe. Im **Labor**
+> vermehrt er sich: Kopien mit kleinen Mutationen (im Arbeitsspeicher,
+> sicher), aus denen man eine aussucht und zum neuen Agenten macht. Kein Server,
 > kein Konto, keine Daten verlassen das Gerät; Sicherung als Text zum Kopieren.
 > Online: `https://levirob2015.github.io/L-vi/agent.html` – in Safari über
 > *Teilen → Zum Home-Bildschirm* als App ablegen.
