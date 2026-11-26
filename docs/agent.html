@@ -190,6 +190,7 @@ code{font-family:var(--f-mono);font-size:12.5px;background:var(--bubble);padding
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
         </button>
         <textarea id="input" rows="1" placeholder="Schreib etwas, z. B. „Wie viel ist 12 mal 7?“" autocomplete="off"></textarea>
+        <button type="button" class="btn sec icon-btn" id="brainBtn" aria-label="Großes Gehirn fragen" title="Großes Gehirn fragen (echte KI über Internet)">🧠</button>
         <button class="btn icon-btn" aria-label="Senden">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </button>
@@ -407,6 +408,17 @@ code{font-family:var(--f-mono);font-size:12.5px;background:var(--bubble);padding
         </div>
 
         <div class="card stack">
+          <h2>Großes Gehirn (echte KI über Internet)</h2>
+          <p class="hint" style="margin:0">Lvi bleibt deins und offline. Mit dem Knopf <b>🧠</b> neben dem Senden schickst du genau eine Frage an eine echte große KI (Claude). Das kann fast alles beantworten.</p>
+          <div class="note">Ehrlich: Dafür braucht es <b>Internet</b> und einen <b>Schlüssel</b> (API-Key), den meist ein Erwachsener einrichtet. Jede Frage <b>kostet etwas Geld</b>, und deine Frage wird an die KI-Firma geschickt (nicht mehr nur auf dein iPad). Der Schlüssel bleibt in diesem Browser. Es funktioniert nur auf der echten Webseite, nicht in der Vorschau.</div>
+          <div><label for="bigKey">Schlüssel (API-Key von console.anthropic.com)</label>
+            <input type="password" id="bigKey" placeholder="sk-ant-…" autocomplete="off" spellcheck="false"></div>
+          <div class="row"><button class="btn sec" id="bigSave">Schlüssel speichern</button><button class="btn sec" id="bigClear">Löschen</button><span class="hint" id="bigStatus"></span></div>
+          <div><label for="bigModel">Welches Gehirn?</label>
+            <select id="bigModel"><option value="claude-opus-5-5">Schlau (Opus 5.5) – teurer</option><option value="claude-haiku-5-5">Günstig (Haiku 5.5) – billig &amp; schnell</option></select></div>
+        </div>
+
+        <div class="card stack">
           <h2>Neu anfangen</h2>
           <p class="hint" style="margin:0">Setzt Fähigkeiten, Gedächtnis und Chat auf die Beispiele zurück.</p>
           <div class="row"><button class="btn sec" id="reset">Zurücksetzen</button><button class="btn" id="resetYes" hidden>Ja, alles löschen</button></div>
@@ -455,7 +467,7 @@ const DEFAULT_SKILLS = () => [
 ].map(s => ({ id: uid(), ...s }));
 
 const fresh = () => ({
-  name: "Lvi", threshold: 0.5, voice: false, auto: true, internet: false, curious: true, team: { workers: 3, coders: 1 },
+  name: "Lvi", threshold: 0.5, voice: false, auto: true, internet: false, curious: true, bigModel: "claude-opus-5-5", team: { workers: 3, coders: 1 },
   skills: DEFAULT_SKILLS(),
   memory: [{ id: uid(), text: "Beispiel: Der Ersatzschlüssel liegt bei der Nachbarin.", t: Date.now() }],
   sources: [],
@@ -466,6 +478,7 @@ S.sources = S.sources || [];
 S.team = S.team || { workers: 3, coders: 1 };
 if (typeof S.internet !== "boolean") S.internet = false;
 if (typeof S.curious !== "boolean") S.curious = true;
+if (!S.bigModel) S.bigModel = "claude-opus-5-5";
 let _migrated = false;
 if (!S.skills.some(s => s.action === "coden")) { S.skills.push(codingSkill()); _migrated = true; }
 let M = load(MKEY);
@@ -941,6 +954,8 @@ function renderMsg(m) {
     if (m.srcTitle) { const q = document.createElement(m.srcUrl ? "a" : "span"); q.className = "chip";
       q.textContent = "Quelle: " + m.srcTitle.slice(0, 50); if (m.srcUrl) { q.href = m.srcUrl; q.target = "_blank"; q.rel = "noopener"; } meta.append(q); }
     meta.append(btn("Das war nicht gemeint", "ghost", () => { m.open = true; persist(); el.replaceWith(renderMsg(m)); }));
+  } else if (m.kind === "big") {
+    meta.innerHTML = `<span class="chip" style="border-color:var(--accent);color:var(--accent)">🧠 Großes Gehirn (Claude)</span>`;
   } else if (m.kind === "web") {
     if (m.srcTitle) { const q = document.createElement("a"); q.className = "chip"; q.textContent = "Quelle: " + m.srcTitle.slice(0, 50);
       q.href = m.srcUrl; q.target = "_blank"; q.rel = "noopener"; meta.append(q); }
@@ -1564,6 +1579,43 @@ $("#imgGo") && $("#imgGo").addEventListener("click", () => makeImg());
 $("#imgAgain") && $("#imgAgain").addEventListener("click", () => makeImg());
 $("#imgPrompt") && $("#imgPrompt").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); makeImg(); } });
 
+/* ---------- Großes Gehirn (echte KI über Internet, nur mit Erlaubnis) ---------- */
+const BIGKEY = "agentenwerkstatt.bigbrain.key";
+const getBigKey = () => { try { return localStorage.getItem(BIGKEY) || ""; } catch (e) { return ""; } };
+let bigBusy = false;
+async function askBigBrain(question) {
+  question = (question || "").trim(); if (!question) { toast("Schreib zuerst deine Frage."); return; }
+  const key = getBigKey();
+  if (!key) { bot("Für das große Gehirn brauche ich einen Schlüssel. Ein Erwachsener kann ihn in den Einstellungen unter „Großes Gehirn“ eintragen.", { kind: "info" });
+    try { history.replaceState(null, "", "#einstellungen"); } catch (e) {} route(); return; }
+  if (bigBusy) return; bigBusy = true;
+  push({ who: "me", text: question });
+  bot("🧠 Ich frage das große Gehirn …", { kind: "info" });
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+      body: JSON.stringify({ model: S.bigModel || "claude-opus-5-5", max_tokens: 1024,
+        system: "Du bist Lvi, ein freundlicher, geduldiger Helfer für ein Kind. Antworte auf Deutsch, kurz, einfach und kindgerecht. Sei immer sicher und harmlos. Wenn du Code zeigst, halte ihn klein und erklär ihn einfach.",
+        messages: [{ role: "user", content: question }] })
+    });
+    if (res.status === 401 || res.status === 403) { bot("Der Schlüssel stimmt nicht oder darf das nicht. Bitte einen Erwachsenen, ihn in den Einstellungen zu prüfen.", { kind: "info" }); return; }
+    if (res.status === 429) { bot("Das große Gehirn ist gerade überlastet oder das Guthaben ist aufgebraucht. Versuch es später nochmal.", { kind: "info" }); return; }
+    if (!res.ok) { bot("Das große Gehirn antwortet gerade nicht (Fehler " + res.status + ").", { kind: "info" }); return; }
+    const data = await res.json();
+    if (data.stop_reason === "refusal") { bot("Diese Frage möchte die große KI lieber nicht beantworten.", { kind: "info" }); return; }
+    const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim();
+    bot(text || "(Die große KI hat nichts zurückgeschickt.)", { kind: "big", input: question });
+    if (S.voice) speak(text);
+  } catch (e) {
+    bot(typeof webBlockedMsg === "function" ? webBlockedMsg() : "Ich komme gerade nicht ins Internet.", { kind: "info" });
+  } finally { bigBusy = false; }
+}
+$("#brainBtn") && $("#brainBtn").addEventListener("click", () => {
+  const v = $("#input").value.trim() || (S.chat.filter(m => m.who === "me").pop() || {}).text || "";
+  $("#input").value = ""; grow(); askBigBrain(v);
+});
+
 /* ---------- Code-Studio (echter, sicherer JS-Runner) ---------- */
 const CODE_EXAMPLES = [
   { name: "Hallo Welt", match: ["hallo", "welt", "start", "anfang"],
@@ -1694,6 +1746,7 @@ function takeLearnHash() {
 function renderSettings() {
   $("#setName").value = S.name; $("#setThr").value = Math.round(S.threshold * 100); $("#thrVal").textContent = Math.round(S.threshold * 100) + " %";
   $("#setVoice").checked = S.voice; $("#setAuto").checked = S.auto; $("#setNet").checked = S.internet; $("#setCurious").checked = S.curious;
+  $("#bigModel").value = S.bigModel; $("#bigStatus").textContent = getBigKey() ? "Schlüssel ist gespeichert ✓" : "Noch kein Schlüssel.";
   $("#exportBox").value = JSON.stringify({ format: "agentenwerkstatt", version: 1, name: S.name, threshold: S.threshold, skills: S.skills, memory: S.memory, sources: S.sources });
 }
 function renderName() { $("#agentName").textContent = S.name || "Agent"; $("#mark").textContent = (S.name || "A").charAt(0).toUpperCase(); }
@@ -1703,6 +1756,10 @@ $("#setVoice").addEventListener("change", e => { S.voice = e.target.checked; per
 $("#setAuto").addEventListener("change", e => { S.auto = e.target.checked; persist(); });
 $("#setCurious").addEventListener("change", e => { S.curious = e.target.checked; persist(); });
 $("#setNet").addEventListener("change", e => { S.internet = e.target.checked; persist(); if (e.target.checked) toast("Internet erlaubt – ich darf jetzt bei Wikipedia nachsehen."); });
+$("#bigModel").addEventListener("change", e => { S.bigModel = e.target.value; persist(); });
+$("#bigSave").onclick = () => { const v = $("#bigKey").value.trim(); if (!v) { toast("Trag zuerst den Schlüssel ein."); return; }
+  try { localStorage.setItem(BIGKEY, v); } catch (e) {} $("#bigKey").value = ""; $("#bigStatus").textContent = "Schlüssel ist gespeichert ✓"; toast("Schlüssel gespeichert. Das große Gehirn ist bereit."); };
+$("#bigClear").onclick = () => { try { localStorage.removeItem(BIGKEY); } catch (e) {} $("#bigStatus").textContent = "Noch kein Schlüssel."; toast("Schlüssel gelöscht."); };
 $("#copyExport").onclick = () => {
   const box = $("#exportBox"); renderSettings();
   const fall = () => { box.focus(); box.select(); toast("Markiert. Jetzt kopieren."); };
