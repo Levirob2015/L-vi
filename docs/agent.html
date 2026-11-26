@@ -319,13 +319,22 @@ code{font-family:var(--f-mono);font-size:12.5px;background:var(--bubble);padding
       <div class="stack">
         <div class="card stack">
           <div><h2>Code-Studio</h2>
-          <p class="hint" style="margin:0">Die Code-Abteilung. Hier schreibst du echtes JavaScript und führst es aus – oder lässt Lvi dir ein Programm schreiben. Alles läuft sicher auf deinem Gerät. Mit <code>console.log(…)</code> gibst du etwas aus.</p></div>
-          <div class="row"><input type="text" id="codeWish" placeholder="Lvi schreiben lassen, z. B. „Würfel“ oder „Taschenrechner“" style="flex:1;min-width:170px"><button class="btn sec" id="codeWrite">Lvi schreiben lassen</button></div>
+          <p class="hint" style="margin:0">Die Code-Abteilung. Hier schreibst du echtes JavaScript und führst es aus – oder lässt Lvi dir ein Programm schreiben. Alles läuft sicher auf deinem Gerät. Mit <code>console.log(…)</code> schreibst du Text – mit <code>mal.kreis(…)</code> &amp; Co. <b>malst</b> du echte Bilder.</p></div>
+          <div class="row"><input type="text" id="codeWish" placeholder="Lvi schreiben lassen, z. B. „Gesicht“, „Haus“ oder „Würfel“" style="flex:1;min-width:170px"><button class="btn sec" id="codeWrite">Lvi schreiben lassen</button></div>
           <div id="exChips" class="chips"></div>
           <label for="codeEditor" class="hint" style="margin:0">Dein Programm</label>
           <textarea id="codeEditor" class="code-ed" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
           <div class="row"><button class="btn" id="runBtn">▶ Ausführen</button><button class="btn sec" id="clearOut">Ausgabe leeren</button><span class="hint">Tipp: Endlosschleifen stoppe ich nach 2 Sekunden.</span></div>
-          <div><label class="hint" style="margin:0">Ausgabe</label><pre id="output" class="output" aria-live="polite"></pre></div>
+          <details id="malHelp"><summary class="hint"><b>Mal-Befehle</b> (Bild ist 300 × 300, oben links ist 0,0)</summary>
+            <pre class="output" style="color:var(--ink)">mal.hintergrund("hellblau")
+mal.kreis(150, 150, 60, "gelb")        // x, y, Größe, Farbe
+mal.rechteck(100, 100, 80, 40, "rot")  // x, y, Breite, Höhe, Farbe
+mal.dreieck(80,200, 220,200, 150,90, "gruen")
+mal.linie(0,0, 300,300, "blau", 4)     // von…bis, Farbe, Dicke
+mal.text("Hallo!", 100, 150, 24, "lila")
+Farben: rot blau gruen gelb orange lila rosa braun grau schwarz weiss hellblau</pre></details>
+          <div id="canvasOut" hidden><label class="hint" style="margin:0">Bild</label><div class="canvaswrap" style="max-width:300px"><canvas id="codeCanvas" width="300" height="300"></canvas></div></div>
+          <div><label class="hint" style="margin:0">Text-Ausgabe</label><pre id="output" class="output" aria-live="polite"></pre></div>
         </div>
       </div>
     </section>
@@ -830,7 +839,9 @@ const CODE_KB = [
   { title: "Objekt", k: ["objekt", "object", "eigenschaft", "steckbrief"],
     text: "Ein Objekt bündelt zusammengehörige Werte – wie ein Steckbrief:\n\n  let hund = { name: \"Rex\", alter: 3 };\n  console.log(hund.name);    // Rex\n  console.log(hund.alter);   // 3\n\nMit dem Punkt kommst du an die Werte." },
   { title: "Kommentar", k: ["kommentar", "notiz", "slash"],
-    text: "Ein Kommentar ist Text nur für dich – der Computer überliest ihn:\n\n  // Das ist ein Kommentar\n  let punkte = 0; // zählt die Punkte\n\nSo erklärst du, was dein Code macht." }
+    text: "Ein Kommentar ist Text nur für dich – der Computer überliest ihn:\n\n  // Das ist ein Kommentar\n  let punkte = 0; // zählt die Punkte\n\nSo erklärst du, was dein Code macht." },
+  { title: "Malen mit Code", k: ["malen", "zeichnen", "bild", "kreis", "rechteck", "linie", "mal", "grafik"],
+    text: "Im Code-Studio kannst du mit Code echte Bilder malen! Das Bild ist 300 breit und 300 hoch, oben links ist 0,0.\n\n  mal.hintergrund(\"hellblau\");\n  mal.kreis(150, 150, 60, \"gelb\");   // x, y, Größe, Farbe\n  mal.rechteck(100, 200, 80, 40, \"rot\");\n  mal.linie(0, 0, 300, 300, \"blau\", 4);\n\nMit einer Schleife malst du viele auf einmal. Tippe im Reiter Code auf „Gesicht“ oder „Blume“ und dann auf Ausführen!" }
 ];
 function codeAnswer(input) {
   // Will jemand ein fertiges Programm? Dann ins Code-Studio schicken.
@@ -1618,6 +1629,16 @@ $("#brainBtn") && $("#brainBtn").addEventListener("click", () => {
 
 /* ---------- Code-Studio (echter, sicherer JS-Runner) ---------- */
 const CODE_EXAMPLES = [
+  { name: "😀 Gesicht", match: ["gesicht", "smiley", "face", "kopf", "malen", "zeichnen", "bild"],
+    code: 'mal.hintergrund("hellblau");\nmal.kreis(150, 150, 90, "gelb");    // Kopf\nmal.kreis(120, 125, 12, "schwarz"); // Auge\nmal.kreis(180, 125, 12, "schwarz"); // Auge\nmal.linie(115, 185, 185, 185, "rot", 6); // Mund' },
+  { name: "🌸 Blume", match: ["blume", "flower", "bluete"],
+    code: 'mal.hintergrund("weiss");\nfor (let k = 0; k < 6; k++) {\n  let a = k * 60 * Math.PI / 180;\n  mal.kreis(150 + Math.cos(a) * 45, 150 + Math.sin(a) * 45, 28, "rosa");\n}\nmal.kreis(150, 150, 24, "gelb");\nmal.linie(150, 178, 150, 290, "gruen", 8);' },
+  { name: "🏠 Haus", match: ["haus", "house", "gebaeude"],
+    code: 'mal.hintergrund("hellblau");\nmal.rechteck(90, 150, 120, 120, "orange"); // Wand\nmal.dreieck(75, 150, 225, 150, 150, 80, "rot"); // Dach\nmal.rechteck(130, 205, 40, 65, "braun"); // Tuer\nmal.rechteck(150, 170, 26, 26, "gelb"); // Fenster' },
+  { name: "☀️ Sonne", match: ["sonne", "strahlen", "sun"],
+    code: 'mal.hintergrund("hellblau");\nfor (let a = 0; a < 360; a += 30) {\n  let r = a * Math.PI / 180;\n  mal.linie(150, 150, 150 + Math.cos(r) * 110, 150 + Math.sin(r) * 110, "gelb", 5);\n}\nmal.kreis(150, 150, 55, "gelb");' },
+  { name: "🟦 Bunte Kästchen", match: ["kaestchen", "kacheln", "muster", "bunt", "schleife"],
+    code: 'let farben = ["rot", "blau", "gruen", "gelb", "lila", "orange"];\nfor (let i = 0; i < 6; i++) {\n  for (let j = 0; j < 6; j++) {\n    mal.rechteck(i * 50, j * 50, 48, 48, farben[(i + j) % 6]);\n  }\n}' },
   { name: "Hallo Welt", match: ["hallo", "welt", "start", "anfang"],
     code: 'console.log("Hallo Welt!");\nconsole.log("Ich bin Lvi und ich kann coden.");' },
   { name: "Taschenrechner", match: ["taschenrechner", "rechner", "rechnen", "plus", "mal"],
@@ -1644,22 +1665,41 @@ function pickExample(wish) {
   return bs ? best : null;
 }
 let codeWorker = null;
+const MALFARBEN = { rot:"#e23b3b", blau:"#2b7fe0", gruen:"#3e9e3e", "grün":"#3e9e3e", gelb:"#ffd21f", orange:"#ff8c1a", lila:"#9b5de5", rosa:"#ff6392", braun:"#8a5a2b", grau:"#888", schwarz:"#141414", weiss:"#ffffff", "weiß":"#ffffff", hellblau:"#7fd0ff", pink:"#ff6392", gold:"#ffbf00" };
+const malColor = f => MALFARBEN[String(f || "").toLowerCase()] || f || "#141414";
+function drawCmds(cmds) {
+  const cv = $("#codeCanvas"), g = cv.getContext("2d"), W = cv.width, H = cv.height;
+  g.clearRect(0, 0, W, H); g.fillStyle = "#fff"; g.fillRect(0, 0, W, H);
+  cmds.forEach(c => { const op = c[0];
+    if (op === "bg") { g.fillStyle = malColor(c[1]); g.fillRect(0, 0, W, H); }
+    else if (op === "kreis") { g.fillStyle = malColor(c[4]); g.beginPath(); g.arc(+c[1], +c[2], Math.abs(+c[3]), 0, 7); g.fill(); }
+    else if (op === "rect") { g.fillStyle = malColor(c[5]); g.fillRect(+c[1], +c[2], +c[3], +c[4]); }
+    else if (op === "tri") { g.fillStyle = malColor(c[7]); g.beginPath(); g.moveTo(+c[1], +c[2]); g.lineTo(+c[3], +c[4]); g.lineTo(+c[5], +c[6]); g.closePath(); g.fill(); }
+    else if (op === "line") { g.strokeStyle = malColor(c[5]); g.lineWidth = +c[6] || 2; g.lineCap = "round"; g.beginPath(); g.moveTo(+c[1], +c[2]); g.lineTo(+c[3], +c[4]); g.stroke(); }
+    else if (op === "text") { g.fillStyle = malColor(c[5]); g.font = "bold " + (+c[4] || 20) + "px sans-serif"; g.fillText(String(c[1]), +c[2], +c[3]); }
+  });
+}
 function runCode() {
-  const code = $("#codeEditor").value, out = $("#output");
+  const out = $("#output"), code = $("#codeEditor").value;
   out.textContent = ""; out.classList.remove("err");
-  const src = 'self.onmessage=function(e){var L=[];var p=function(){L.push(Array.prototype.slice.call(arguments).map(function(x){' +
-    'try{return typeof x==="object"?JSON.stringify(x):String(x)}catch(_){return String(x)}}).join(" "))};' +
+  const src = 'self.onmessage=function(e){var L=[];var C=[];' +
+    'var p=function(){L.push(Array.prototype.slice.call(arguments).map(function(x){try{return typeof x==="object"?JSON.stringify(x):String(x)}catch(_){return String(x)}}).join(" "))};' +
     'var console={log:p,info:p,warn:p,error:p};' +
-    'try{(new Function("console",e.data))(console)}catch(err){L.push("⚠ Fehler: "+err.message)}' +
-    'self.postMessage(L.join("\\n"))};';
+    'var _m=function(){C.push(Array.prototype.slice.call(arguments))};' +
+    'var mal={hintergrund:function(f){_m("bg",f)},kreis:function(x,y,r,f){_m("kreis",x,y,r,f)},rechteck:function(x,y,b,h,f){_m("rect",x,y,b,h,f)},dreieck:function(a,b,c,d,e2,g,f){_m("tri",a,b,c,d,e2,g,f)},linie:function(x,y,x2,y2,f,d){_m("line",x,y,x2,y2,f,d)},text:function(t,x,y,s,f){_m("text",t,x,y,s,f)}};' +
+    'try{(new Function("console","mal",e.data))(console,mal)}catch(err){L.push("⚠ Fehler: "+err.message)}' +
+    'self.postMessage({logs:L.join("\\n"),cmds:C})};';
   try {
     if (codeWorker) codeWorker.terminate();
     const url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
     codeWorker = new Worker(url);
     const guard = setTimeout(() => { if (codeWorker) { codeWorker.terminate(); codeWorker = null; out.textContent = "⏱ Das Programm lief zu lange (Endlosschleife?) und wurde gestoppt."; out.classList.add("err"); } }, 2000);
-    codeWorker.onmessage = ev => { clearTimeout(guard); codeWorker.terminate(); codeWorker = null;
-      out.textContent = ev.data || "(keine Ausgabe – nutze console.log(…), um etwas anzuzeigen)";
-      if (/⚠ Fehler/.test(ev.data)) out.classList.add("err"); URL.revokeObjectURL(url); };
+    codeWorker.onmessage = ev => { clearTimeout(guard); codeWorker.terminate(); codeWorker = null; URL.revokeObjectURL(url);
+      const d = ev.data || {}, cmds = d.cmds || [];
+      $("#canvasOut").hidden = cmds.length === 0;
+      if (cmds.length) drawCmds(cmds);
+      out.textContent = d.logs || (cmds.length ? "(Bild gemalt 👆)" : "(keine Ausgabe – nutze console.log(…) für Text oder mal.kreis(…) zum Malen)");
+      if (/⚠ Fehler/.test(d.logs || "")) out.classList.add("err"); };
     codeWorker.postMessage(code);
   } catch (e) { out.textContent = "Konnte das Programm nicht starten: " + e.message; out.classList.add("err"); }
 }
@@ -1672,7 +1712,7 @@ function renderCode() {
   }
 }
 $("#runBtn") && $("#runBtn").addEventListener("click", runCode);
-$("#clearOut") && $("#clearOut").addEventListener("click", () => { $("#output").textContent = ""; $("#output").classList.remove("err"); });
+$("#clearOut") && $("#clearOut").addEventListener("click", () => { $("#output").textContent = ""; $("#output").classList.remove("err"); $("#canvasOut").hidden = true; });
 $("#codeWrite") && $("#codeWrite").addEventListener("click", () => {
   const ex = pickExample($("#codeWish").value);
   if (!ex) { toast("Das kann ich noch nicht schreiben. Probier: " + CODE_EXAMPLES.map(e => e.name).join(", ")); return; }
