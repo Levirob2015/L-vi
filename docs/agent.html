@@ -105,6 +105,14 @@ canvas{width:100%;height:120px;display:block}
 .mem:last-child{border-bottom:0}
 .mem div{flex:1;min-width:0;overflow-wrap:anywhere}
 .mem time{display:block;font-size:12px;color:var(--muted);font-family:var(--f-mono)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{border:1px solid var(--line);background:var(--panel);border-radius:99px;padding:5px 11px;font-size:12.5px;cursor:pointer}
+.chips button:hover{border-color:var(--accent)}
+.code-ed{width:100%;min-height:200px;border:1px solid var(--line);border-radius:10px;padding:12px;background:#0f1420;color:#e6edf3;
+  font-family:var(--f-mono);font-size:13px;line-height:1.5;resize:vertical;tab-size:2;white-space:pre;overflow:auto}
+.output{background:#0f1420;color:#9fe6b0;border:1px solid var(--line);border-radius:10px;padding:12px;min-height:70px;
+  font-family:var(--f-mono);font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0 0}
+.output .err{color:#ff8a8a}
 .canvaswrap{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#000;line-height:0}
 #imgCanvas{width:100%;height:auto;display:block;touch-action:manipulation}
 .gallery{display:flex;gap:8px;flex-wrap:wrap}
@@ -166,6 +174,7 @@ code{font-family:var(--f-mono);font-size:12.5px;background:var(--bubble);padding
       <a href="#trainieren" data-v="trainieren">Trainieren</a>
       <a href="#labor" data-v="labor">Labor</a>
       <a href="#team" data-v="team">Team</a>
+      <a href="#code" data-v="code">Code</a>
       <a href="#bilder" data-v="bilder">Bilder</a>
       <a href="#gedaechtnis" data-v="gedaechtnis">Gedächtnis</a>
       <a href="#einstellungen" data-v="einstellungen">Einstellungen</a>
@@ -297,8 +306,25 @@ code{font-family:var(--f-mono);font-size:12.5px;background:var(--bubble);padding
             <button class="btn sec" id="imgAgain">Neu würfeln</button>
             <span class="hint">Zum Speichern auf dem iPad lange auf das Bild tippen.</span>
           </div>
+          <p id="imgHint" class="hint" style="margin:0;color:var(--warn);font-weight:600"></p>
           <p class="hint" style="margin:0">Lvi kennt u. a.: Sonne, Mond, Sterne, Wolke, Regenbogen, Berg, Baum, Blume, Gras, Haus, Rakete, Auto, Katze, Fisch, Herz, Ball, Nacht. Kennt er nichts davon, malt er ein buntes Zufallsbild.</p>
           <div id="gallery" class="gallery"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CODE-STUDIO -->
+    <section class="view" id="v-code" hidden>
+      <div class="stack">
+        <div class="card stack">
+          <div><h2>Code-Studio</h2>
+          <p class="hint" style="margin:0">Die Code-Abteilung. Hier schreibst du echtes JavaScript und führst es aus – oder lässt Lvi dir ein Programm schreiben. Alles läuft sicher auf deinem Gerät. Mit <code>console.log(…)</code> gibst du etwas aus.</p></div>
+          <div class="row"><input type="text" id="codeWish" placeholder="Lvi schreiben lassen, z. B. „Würfel“ oder „Taschenrechner“" style="flex:1;min-width:170px"><button class="btn sec" id="codeWrite">Lvi schreiben lassen</button></div>
+          <div id="exChips" class="chips"></div>
+          <label for="codeEditor" class="hint" style="margin:0">Dein Programm</label>
+          <textarea id="codeEditor" class="code-ed" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+          <div class="row"><button class="btn" id="runBtn">▶ Ausführen</button><button class="btn sec" id="clearOut">Ausgabe leeren</button><span class="hint">Tipp: Endlosschleifen stoppe ich nach 2 Sekunden.</span></div>
+          <div><label class="hint" style="margin:0">Ausgabe</label><pre id="output" class="output" aria-live="polite"></pre></div>
         </div>
       </div>
     </section>
@@ -777,10 +803,28 @@ const CODE_KB = [
   { title: "Hackschutz (Passwort mit Sperre)", k: ["hackschutz", "hack", "passwort", "schutz", "sperre", "sicherheit", "login", "brute"],
     text: "Ein einfacher Hackschutz: nach 3 falschen Versuchen wird gesperrt. (Genau diese Idee steckt auch in LoginShield in diesem Projekt!)\n\n  let versuche = 0;\n  function pruefe(eingabe) {\n    if (versuche >= 3) return \"Gesperrt! Zu viele Versuche.\";\n    if (eingabe === \"geheim\") { versuche = 0; return \"Willkommen!\"; }\n    versuche++;\n    return \"Falsch. Noch \" + (3 - versuche) + \" Versuche.\";\n  }\n  console.log(pruefe(\"abc\"));   // Falsch. Noch 2 Versuche.\n\nSo kann ein Angreifer nicht endlos Passwörter ausprobieren." },
   { title: "Fehler / Bug", k: ["fehler", "bug", "kaputt", "funktioniert nicht", "fehlermeldung"],
-    text: "Ein „Bug\" ist ein Fehler im Programm. Das ist ganz normal!\n\nSo findest du ihn:\n1. Lies die Fehlermeldung – sie sagt oft die Zeile.\n2. Lass dir Zwischenwerte ausgeben: console.log(variable);\n3. Prüfe Tippfehler und ob Klammern { } ( ) alle zu sind.\n\nSuchen und Reparieren nennt man „debuggen\"." }
+    text: "Ein „Bug\" ist ein Fehler im Programm. Das ist ganz normal!\n\nSo findest du ihn:\n1. Lies die Fehlermeldung – sie sagt oft die Zeile.\n2. Lass dir Zwischenwerte ausgeben: console.log(variable);\n3. Prüfe Tippfehler und ob Klammern { } ( ) alle zu sind.\n\nSuchen und Reparieren nennt man „debuggen\"." },
+  { title: "Etwas ausgeben", k: ["ausgeben", "ausgabe", "anzeigen", "print", "console", "log"],
+    text: "Mit console.log(…) zeigst du etwas an – dein wichtigstes Werkzeug zum Ausprobieren.\n\n  console.log(\"Hallo!\");\n  console.log(3 + 4);\n  let x = 5;\n  console.log(\"x ist\", x);\n\nIm Code-Studio erscheint die Ausgabe unten im Feld." },
+  { title: "Rechnen (Operatoren)", k: ["operator", "operatoren", "modulo", "rest", "geteilt", "minus"],
+    text: "So rechnet der Computer:\n\n  console.log(5 + 2);   // 7\n  console.log(5 - 2);   // 3\n  console.log(5 * 2);   // 10\n  console.log(5 / 2);   // 2.5\n  console.log(5 % 2);   // 1 (Rest beim Teilen)\n\nDas % heißt „Modulo“ und gibt den Rest." },
+  { title: "Vergleichen", k: ["vergleich", "vergleichen", "gleich", "groesser", "kleiner", "wahr", "falsch", "boolean"],
+    text: "Vergleiche ergeben wahr (true) oder falsch (false):\n\n  console.log(3 > 2);    // true\n  console.log(3 === 3);  // true (genau gleich)\n  console.log(3 !== 5);  // true (ungleich)\n\nWichtig: === zum Vergleichen, = nur zum Zuweisen." },
+  { title: "Text (Strings)", k: ["string", "strings", "buchstaben", "zusammenkleben", "laenge"],
+    text: "Text steht in Anführungszeichen und heißt „String“:\n\n  let name = \"Levi\";\n  console.log(\"Hallo \" + name);   // mit + zusammenkleben\n  console.log(name.length);         // 4\n  console.log(name.toUpperCase());  // LEVI" },
+  { title: "while-Schleife", k: ["while", "solange"],
+    text: "Eine while-Schleife läuft, solange etwas wahr ist:\n\n  let i = 1;\n  while (i <= 3) {\n    console.log(\"Runde \" + i);\n    i++;\n  }\n\nVorsicht: Wird die Bedingung nie falsch, läuft sie endlos! (Im Code-Studio stoppe ich das nach 2 Sekunden.)" },
+  { title: "Objekt", k: ["objekt", "object", "eigenschaft", "steckbrief"],
+    text: "Ein Objekt bündelt zusammengehörige Werte – wie ein Steckbrief:\n\n  let hund = { name: \"Rex\", alter: 3 };\n  console.log(hund.name);    // Rex\n  console.log(hund.alter);   // 3\n\nMit dem Punkt kommst du an die Werte." },
+  { title: "Kommentar", k: ["kommentar", "notiz", "slash"],
+    text: "Ein Kommentar ist Text nur für dich – der Computer überliest ihn:\n\n  // Das ist ein Kommentar\n  let punkte = 0; // zählt die Punkte\n\nSo erklärst du, was dein Code macht." }
 ];
 function codeAnswer(input) {
-  // Befehlswörter (code/programmier …) weglassen – die sagen nur „Coden“, nicht WAS.
+  // Will jemand ein fertiges Programm? Dann ins Code-Studio schicken.
+  if (/schreib|mach|bau|erstell|programmier|^code\b/i.test(norm(input))) { const ex = pickExample(input);
+    if (ex) { const ed = $("#codeEditor"); if (ed) { ed.value = ex.code; const o = $("#output"); if (o) o.textContent = ""; }
+      return "Klar! Ich habe „" + ex.name + "“ für dich geschrieben – es wartet im Reiter Code (Code-Studio). Dort auf ▶ Ausführen tippen, dann siehst du es laufen. Dies ist der Code:\n\n" + ex.code + "\n\n(Im Code-Studio kannst du es auch ändern.)"; } }
+  // Befehlswörter weglassen – die sagen nur „Coden“, nicht WAS.
   const w = words(input).filter(x => !/^(code|codes|coden|codet|codest|coding|programmier|proggen|skript|script)/.test(x));
   let best = null, bs = 0;
   CODE_KB.forEach(t => { let sc = 0; w.forEach(x => { if (t.k.some(kw => wmatch(x, kw) || wmatch(kw, x))) sc++; }); if (sc > bs) { bs = sc; best = t; } });
@@ -850,6 +894,7 @@ function respond(input) {
   if (codeSkill && CODE_RE.test(input)) return bot(runSkill(codeSkill, input), { kind: "ok", skill: codeSkill.id, conf: 1, input });
   if (IMG_RE.test(input) && !/\d\s*mal\s*\d/.test(input)) {
     const art = createImage(input);
+    if (!art.known) return bot("Das kann ich noch nicht zeichnen. Ich male dir aber gern eins davon:\n" + IMG_WORDS + "\n\nSag z. B.: „Zeichne ein Haus mit Baum“ oder „Zeichne eine Rakete“.", { kind: "info" });
     botImage("Hier ist dein Bild. ✨ Zum Speichern lange drauftippen.", art.url, input);
     if (S.curious && Math.random() < 0.5) bot(pick(["Gefällt es dir? Soll ich noch eins malen?", "Magst du ein anderes Bild? Sag mir einfach, was."]), { kind: "info" });
     return;
@@ -1389,7 +1434,7 @@ function drawScene(canvas, prompt, seed) {
   if (has(/wolke/)) { const n = has(/wolken/) ? 3 : 1; for (let i = 0; i < n; i++) { const x = rnd(40, W - 60), y = rnd(30, H * 0.4); g.fillStyle = "rgba(255,255,255,.92)";
     [[0,0,26],[26,6,22],[-24,6,20],[6,-10,20]].forEach(c => { g.beginPath(); g.arc(x + c[0], y + c[1], c[2], 0, 7); g.fill(); }); } drew = true; }
   // Boden
-  const groundWords = /baum|baeume|haus|haeuser|blume|blumen|berg|gras|wiese|katze|auto|ball|hund/;
+  const groundWords = /baum|baeume|haus|haeuser|blume|blumen|berg|gras|wiese|katze|auto|ball|hund|schneemann|roboter|person|mensch|junge|maedchen|frau|mann|apfel|pilz/;
   if (groundWords.test(p) && !water) { g.fillStyle = "#64b84a"; g.fillRect(0, H * 0.78, W, H * 0.22); drew = true; }
   if (has(/berg/)) { g.fillStyle = "#7d8aa0"; [[W*0.25,H*0.5],[W*0.6,H*0.42]].forEach(m => { g.beginPath(); g.moveTo(m[0]-110,H*0.8); g.lineTo(m[0],m[1]); g.lineTo(m[0]+110,H*0.8); g.closePath(); g.fill(); });
     g.fillStyle = "#fff"; [[W*0.25,H*0.5],[W*0.6,H*0.42]].forEach(m => { g.beginPath(); g.moveTo(m[0]-26,m[1]+36); g.lineTo(m[0],m[1]); g.lineTo(m[0]+26,m[1]+36); g.closePath(); g.fill(); }); drew = true; }
@@ -1426,19 +1471,66 @@ function drawScene(canvas, prompt, seed) {
     g.beginPath(); g.moveTo(0, 8); g.bezierCurveTo(-18, -12, -26, 8, 0, 26); g.bezierCurveTo(26, 8, 18, -12, 0, 8); g.fill(); g.restore(); } drew = true; }
   if (has(/ball/)) { const x = rnd(40, W-40), y = H*0.82; g.fillStyle = "#ff5252"; g.beginPath(); g.arc(x, y, 22, 0, 7); g.fill();
     g.strokeStyle = "#fff"; g.lineWidth = 3; g.beginPath(); g.arc(x, y, 22, 0.3, 2.9); g.stroke(); drew = true; }
-  if (!drew) { // Zufallsbild
+  if (has(/hund/)) { const x = rnd(W*0.3, W*0.7), y = H*0.78; g.fillStyle = "#b5752e";
+    g.beginPath(); g.ellipse(x, y-14, 30, 16, 0, 0, 7); g.fill();                       // Körper
+    g.fillRect(x-24, y, 7, 14); g.fillRect(x+18, y, 7, 14);                              // Beine
+    g.beginPath(); g.arc(x-30, y-22, 14, 0, 7); g.fill();                                // Kopf
+    g.beginPath(); g.ellipse(x-40, y-30, 6, 9, 0, 0, 7); g.fill();                       // Ohr
+    g.fillStyle="#222"; g.beginPath(); g.arc(x-34, y-24, 2.5, 0, 7); g.fill();           // Auge
+    g.beginPath(); g.arc(x-43, y-20, 3, 0, 7); g.fill();                                 // Nase
+    g.strokeStyle="#b5752e"; g.lineWidth=6; g.beginPath(); g.moveTo(x+28,y-18); g.lineTo(x+42,y-28); g.stroke(); drew=true; } // Schwanz
+  if (has(/vogel/)) { const n = has(/voegel/) ? 4 : 1; for (let k=0;k<n;k++){ const x=rnd(40,W-40), y=rnd(30,H*0.5); g.strokeStyle="#333"; g.lineWidth=4;
+    g.beginPath(); g.arc(x-10,y,12,0,Math.PI,true); g.stroke(); g.beginPath(); g.arc(x+10,y,12,0,Math.PI,true); g.stroke(); } drew=true; }
+  if (has(/schmetterling/)) { const x=rnd(W*0.3,W*0.7), y=rnd(H*0.3,H*0.6), c=["#ff5d8f","#ffb703","#8e6bff"][Math.floor(rnd(0,3))];
+    g.fillStyle=c; [[-1],[1]].forEach(o=>{ g.beginPath(); g.ellipse(x+o[0]*16,y-8,15,12,0,0,7); g.fill(); g.beginPath(); g.ellipse(x+o[0]*14,y+10,12,10,0,0,7); g.fill(); });
+    g.fillStyle="#333"; g.fillRect(x-2,y-16,4,32); drew=true; }
+  if (has(/schneemann/)) { const x=rnd(W*0.35,W*0.65), y=H*0.78; g.fillStyle="#fff";
+    g.beginPath(); g.arc(x,y,24,0,7); g.fill(); g.beginPath(); g.arc(x,y-34,17,0,7); g.fill(); g.beginPath(); g.arc(x,y-62,12,0,7); g.fill();
+    g.fillStyle="#222"; [[-4,-65],[4,-65]].forEach(o=>{g.beginPath();g.arc(x+o[0],y+o[1],2,0,7);g.fill();});   // Augen
+    [-16,-32].forEach(dy=>{g.beginPath();g.arc(x,y+dy,2.3,0,7);g.fill();});                                     // Knöpfe
+    g.fillStyle="#ff8c1a"; g.beginPath(); g.moveTo(x,y-61); g.lineTo(x+12,y-59); g.lineTo(x,y-57); g.closePath(); g.fill(); drew=true; }
+  if (has(/roboter/)) { const x=rnd(W*0.3,W*0.7), y=H*0.78; g.fillStyle="#9fb3c8";
+    g.fillRect(x-22,y-44,44,44); g.fillRect(x-16,y-70,32,24);                    // Körper + Kopf
+    g.strokeStyle="#9fb3c8"; g.lineWidth=3; g.beginPath(); g.moveTo(x,y-70); g.lineTo(x,y-80); g.stroke(); g.fillStyle="#ffd23f"; g.beginPath(); g.arc(x,y-82,3,0,7); g.fill();
+    g.fillStyle="#1b2a3a"; [[-8,-60],[8,-60]].forEach(o=>{g.beginPath();g.arc(x+o[0],y+o[1],4,0,7);g.fill();}); g.fillRect(x-8,y-50,16,4);
+    g.fillStyle="#7a8ba0"; g.fillRect(x-32,y-40,10,28); g.fillRect(x+22,y-40,10,28); drew=true; }
+  if (has(/person|mensch|junge|maedchen|frau|mann|kind/)) { const x=rnd(W*0.3,W*0.7), y=H*0.78; g.strokeStyle="#333"; g.lineWidth=4; g.fillStyle="#f4c58c";
+    g.beginPath(); g.arc(x,y-56,11,0,7); g.fill(); g.stroke();                    // Kopf
+    g.beginPath(); g.moveTo(x,y-45); g.lineTo(x,y-18); g.stroke();                // Körper
+    g.beginPath(); g.moveTo(x-16,y-34); g.lineTo(x+16,y-34); g.stroke();          // Arme
+    g.beginPath(); g.moveTo(x,y-18); g.lineTo(x-12,y); g.moveTo(x,y-18); g.lineTo(x+12,y); g.stroke(); drew=true; } // Beine
+  if (has(/boot|schiff/)) { const x=rnd(W*0.3,W*0.7), y=water?H*0.6:H*0.74; g.fillStyle="#c0392b";
+    g.beginPath(); g.moveTo(x-40,y); g.lineTo(x+40,y); g.lineTo(x+28,y+20); g.lineTo(x-28,y+20); g.closePath(); g.fill();
+    g.strokeStyle="#6b4226"; g.lineWidth=4; g.beginPath(); g.moveTo(x,y); g.lineTo(x,y-40); g.stroke();
+    g.fillStyle="#fff"; g.beginPath(); g.moveTo(x+2,y-38); g.lineTo(x+30,y-6); g.lineTo(x+2,y-6); g.closePath(); g.fill(); drew=true; }
+  if (has(/flugzeug/)) { const x=rnd(W*0.3,W*0.7), y=rnd(H*0.2,H*0.4); g.fillStyle="#dfe7f0";
+    g.beginPath(); g.ellipse(x,y,42,10,0,0,7); g.fill();                          // Rumpf
+    g.beginPath(); g.moveTo(x-6,y); g.lineTo(x-18,y-22); g.lineTo(x+4,y-4); g.closePath(); g.fill();   // Flügel oben
+    g.beginPath(); g.moveTo(x-6,y); g.lineTo(x-18,y+22); g.lineTo(x+4,y+4); g.closePath(); g.fill();   // Flügel unten
+    g.beginPath(); g.moveTo(x-40,y); g.lineTo(x-52,y-12); g.lineTo(x-36,y-2); g.closePath(); g.fill(); // Heck
+    g.fillStyle="#7fd0ff"; [[10,0],[22,0]].forEach(o=>{g.beginPath();g.arc(x+o[0],y,3,0,7);g.fill();}); drew=true; }
+  if (has(/ballon|luftballon/)) { const n = has(/ballons|luftballons/) ? 4 : 2; for (let k=0;k<n;k++){ const x=rnd(50,W-50), y=rnd(50,H*0.5), c=["#ff5252","#ffb703","#2b9348","#4895ef"][k%4];
+    g.fillStyle=c; g.beginPath(); g.ellipse(x,y,20,24,0,0,7); g.fill(); g.strokeStyle="#999"; g.lineWidth=1.5; g.beginPath(); g.moveTo(x,y+24); g.lineTo(x,y+70); g.stroke(); } drew=true; }
+  if (has(/apfel/)) { const n = has(/aepfel/) ? 3 : 1; for (let k=0;k<n;k++){ const x=rnd(60,W-60), y=H*0.72; g.fillStyle="#e23b3b";
+    g.beginPath(); g.arc(x-7,y,15,0,7); g.fill(); g.beginPath(); g.arc(x+7,y,15,0,7); g.fill();
+    g.strokeStyle="#5a3a1a"; g.lineWidth=3; g.beginPath(); g.moveTo(x,y-14); g.lineTo(x,y-24); g.stroke();
+    g.fillStyle="#3e9e3e"; g.beginPath(); g.ellipse(x+8,y-22,8,4,-0.6,0,7); g.fill(); } drew=true; }
+  if (!drew && has(/abstrakt|muster|zufall|kunst|bunt|durcheinander/)) {
     for (let i = 0; i < 16; i++) { g.fillStyle = `hsla(${Math.floor(rnd(0,360))},80%,60%,.75)`; const x = rnd(0, W), y = rnd(0, H), s = rnd(14, 60);
       if (r() < 0.5) { g.beginPath(); g.arc(x, y, s / 2, 0, 7); g.fill(); }
       else { g.beginPath(); g.moveTo(x, y - s/2); g.lineTo(x + s/2, y + s/2); g.lineTo(x - s/2, y + s/2); g.closePath(); g.fill(); } }
+    drew = true;
   }
+  return drew;
 }
+const IMG_WORDS = "Sonne, Mond, Sterne, Wolke, Regenbogen, Berg, Baum, Blume, Gras, Haus, Rakete, Auto, Flugzeug, Boot, Ballon, Katze, Hund, Vogel, Fisch, Schmetterling, Schneemann, Roboter, Mensch, Herz, Ball, Apfel, Nacht, Unterwasser";
 let offCanvas;
 function createImage(prompt, seed) {
   if (!offCanvas) { offCanvas = document.createElement("canvas"); offCanvas.width = 480; offCanvas.height = 320; }
   seed = seed || (Math.floor(Math.random() * 1e6) + 1);
-  drawScene(offCanvas, prompt, seed);
+  const known = drawScene(offCanvas, prompt, seed);
   let url = ""; try { url = offCanvas.toDataURL("image/png"); } catch (e) {}
-  return { url, prompt, seed };
+  return { url, prompt, seed, known };
 }
 let GAL = [], lastImg = null;
 function renderImgTab() {
@@ -1450,15 +1542,95 @@ function renderImgTab() {
     im.onclick = () => { lastImg = it; $("#imgPrompt").value = it.prompt; drawScene(cv, it.prompt, it.seed); }; gal.appendChild(im); });
 }
 function makeImg(newSeed) {
-  const prompt = $("#imgPrompt").value.trim() || "Zufallsbild";
+  const prompt = $("#imgPrompt").value.trim();
+  if (!prompt) { toast("Schreib zuerst, was ich malen soll."); return; }
   const seed = newSeed || (Math.floor(Math.random() * 1e6) + 1);
-  const cv = $("#imgCanvas"); drawScene(cv, prompt, seed); lastImg = { prompt, seed };
+  const cv = $("#imgCanvas"), g = cv.getContext("2d");
+  const known = drawScene(cv, prompt, seed); lastImg = { prompt, seed };
+  if (!known) {
+    g.fillStyle = "#1b2330"; g.fillRect(0, 0, cv.width, cv.height);
+    g.fillStyle = "#fff"; g.textAlign = "center"; g.font = "bold 22px sans-serif";
+    g.fillText("Das kann ich noch nicht malen 😅", cv.width / 2, 120);
+    g.font = "15px sans-serif"; g.fillStyle = "#cbd5e1";
+    ["Ich kann z. B.:", "Sonne · Haus · Baum · Rakete · Auto · Flugzeug", "Katze · Hund · Vogel · Fisch · Schmetterling", "Herz · Stern · Regenbogen · Schneemann · Roboter"].forEach((t, i) => g.fillText(t, cv.width / 2, 160 + i * 26));
+    $("#imgHint") && ($("#imgHint").textContent = "„" + prompt + "“ kenne ich noch nicht – sag mir eins der Wörter oben.");
+    return;
+  }
+  $("#imgHint") && ($("#imgHint").textContent = "");
   let url = ""; try { url = cv.toDataURL("image/png"); } catch (e) {}
   GAL.unshift({ prompt, seed, url }); if (GAL.length > 10) GAL.pop(); renderImgTab();
 }
 $("#imgGo") && $("#imgGo").addEventListener("click", () => makeImg());
 $("#imgAgain") && $("#imgAgain").addEventListener("click", () => makeImg());
 $("#imgPrompt") && $("#imgPrompt").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); makeImg(); } });
+
+/* ---------- Code-Studio (echter, sicherer JS-Runner) ---------- */
+const CODE_EXAMPLES = [
+  { name: "Hallo Welt", match: ["hallo", "welt", "start", "anfang"],
+    code: 'console.log("Hallo Welt!");\nconsole.log("Ich bin Lvi und ich kann coden.");' },
+  { name: "Taschenrechner", match: ["taschenrechner", "rechner", "rechnen", "plus", "mal"],
+    code: 'function rechne(a, b) {\n  console.log(a + " + " + b + " = " + (a + b));\n  console.log(a + " * " + b + " = " + (a * b));\n}\nrechne(5, 3);\nrechne(12, 7);' },
+  { name: "Würfel", match: ["wuerfel", "wuerfeln", "zufall", "random"],
+    code: 'function wuerfeln() {\n  return 1 + Math.floor(Math.random() * 6);\n}\nfor (let i = 1; i <= 5; i++) {\n  console.log("Wurf " + i + ": " + wuerfeln());\n}' },
+  { name: "Countdown", match: ["countdown", "runterzaehlen", "rakete", "start"],
+    code: 'for (let i = 10; i >= 1; i--) {\n  console.log(i + " ...");\n}\nconsole.log("Start! 🚀");' },
+  { name: "Einmaleins", match: ["einmaleins", "reihe", "mal", "multiplikation"],
+    code: 'let zahl = 7;\nfor (let i = 1; i <= 10; i++) {\n  console.log(zahl + " x " + i + " = " + (zahl * i));\n}' },
+  { name: "Zahlenraten", match: ["raten", "zahlenraten", "spiel", "geheimzahl"],
+    code: 'let geheim = 1 + Math.floor(Math.random() * 10);\nlet versuche = [3, 7, geheim];\nfor (let tipp of versuche) {\n  if (tipp === geheim) console.log(tipp + " ist richtig! 🎉");\n  else if (tipp < geheim) console.log(tipp + " ist zu klein.");\n  else console.log(tipp + " ist zu gross.");\n}' },
+  { name: "Muster", match: ["muster", "pyramide", "sterne", "treppe"],
+    code: 'for (let i = 1; i <= 5; i++) {\n  let zeile = "";\n  for (let j = 0; j < i; j++) zeile += "* ";\n  console.log(zeile);\n}' },
+  { name: "Zufallsname", match: ["name", "zufallsname", "namen"],
+    code: 'let vorn = ["Max", "Lena", "Tom", "Mia", "Finn"];\nlet nach = ["Blitz", "Stern", "Wolke", "Drache"];\nlet v = vorn[Math.floor(Math.random() * vorn.length)];\nlet n = nach[Math.floor(Math.random() * nach.length)];\nconsole.log("Dein Name: " + v + " " + n);' },
+  { name: "Hackschutz", match: ["hackschutz", "passwort", "sperre", "sicherheit", "login"],
+    code: 'let versuche = 0;\nfunction pruefe(eingabe) {\n  if (versuche >= 3) return "Gesperrt! Zu viele Versuche.";\n  if (eingabe === "geheim") { versuche = 0; return "Willkommen!"; }\n  versuche++;\n  return "Falsch. Noch " + (3 - versuche) + " Versuche.";\n}\nconsole.log(pruefe("abc"));\nconsole.log(pruefe("123"));\nconsole.log(pruefe("geheim"));' }
+];
+function pickExample(wish) {
+  const w = words(wish).filter(x => !/^(code|coden|programmier|schreib|mach|bau|erstell)/.test(x));
+  let best = null, bs = 0;
+  CODE_EXAMPLES.forEach(ex => { let sc = 0; w.forEach(x => { if (ex.match.some(m => wmatch(x, m) || wmatch(m, x))) sc++; }); if (sc > bs) { bs = sc; best = ex; } });
+  return bs ? best : null;
+}
+let codeWorker = null;
+function runCode() {
+  const code = $("#codeEditor").value, out = $("#output");
+  out.textContent = ""; out.classList.remove("err");
+  const src = 'self.onmessage=function(e){var L=[];var p=function(){L.push(Array.prototype.slice.call(arguments).map(function(x){' +
+    'try{return typeof x==="object"?JSON.stringify(x):String(x)}catch(_){return String(x)}}).join(" "))};' +
+    'var console={log:p,info:p,warn:p,error:p};' +
+    'try{(new Function("console",e.data))(console)}catch(err){L.push("⚠ Fehler: "+err.message)}' +
+    'self.postMessage(L.join("\\n"))};';
+  try {
+    if (codeWorker) codeWorker.terminate();
+    const url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
+    codeWorker = new Worker(url);
+    const guard = setTimeout(() => { if (codeWorker) { codeWorker.terminate(); codeWorker = null; out.textContent = "⏱ Das Programm lief zu lange (Endlosschleife?) und wurde gestoppt."; out.classList.add("err"); } }, 2000);
+    codeWorker.onmessage = ev => { clearTimeout(guard); codeWorker.terminate(); codeWorker = null;
+      out.textContent = ev.data || "(keine Ausgabe – nutze console.log(…), um etwas anzuzeigen)";
+      if (/⚠ Fehler/.test(ev.data)) out.classList.add("err"); URL.revokeObjectURL(url); };
+    codeWorker.postMessage(code);
+  } catch (e) { out.textContent = "Konnte das Programm nicht starten: " + e.message; out.classList.add("err"); }
+}
+function renderCode() {
+  const ed = $("#codeEditor"); if (!ed) return;
+  if (!ed.value) ed.value = CODE_EXAMPLES[0].code;
+  const chips = $("#exChips"); if (chips && !chips.childElementCount) {
+    CODE_EXAMPLES.forEach(ex => { const bt = document.createElement("button"); bt.type = "button"; bt.textContent = ex.name;
+      bt.onclick = () => { ed.value = ex.code; $("#output").textContent = ""; }; chips.appendChild(bt); });
+  }
+}
+$("#runBtn") && $("#runBtn").addEventListener("click", runCode);
+$("#clearOut") && $("#clearOut").addEventListener("click", () => { $("#output").textContent = ""; $("#output").classList.remove("err"); });
+$("#codeWrite") && $("#codeWrite").addEventListener("click", () => {
+  const ex = pickExample($("#codeWish").value);
+  if (!ex) { toast("Das kann ich noch nicht schreiben. Probier: " + CODE_EXAMPLES.map(e => e.name).join(", ")); return; }
+  $("#codeEditor").value = ex.code; $("#output").textContent = ""; $("#codeWish").value = "";
+  toast("Lvi hat „" + ex.name + "“ geschrieben. Tippe auf Ausführen!");
+});
+$("#codeWish") && $("#codeWish").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("#codeWrite").click(); } });
+// Tab-Taste im Editor rückt ein, statt wegzuspringen
+$("#codeEditor") && $("#codeEditor").addEventListener("keydown", e => { if (e.key === "Tab") { e.preventDefault(); const t = e.target, st = t.selectionStart;
+  t.value = t.value.slice(0, st) + "  " + t.value.slice(t.selectionEnd); t.selectionStart = t.selectionEnd = st + 2; } });
 
 /* ---------- Gedächtnis ---------- */
 function renderMemory() {
@@ -1560,7 +1732,7 @@ function toast(t) {
   let el = $(".toast"); if (!el) { el = document.createElement("div"); el.className = "toast"; el.setAttribute("role", "status"); document.body.appendChild(el); }
   el.textContent = t; el.hidden = false; clearTimeout(tt); tt = setTimeout(() => el.hidden = true, 2600);
 }
-const VIEWS = ["chat", "trainieren", "labor", "team", "bilder", "gedaechtnis", "einstellungen"];
+const VIEWS = ["chat", "trainieren", "labor", "team", "bilder", "code", "gedaechtnis", "einstellungen"];
 function route() {
   takeLearnHash();
   const v = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "chat";
@@ -1570,6 +1742,7 @@ function route() {
   if (v === "labor") renderLab();
   if (v === "team") renderTeam();
   if (v === "bilder") renderImgTab();
+  if (v === "code") renderCode();
   if (v === "einstellungen") renderSettings();
   if (v === "chat") log.scrollTop = log.scrollHeight;
 }

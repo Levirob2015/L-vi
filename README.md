@@ -52,7 +52,12 @@ Kommandozeile.
 > mit echten Beispielprogrammen, inklusive einem kleinen Hackschutz. Eine
 > Lvi ist dabei **neugierig** – er stellt im Chat auch mal eigene Fragen –
 > und hat einen **Bildkreierer**, der aus Formen, die er kennt (Sonne, Baum,
-> Haus, Rakete, Katze, Fisch, Herz, Sterne …), offline eigene Bilder malt.
+> Haus, Rakete, Auto, Flugzeug, Boot, Katze, Hund, Vogel, Fisch,
+> Schmetterling, Schneemann, Roboter, Herz, Sterne …), offline eigene
+> Bilder malt – und ehrlich sagt, wenn er etwas (noch) nicht kann, statt
+> Zufallskleckse zu machen. Eine eigene **Code-Abteilung** (Code-Studio)
+> führt echtes JavaScript sicher auf dem Gerät aus; Lvi schreibt auf Wunsch
+> fertige Beispielprogramme, und im Chat erklärt er Programmier-Konzepte.
 > Eine Browser-App darf aus Sicherheitsgründen nicht jede Website
 > lesen – Wikipedia lässt den Zugriff aber ausdrücklich zu. Kein Server,
 > kein Konto, keine Daten verlassen das Gerät; Sicherung als Text zum Kopieren.
