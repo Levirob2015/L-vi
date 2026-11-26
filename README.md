@@ -58,6 +58,11 @@ Kommandozeile.
 > Zufallskleckse zu machen. Eine eigene **Code-Abteilung** (Code-Studio)
 > führt echtes JavaScript sicher auf dem Gerät aus; Lvi schreibt auf Wunsch
 > fertige Beispielprogramme, und im Chat erklärt er Programmier-Konzepte.
+> Lvi bleibt klein, privat und offline – hat aber einen Knopf **🧠 Großes
+> Gehirn**: Damit schickt man genau eine Frage an eine echte große KI (Claude)
+> über das Internet. Das braucht einen eigenen API-Schlüssel (von einem
+> Erwachsenen), kostet pro Frage etwas und läuft nur auf der echten Webseite;
+> der Schlüssel bleibt im Browser und nicht in der Sicherung.
 > Eine Browser-App darf aus Sicherheitsgründen nicht jede Website
 > lesen – Wikipedia lässt den Zugriff aber ausdrücklich zu. Kein Server,
 > kein Konto, keine Daten verlassen das Gerät; Sicherung als Text zum Kopieren.
