@@ -301,7 +301,8 @@ code{font-family:var(--f-mono);font-size:12.5px;background:var(--bubble);padding
         <div class="card stack">
           <div><h2>Bildkreierer</h2>
           <p class="hint" style="margin:0">Schreib, was Lvi malen soll. Er baut das Bild aus Formen, die er kennt – jedes Bild ein Unikat. Im Chat geht es auch: „Zeichne eine Rakete im Weltall“.</p></div>
-          <div class="row"><input type="text" id="imgPrompt" placeholder="z. B. Haus mit Baum und Sonne" style="flex:1;min-width:180px" value="Rakete im Weltall mit Sternen"><button class="btn" id="imgGo">Erstellen</button></div>
+          <div class="row"><input type="text" id="imgPrompt" placeholder="z. B. Haus mit Baum und Sonne" style="flex:1;min-width:180px" value="Rakete im Weltall mit Sternen"><button class="btn sec" id="imgGo">Erstellen</button><button class="btn" id="imgAi">🧠 Mit KI malen</button></div>
+          <p id="imgAiHint" class="hint" style="margin:0"></p>
           <div class="canvaswrap"><canvas id="imgCanvas" width="480" height="320" aria-label="Erzeugtes Bild"></canvas></div>
           <div class="row">
             <button class="btn sec" id="imgAgain">Neu würfeln</button>
@@ -920,7 +921,7 @@ function respond(input) {
   if (codeSkill && CODE_RE.test(input)) return bot(runSkill(codeSkill, input), { kind: "ok", skill: codeSkill.id, conf: 1, input });
   if (IMG_RE.test(input) && !/\d\s*mal\s*\d/.test(input)) {
     const art = createImage(input);
-    if (!art.known) return bot("Das kann ich noch nicht zeichnen. Ich male dir aber gern eins davon:\n" + IMG_WORDS + "\n\nSag z. B.: „Zeichne ein Haus mit Baum“ oder „Zeichne eine Rakete“.", { kind: "info" });
+    if (!art.known) return bot("Fertige Formen kenne ich nur diese:\n" + IMG_WORDS + "\n\nFür ALLES andere (z. B. „Drache“, „Schloss“) geh zum Reiter Bilder und tippe „🧠 Mit KI malen“ – dann malt die echte KI es. (Braucht das Große Gehirn.)", { kind: "info" });
     botImage("Hier ist dein Bild. ✨ Zum Speichern lange drauftippen.", art.url, input);
     if (S.curious && Math.random() < 0.5) bot(pick(["Gefällt es dir? Soll ich noch eins malen?", "Magst du ein anderes Bild? Sag mir einfach, was."]), { kind: "info" });
     return;
@@ -1563,11 +1564,19 @@ function createImage(prompt, seed) {
 let GAL = [], lastImg = null;
 function renderImgTab() {
   const cv = $("#imgCanvas"); if (!cv) return;
+  const ih = $("#imgAiHint");
+  if (ih && !ih.textContent) { ih.style.color = "var(--muted)";
+    ih.textContent = getBigKey()
+      ? "🧠 „Mit KI malen“ ist bereit: Schreib irgendwas (z. B. „ein Drache“, „ein Schloss“, „ein Dinosaurier“) – die echte KI malt es."
+      : "„Erstellen“ kennt feste Formen (offline). Für ALLES andere richte das Große Gehirn ein (Einstellungen) und nutze „🧠 Mit KI malen“."; }
   if (!lastImg) lastImg = { prompt: $("#imgPrompt").value || "Zufallsbild", seed: 123 };
-  drawScene(cv, lastImg.prompt, lastImg.seed);
+  // KI-Bilder nicht übermalen – nur eingebaute Formen neu zeichnen.
+  if (!lastImg.ai) drawScene(cv, lastImg.prompt, lastImg.seed);
   const gal = $("#gallery"); gal.innerHTML = "";
   GAL.forEach(it => { const im = new Image(); im.src = it.url; im.title = it.prompt; im.alt = it.prompt;
-    im.onclick = () => { lastImg = it; $("#imgPrompt").value = it.prompt; drawScene(cv, it.prompt, it.seed); }; gal.appendChild(im); });
+    im.onclick = () => { lastImg = it; $("#imgPrompt").value = it.prompt;
+      if (it.ai) { const g = cv.getContext("2d"); const pic = new Image(); pic.onload = () => { g.clearRect(0,0,cv.width,cv.height); g.drawImage(pic,0,0,cv.width,cv.height); }; pic.src = it.url; }
+      else drawScene(cv, it.prompt, it.seed); }; gal.appendChild(im); });
 }
 function makeImg(newSeed) {
   const prompt = $("#imgPrompt").value.trim();
@@ -1590,7 +1599,34 @@ function makeImg(newSeed) {
 }
 $("#imgGo") && $("#imgGo").addEventListener("click", () => makeImg());
 $("#imgAgain") && $("#imgAgain").addEventListener("click", () => makeImg());
-$("#imgPrompt") && $("#imgPrompt").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); makeImg(); } });
+$("#imgPrompt") && $("#imgPrompt").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); if (getBigKey()) aiDraw(); else makeImg(); } });
+const IMG_SYS = "Du schreibst JavaScript, das ein Bild malt – für ein Kinder-Programm. Gib NUR den Code zurück, kein Markdown, keine ```-Zeichen, keine Erklärung. Der Code läuft in einer sicheren Sandbox OHNE Internet, DOM, window, document. Male auf ein Bild, das 480 breit und 320 hoch ist (0,0 ist oben links), NUR mit diesen Befehlen: mal.hintergrund(farbe); mal.kreis(x,y,radius,farbe); mal.rechteck(x,y,breite,hoehe,farbe); mal.dreieck(x1,y1,x2,y2,x3,y3,farbe); mal.linie(x1,y1,x2,y2,farbe,dicke); mal.text(text,x,y,groesse,farbe). Farben sind Namen wie rot, blau, gruen, gelb, orange, lila, rosa, braun, grau, schwarz, weiss, hellblau – oder Hex wie #88cc00. Beginne fast immer mit mal.hintergrund(...). Baue das gewünschte Motiv aus vielen Formen zusammen, damit man es gut erkennt. Keine Endlosschleifen, höchstens 500 Formen. Male:";
+let imgAiBusy = false;
+async function aiDraw() {
+  const wish = $("#imgPrompt").value.trim(); const st = $("#imgAiHint");
+  if (!wish) { toast("Schreib zuerst, was ich malen soll."); return; }
+  if (!getBigKey()) { st.style.color = "var(--warn)"; st.textContent = "„Mit KI malen“ braucht das Große Gehirn (Einstellungen) – damit male ich wirklich alles. Ohne das kennt „Erstellen“ nur feste Formen."; return; }
+  if (imgAiBusy) return; imgAiBusy = true;
+  st.style.color = "var(--muted)"; st.textContent = "🧠 Die KI malt „" + wish + "“ …";
+  $("#imgHint") && ($("#imgHint").textContent = "");
+  try {
+    const code = stripFences(await callClaude(IMG_SYS + " " + wish, wish, 1400));
+    const r = await runSandbox(code);
+    if (r.timeout) { st.style.color = "var(--warn)"; st.textContent = "Das Malen dauerte zu lange und wurde gestoppt. Versuch es nochmal."; return; }
+    if (!r.cmds.length) { st.style.color = "var(--warn)"; st.textContent = "Die KI hat diesmal nichts gemalt – versuch es nochmal oder beschreib es anders."; return; }
+    const cv = $("#imgCanvas"); drawCmds(r.cmds, cv); lastImg = { prompt: wish, ai: true, code };
+    let url = ""; try { url = cv.toDataURL("image/png"); } catch (e) {}
+    GAL.unshift({ prompt: wish, url, ai: true }); if (GAL.length > 10) GAL.pop(); renderImgTab();
+    st.style.color = "var(--ok)"; st.textContent = "Fertig! Die KI hat „" + wish + "“ gemalt. Zum Speichern lange auf das Bild tippen.";
+  } catch (e) {
+    st.style.color = "var(--warn)";
+    if (e.status === 401 || e.status === 403) st.textContent = "Der Schlüssel stimmt nicht (Einstellungen prüfen).";
+    else if (e.status === 429) st.textContent = "Gerade überlastet oder Guthaben leer – später nochmal.";
+    else if (e.status) st.textContent = "Fehler " + e.status + " – später nochmal.";
+    else st.textContent = isLiveSite() ? "Kam nicht ins Internet – prüf dein WLAN." : "„Mit KI malen“ geht nur auf der Online-App (levirob2015.github.io), nicht in der Vorschau. „Erstellen“ geht aber auch hier.";
+  } finally { imgAiBusy = false; }
+}
+$("#imgAi") && $("#imgAi").addEventListener("click", aiDraw);
 
 /* ---------- Großes Gehirn (echte KI über Internet, nur mit Erlaubnis) ---------- */
 const BIGKEY = "agentenwerkstatt.bigbrain.key";
@@ -1672,8 +1708,8 @@ function pickExample(wish) {
 let codeWorker = null;
 const MALFARBEN = { rot:"#e23b3b", blau:"#2b7fe0", gruen:"#3e9e3e", "grün":"#3e9e3e", gelb:"#ffd21f", orange:"#ff8c1a", lila:"#9b5de5", rosa:"#ff6392", braun:"#8a5a2b", grau:"#888", schwarz:"#141414", weiss:"#ffffff", "weiß":"#ffffff", hellblau:"#7fd0ff", pink:"#ff6392", gold:"#ffbf00" };
 const malColor = f => MALFARBEN[String(f || "").toLowerCase()] || f || "#141414";
-function drawCmds(cmds) {
-  const cv = $("#codeCanvas"), g = cv.getContext("2d"), W = cv.width, H = cv.height;
+function drawCmds(cmds, cv) {
+  const g = cv.getContext("2d"), W = cv.width, H = cv.height;
   g.clearRect(0, 0, W, H); g.fillStyle = "#fff"; g.fillRect(0, 0, W, H);
   cmds.forEach(c => { const op = c[0];
     if (op === "bg") { g.fillStyle = malColor(c[1]); g.fillRect(0, 0, W, H); }
@@ -1684,29 +1720,36 @@ function drawCmds(cmds) {
     else if (op === "text") { g.fillStyle = malColor(c[5]); g.font = "bold " + (+c[4] || 20) + "px sans-serif"; g.fillText(String(c[1]), +c[2], +c[3]); }
   });
 }
-function runCode() {
-  const out = $("#output"), code = $("#codeEditor").value;
-  out.textContent = ""; out.classList.remove("err");
-  const src = 'self.onmessage=function(e){var L=[];var C=[];' +
-    'var p=function(){L.push(Array.prototype.slice.call(arguments).map(function(x){try{return typeof x==="object"?JSON.stringify(x):String(x)}catch(_){return String(x)}}).join(" "))};' +
-    'var console={log:p,info:p,warn:p,error:p};' +
-    'var _m=function(){C.push(Array.prototype.slice.call(arguments))};' +
-    'var mal={hintergrund:function(f){_m("bg",f)},kreis:function(x,y,r,f){_m("kreis",x,y,r,f)},rechteck:function(x,y,b,h,f){_m("rect",x,y,b,h,f)},dreieck:function(a,b,c,d,e2,g,f){_m("tri",a,b,c,d,e2,g,f)},linie:function(x,y,x2,y2,f,d){_m("line",x,y,x2,y2,f,d)},text:function(t,x,y,s,f){_m("text",t,x,y,s,f)}};' +
-    'try{(new Function("console","mal",e.data))(console,mal)}catch(err){L.push("⚠ Fehler: "+err.message)}' +
-    'self.postMessage({logs:L.join("\\n"),cmds:C})};';
-  try {
-    if (codeWorker) codeWorker.terminate();
-    const url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
-    codeWorker = new Worker(url);
-    const guard = setTimeout(() => { if (codeWorker) { codeWorker.terminate(); codeWorker = null; out.textContent = "⏱ Das Programm lief zu lange (Endlosschleife?) und wurde gestoppt."; out.classList.add("err"); } }, 2000);
-    codeWorker.onmessage = ev => { clearTimeout(guard); codeWorker.terminate(); codeWorker = null; URL.revokeObjectURL(url);
-      const d = ev.data || {}, cmds = d.cmds || [];
-      $("#canvasOut").hidden = cmds.length === 0;
-      if (cmds.length) drawCmds(cmds);
-      out.textContent = d.logs || (cmds.length ? "(Bild gemalt 👆)" : "(keine Ausgabe – nutze console.log(…) für Text oder mal.kreis(…) zum Malen)");
-      if (/⚠ Fehler/.test(d.logs || "")) out.classList.add("err"); };
-    codeWorker.postMessage(code);
-  } catch (e) { out.textContent = "Konnte das Programm nicht starten: " + e.message; out.classList.add("err"); }
+// Führt Kinder-Code sicher im Web Worker aus und gibt Text-Logs + Mal-Befehle zurück.
+function runSandbox(code) {
+  return new Promise(resolve => {
+    const src = 'self.onmessage=function(e){var L=[];var C=[];' +
+      'var p=function(){L.push(Array.prototype.slice.call(arguments).map(function(x){try{return typeof x==="object"?JSON.stringify(x):String(x)}catch(_){return String(x)}}).join(" "))};' +
+      'var console={log:p,info:p,warn:p,error:p};' +
+      'var _m=function(){C.push(Array.prototype.slice.call(arguments))};' +
+      'var mal={hintergrund:function(f){_m("bg",f)},kreis:function(x,y,r,f){_m("kreis",x,y,r,f)},rechteck:function(x,y,b,h,f){_m("rect",x,y,b,h,f)},dreieck:function(a,b,c,d,e2,g,f){_m("tri",a,b,c,d,e2,g,f)},linie:function(x,y,x2,y2,f,d){_m("line",x,y,x2,y2,f,d)},text:function(t,x,y,s,f){_m("text",t,x,y,s,f)}};' +
+      'try{(new Function("console","mal",e.data))(console,mal)}catch(err){L.push("⚠ Fehler: "+err.message)}' +
+      'self.postMessage({logs:L.join("\\n"),cmds:C})};';
+    let done = false, url, w;
+    const finish = r => { if (done) return; done = true; clearTimeout(guard); try { w && w.terminate(); } catch (e) {} try { URL.revokeObjectURL(url); } catch (e) {} resolve(r); };
+    const guard = setTimeout(() => finish({ logs: "", cmds: [], timeout: true }), 2000);
+    try {
+      url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
+      w = codeWorker = new Worker(url);
+      w.onmessage = ev => finish({ logs: (ev.data && ev.data.logs) || "", cmds: (ev.data && ev.data.cmds) || [] });
+      w.onerror = () => finish({ logs: "⚠ Fehler beim Starten", cmds: [] });
+      w.postMessage(code);
+    } catch (e) { finish({ logs: "Konnte das Programm nicht starten: " + e.message, cmds: [] }); }
+  });
+}
+async function runCode() {
+  const out = $("#output"); out.textContent = ""; out.classList.remove("err");
+  const r = await runSandbox($("#codeEditor").value);
+  if (r.timeout) { out.textContent = "⏱ Das Programm lief zu lange (Endlosschleife?) und wurde gestoppt."; out.classList.add("err"); $("#canvasOut").hidden = true; return; }
+  $("#canvasOut").hidden = r.cmds.length === 0;
+  if (r.cmds.length) drawCmds(r.cmds, $("#codeCanvas"));
+  out.textContent = r.logs || (r.cmds.length ? "(Bild gemalt 👆)" : "(keine Ausgabe – nutze console.log(…) für Text oder mal.kreis(…) zum Malen)");
+  if (/⚠ Fehler/.test(r.logs || "")) out.classList.add("err");
 }
 function renderCode() {
   const ed = $("#codeEditor"); if (!ed) return;
