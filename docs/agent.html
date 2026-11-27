@@ -320,7 +320,9 @@ code{font-family:var(--f-mono);font-size:12.5px;background:var(--bubble);padding
         <div class="card stack">
           <div><h2>Code-Studio</h2>
           <p class="hint" style="margin:0">Die Code-Abteilung. Hier schreibst du echtes JavaScript und führst es aus – oder lässt Lvi dir ein Programm schreiben. Alles läuft sicher auf deinem Gerät. Mit <code>console.log(…)</code> schreibst du Text – mit <code>mal.kreis(…)</code> &amp; Co. <b>malst</b> du echte Bilder.</p></div>
-          <div class="row"><input type="text" id="codeWish" placeholder="Lvi schreiben lassen, z. B. „Gesicht“, „Haus“ oder „Würfel“" style="flex:1;min-width:170px"><button class="btn sec" id="codeWrite">Lvi schreiben lassen</button></div>
+          <div class="row"><input type="text" id="codeWish" placeholder="Beschreib, was ich programmieren soll …" style="flex:1;min-width:170px"><button class="btn sec" id="codeWrite">Lvi schreiben lassen</button></div>
+          <p id="codeAiStatus" class="hint" style="margin:0"></p>
+          <p class="hint" id="codeAiHint" style="margin:0"></p>
           <div id="exChips" class="chips"></div>
           <label for="codeEditor" class="hint" style="margin:0">Dein Programm</label>
           <textarea id="codeEditor" class="code-ed" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
@@ -1593,33 +1595,36 @@ $("#imgPrompt") && $("#imgPrompt").addEventListener("keydown", e => { if (e.key 
 /* ---------- Großes Gehirn (echte KI über Internet, nur mit Erlaubnis) ---------- */
 const BIGKEY = "agentenwerkstatt.bigbrain.key";
 const getBigKey = () => { try { return localStorage.getItem(BIGKEY) || ""; } catch (e) { return ""; } };
+async function callClaude(system, user, maxTokens) {
+  const key = getBigKey(); if (!key) { const e = new Error("no key"); e.noKey = true; throw e; }
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+    body: JSON.stringify({ model: S.bigModel || "claude-opus-5-5", max_tokens: maxTokens || 1024, system, messages: [{ role: "user", content: user }] })
+  });
+  if (!res.ok) { const e = new Error("http " + res.status); e.status = res.status; throw e; }
+  const data = await res.json();
+  if (data.stop_reason === "refusal") { const e = new Error("refusal"); e.refusal = true; throw e; }
+  return (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim();
+}
 let bigBusy = false;
 async function askBigBrain(question) {
   question = (question || "").trim(); if (!question) { toast("Schreib zuerst deine Frage."); return; }
-  const key = getBigKey();
-  if (!key) { bot("Für das große Gehirn brauche ich einen Schlüssel. Ein Erwachsener kann ihn in den Einstellungen unter „Großes Gehirn“ eintragen.", { kind: "info" });
+  if (!getBigKey()) { bot("Für das große Gehirn brauche ich einen Schlüssel. Ein Erwachsener kann ihn in den Einstellungen unter „Großes Gehirn“ eintragen.", { kind: "info" });
     try { history.replaceState(null, "", "#einstellungen"); } catch (e) {} route(); return; }
   if (bigBusy) return; bigBusy = true;
   push({ who: "me", text: question });
   bot("🧠 Ich frage das große Gehirn …", { kind: "info" });
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-      body: JSON.stringify({ model: S.bigModel || "claude-opus-5-5", max_tokens: 1024,
-        system: "Du bist Lvi, ein freundlicher, geduldiger Helfer für ein Kind. Antworte auf Deutsch, kurz, einfach und kindgerecht. Sei immer sicher und harmlos. Wenn du Code zeigst, halte ihn klein und erklär ihn einfach.",
-        messages: [{ role: "user", content: question }] })
-    });
-    if (res.status === 401 || res.status === 403) { bot("Der Schlüssel stimmt nicht oder darf das nicht. Bitte einen Erwachsenen, ihn in den Einstellungen zu prüfen.", { kind: "info" }); return; }
-    if (res.status === 429) { bot("Das große Gehirn ist gerade überlastet oder das Guthaben ist aufgebraucht. Versuch es später nochmal.", { kind: "info" }); return; }
-    if (!res.ok) { bot("Das große Gehirn antwortet gerade nicht (Fehler " + res.status + ").", { kind: "info" }); return; }
-    const data = await res.json();
-    if (data.stop_reason === "refusal") { bot("Diese Frage möchte die große KI lieber nicht beantworten.", { kind: "info" }); return; }
-    const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim();
+    const text = await callClaude("Du bist Lvi, ein freundlicher, geduldiger Helfer für ein Kind. Antworte auf Deutsch, kurz, einfach und kindgerecht. Sei immer sicher und harmlos. Wenn du Code zeigst, halte ihn klein und erklär ihn einfach.", question, 1024);
     bot(text || "(Die große KI hat nichts zurückgeschickt.)", { kind: "big", input: question });
     if (S.voice) speak(text);
   } catch (e) {
-    bot(typeof webBlockedMsg === "function" ? webBlockedMsg() : "Ich komme gerade nicht ins Internet.", { kind: "info" });
+    if (e.status === 401 || e.status === 403) bot("Der Schlüssel stimmt nicht oder darf das nicht. Bitte einen Erwachsenen, ihn in den Einstellungen zu prüfen.", { kind: "info" });
+    else if (e.status === 429) bot("Das große Gehirn ist gerade überlastet oder das Guthaben ist aufgebraucht. Versuch es später nochmal.", { kind: "info" });
+    else if (e.status) bot("Das große Gehirn antwortet gerade nicht (Fehler " + e.status + ").", { kind: "info" });
+    else if (e.refusal) bot("Diese Frage möchte die große KI lieber nicht beantworten.", { kind: "info" });
+    else bot(typeof webBlockedMsg === "function" ? webBlockedMsg() : "Ich komme gerade nicht ins Internet.", { kind: "info" });
   } finally { bigBusy = false; }
 }
 $("#brainBtn") && $("#brainBtn").addEventListener("click", () => {
@@ -1705,6 +1710,10 @@ function runCode() {
 }
 function renderCode() {
   const ed = $("#codeEditor"); if (!ed) return;
+  const hint = $("#codeAiHint");
+  if (hint) hint.textContent = getBigKey()
+    ? "🧠 Großes Gehirn ist bereit: Beschreib einfach dein Programm (z. B. „ein Spiel, bei dem ein Ball hüpft“ oder „ein buntes Sternenbild“) – die echte KI schreibt den Code."
+    : "Tipp: Mit dem Großen Gehirn (Einstellungen) schreibt dir eine echte KI jedes Programm. Ohne das gibt es nur die festen Beispiele unten.";
   if (!ed.value) ed.value = CODE_EXAMPLES[0].code;
   const chips = $("#exChips"); if (chips && !chips.childElementCount) {
     CODE_EXAMPLES.forEach(ex => { const bt = document.createElement("button"); bt.type = "button"; bt.textContent = ex.name;
@@ -1713,9 +1722,32 @@ function renderCode() {
 }
 $("#runBtn") && $("#runBtn").addEventListener("click", runCode);
 $("#clearOut") && $("#clearOut").addEventListener("click", () => { $("#output").textContent = ""; $("#output").classList.remove("err"); $("#canvasOut").hidden = true; });
+const CODE_SYS = "Du schreibst JavaScript für ein Code-Studio für Kinder. Gib NUR den Code zurück – keine Erklärung, kein Markdown, keine ```-Zeichen. Der Code läuft in einer sicheren Sandbox OHNE Internet, DOM, window, document, fetch, alert oder prompt. Für Text nutze console.log(...). Zum Malen auf ein 300x300-Bild (0,0 ist oben links) nutze NUR diese Befehle: mal.hintergrund(farbe); mal.kreis(x,y,radius,farbe); mal.rechteck(x,y,breite,hoehe,farbe); mal.dreieck(x1,y1,x2,y2,x3,y3,farbe); mal.linie(x1,y1,x2,y2,farbe,dicke); mal.text(text,x,y,groesse,farbe). Farben sind Namen wie rot, blau, gruen, gelb, orange, lila, rosa, braun, grau, schwarz, weiss, hellblau – oder Hex wie #ff8800. Keine Endlosschleifen, keine Schleife über mehr als 2000 Durchläufe. Halte den Code kurz, kindgerecht, sicher und sofort lauffähig. Schreib einfache deutsche Kommentare mit //.";
+function stripFences(t) { t = (t || "").trim(); const m = t.match(/```[a-zA-Z]*\n([\s\S]*?)```/); if (m) return m[1].trim(); return t.replace(/^```[a-zA-Z]*\s*/, "").replace(/```\s*$/, "").trim(); }
+let aiBusy = false;
+async function aiWriteCode(wish) {
+  wish = (wish || "").trim(); if (!wish) { toast("Beschreib, was ich programmieren soll."); return; }
+  if (aiBusy) return; aiBusy = true;
+  const st = $("#codeAiStatus"); st.style.color = "var(--muted)"; st.textContent = "🧠 Das große Gehirn schreibt deinen Code …";
+  try {
+    const code = stripFences(await callClaude(CODE_SYS, wish, 1500));
+    if (!code) { st.textContent = "Es kam kein Code zurück – versuch es nochmal."; return; }
+    $("#codeEditor").value = code; $("#output").textContent = ""; $("#canvasOut").hidden = true; $("#codeWish").value = "";
+    st.style.color = "var(--ok)"; st.textContent = "Fertig! Tippe auf ▶ Ausführen. Du kannst den Code auch ändern.";
+  } catch (e) {
+    st.style.color = "var(--warn)";
+    if (e.noKey) st.textContent = "Dafür brauche ich das Große Gehirn – richte es in Einstellungen ein.";
+    else if (e.status === 401 || e.status === 403) st.textContent = "Der Schlüssel stimmt nicht (Einstellungen prüfen).";
+    else if (e.status === 429) st.textContent = "Gerade überlastet oder Guthaben leer – später nochmal.";
+    else if (e.status) st.textContent = "Fehler " + e.status + " – später nochmal.";
+    else st.textContent = isLiveSite() ? "Kam nicht ins Internet – prüf dein WLAN." : "Das echte Coden geht nur auf der Online-App (levirob2015.github.io), nicht in der Vorschau.";
+  } finally { aiBusy = false; }
+}
 $("#codeWrite") && $("#codeWrite").addEventListener("click", () => {
-  const ex = pickExample($("#codeWish").value);
-  if (!ex) { toast("Das kann ich noch nicht schreiben. Probier: " + CODE_EXAMPLES.map(e => e.name).join(", ")); return; }
+  const wish = $("#codeWish").value;
+  if (getBigKey()) return aiWriteCode(wish);
+  const ex = pickExample(wish);
+  if (!ex) { $("#codeAiStatus").style.color = "var(--muted)"; $("#codeAiStatus").textContent = "Ohne Großes Gehirn kann ich nur fertige Beispiele: " + CODE_EXAMPLES.map(e => e.name).join(", ") + ". Für echtes Coden richte das Große Gehirn in Einstellungen ein."; return; }
   $("#codeEditor").value = ex.code; $("#output").textContent = ""; $("#codeWish").value = "";
   toast("Lvi hat „" + ex.name + "“ geschrieben. Tippe auf Ausführen!");
 });

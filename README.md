@@ -62,7 +62,10 @@ Kommandozeile.
 > Gehirn**: Damit schickt man genau eine Frage an eine echte große KI (Claude)
 > über das Internet. Das braucht einen eigenen API-Schlüssel (von einem
 > Erwachsenen), kostet pro Frage etwas und läuft nur auf der echten Webseite;
-> der Schlüssel bleibt im Browser und nicht in der Sicherung.
+> der Schlüssel bleibt im Browser und nicht in der Sicherung. Im **Code-Studio**
+> schreibt das Große Gehirn auf Wunsch zu *jeder* Beschreibung echten,
+> lauffähigen Code (Text mit `console.log`, Bilder mit `mal.*`) – richtiges
+> Coden mit einer KI, nicht nur feste Beispiele.
 > Eine Browser-App darf aus Sicherheitsgründen nicht jede Website
 > lesen – Wikipedia lässt den Zugriff aber ausdrücklich zu. Kein Server,
 > kein Konto, keine Daten verlassen das Gerät; Sicherung als Text zum Kopieren.
