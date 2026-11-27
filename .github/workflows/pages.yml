@@ -6,6 +6,7 @@
 #
 # Ergebnis: https://levirob2015.github.io/L-vi/demo.html
 #           https://levirob2015.github.io/L-vi/satellit.html
+#           https://levirob2015.github.io/L-vi/agent.html
 name: Vorschau veroeffentlichen
 
 on:
@@ -53,6 +54,15 @@ jobs:
             cat docs/satellit.html
             echo '</body></html>'
           } > _site/satellit.html
+          # Agentenwerkstatt: eigener KI-Agent, der im Browser trainiert wird.
+          {
+            echo '<!doctype html><html lang="de"><head><meta charset="utf-8">'
+            echo '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">'
+            echo '<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);height:100%;box-sizing:border-box}</style>'
+            echo '</head><body>'
+            cat docs/agent.html
+            echo '</body></html>'
+          } > _site/agent.html
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

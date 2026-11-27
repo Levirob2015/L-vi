@@ -31,6 +31,50 @@ Kommandozeile.
 > Anfrage-Firewall, Flutbremse, Sicherheits-Kopfzeilen (CSP) und das
 > Dashboard auf Port 8787.
 
+> **Neu: [Agentenwerkstatt](docs/agent.html)** – ein eigener KI-Agent, der
+> komplett auf dem iPad läuft und den du selbst trainierst. Du legst
+> Fähigkeiten mit Beispielsätzen und Antworten an, ein kleines neuronales
+> Netz lernt daraus direkt im Browser. Versteht er etwas nicht, zeigst du
+> es ihm im Chat, und er trainiert sofort nach. Dazu: rechnen, Dinge merken
+> (Gedächtnis), Timer, Uhrzeit, Würfeln, Antworten vorlesen. Mit dem
+> **Lernen-Knopf** in der Safari-Favoritenleiste liest er jede Webseite
+> und beantwortet danach Fragen dazu, mit Quellenangabe. Im **Labor**
+> vermehrt er sich: Kopien mit kleinen Mutationen (im Arbeitsspeicher,
+> sicher), aus denen man eine aussucht – oder automatisch die beste suchen
+> lässt – und zum neuen Agenten macht. Im **Team** verteilt ein Chef eine
+> Frage an mehrere Arbeiter, die das Gelernte durchsuchen, und rechnet die
+> Funde zusammen; Code-Agenten bauen kleine Werkzeuge und fragen erst um
+> Erlaubnis. Mit deiner Erlaubnis darf er auch **ins Internet**: Weiß er
+> etwas nicht, sucht er live bei **Wikipedia** und nennt die Quelle; das
+> Gefundene merkt er sich auf Wunsch dauerhaft (dann weiß er es auch
+> offline). Sobald „code“ oder „programmier“ fällt, schaltet er in den
+> Programmier-Modus und erklärt Konzepte (Variable, Schleife, Funktion …)
+> mit echten Beispielprogrammen, inklusive einem kleinen Hackschutz. Eine
+> Lvi ist dabei **neugierig** – er stellt im Chat auch mal eigene Fragen –
+> und hat einen **Bildkreierer**, der aus Formen, die er kennt (Sonne, Baum,
+> Haus, Rakete, Auto, Flugzeug, Boot, Katze, Hund, Vogel, Fisch,
+> Schmetterling, Schneemann, Roboter, Herz, Sterne …), offline eigene
+> Bilder malt – und ehrlich sagt, wenn er etwas (noch) nicht kann, statt
+> Zufallskleckse zu machen. Eine eigene **Code-Abteilung** (Code-Studio)
+> führt echtes JavaScript sicher auf dem Gerät aus; Lvi schreibt auf Wunsch
+> fertige Beispielprogramme, und im Chat erklärt er Programmier-Konzepte.
+> Lvi bleibt klein, privat und offline – hat aber einen Knopf **🧠 Großes
+> Gehirn**: Damit schickt man genau eine Frage an eine echte große KI (Claude)
+> über das Internet. Das braucht einen eigenen API-Schlüssel (von einem
+> Erwachsenen), kostet pro Frage etwas und läuft nur auf der echten Webseite;
+> der Schlüssel bleibt im Browser und nicht in der Sicherung. Im **Code-Studio**
+> schreibt das Große Gehirn auf Wunsch zu *jeder* Beschreibung echten,
+> lauffähigen Code (Text mit `console.log`, Bilder mit `mal.*`) – richtiges
+> Coden mit einer KI, nicht nur feste Beispiele. Genauso im **Bildkreierer**:
+> „🧠 Mit KI malen“ lässt die KI ein Zeichenprogramm für *jede* Beschreibung
+> schreiben (Drache, Schloss, Dinosaurier …), das der Browser malt – offline
+> gibt es weiter die festen Formen.
+> Eine Browser-App darf aus Sicherheitsgründen nicht jede Website
+> lesen – Wikipedia lässt den Zugriff aber ausdrücklich zu. Kein Server,
+> kein Konto, keine Daten verlassen das Gerät; Sicherung als Text zum Kopieren.
+> Online: `https://levirob2015.github.io/L-vi/agent.html` – in Safari über
+> *Teilen → Zum Home-Bildschirm* als App ablegen.
+
 ### Klickbare Vorschau
 
 [`docs/demo.html`](docs/demo.html) ist eine bedienbare Version dieser
